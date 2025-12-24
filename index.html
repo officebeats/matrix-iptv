@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IPTV CLI Web</title>
+    <style>
+        body {
+            background-color: #0d0d0d;
+            color: #ccc;
+            font-family: 'Courier New', Courier, monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+            margin: 0;
+        }
+        #terminal-container {
+            border: 2px solid #555;
+            padding: 10px;
+            background: #000;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.1);
+        }
+        pre {
+            margin: 0;
+            font-size: 14px;
+            line-height: 14px;
+        }
+        .controls {
+            position: absolute;
+            bottom: 10px;
+            color: #666;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal-container">
+        <pre id="terminal-output">Loading WebAssembly...</pre>
+    </div>
+    <div class="controls">
+        Use Arrow Keys or j/k to navigate. Enter to select.
+    </div>
+
+    <script type="module">
+        // Import init function and WasmClient class
+        // Note: The path depends on where wasm-pack outputs files. Usually ./pkg/
+        import init, { WasmClient } from './pkg/iptv_cli.js';
+
+        async function main() {
+            try {
+                await init();
+                console.log("Wasm initialized");
+
+                const client = new WasmClient();
+                const termOutput = document.getElementById('terminal-output');
+
+                function renderLoop() {
+                    const output = client.draw();
+                    termOutput.innerText = output;
+                    requestAnimationFrame(renderLoop);
+                }
+
+                // Initial render
+                renderLoop();
+
+                // Input handling
+                document.addEventListener('keydown', (e) => {
+                    // Prevent default scrolling for arrow keys
+                    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Tab"].includes(e.key)) {
+                        e.preventDefault();
+                    }
+                    
+                    // Filter out modifier keys alone
+                    if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+
+                    client.handle_key(e.key);
+                });
+
+            } catch (err) {
+                console.error("Failed to start Wasm:", err);
+                document.getElementById('terminal-output').innerText = "Error loading Wasm:\n" + err;
+            }
+        }
+
+        main();
+    </script>
+</body>
+</html>

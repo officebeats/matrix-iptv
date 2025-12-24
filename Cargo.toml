@@ -1,0 +1,44 @@
+[package]
+name = "matrix-iptv"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "matrix_iptv_lib"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+ratatui = { version = "0.29.0", default-features = false }
+serde = { version = "1.0.216", features = ["derive"] }
+serde_json = "1.0.133"
+anyhow = "1.0.95"
+futures = "0.3.31"
+chrono = { version = "0.4.42", features = ["serde"] }
+chrono-tz = "0.10.4"
+iana-time-zone = "0.1.64"
+regex = "1.12.2"
+clap = { version = "4.5", features = ["derive"] }
+rand = "0.8"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+ratatui = { version = "0.29.0", features = ["crossterm"] }
+crossterm = "0.28.1"
+tokio = { version = "1.42.0", features = ["full"] }
+reqwest = { version = "0.12.9", features = ["json", "rustls-tls"] }
+hickory-resolver = { version = "0.24", features = ["dns-over-https-rustls", "tokio-runtime"] }
+reqwest-hickory-resolver = "0.1"
+directories = "5.0.1"
+tui-input = { version = "0.11.0", features = ["crossterm"] }
+
+
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tui-input = { version = "0.11.0", default-features = false }
+wasm-bindgen = "0.2.99"
+wasm-bindgen-futures = "0.4.49"
+web-sys = { version = "0.3.76", features = ["console", "Window", "Document", "HtmlCanvasElement", "CanvasRenderingContext2d", "Element", "HtmlElement", "KeyboardEvent", "Performance", "Storage"] }
+console_error_panic_hook = "0.1.7"
+reqwest = { version = "0.12.9", default-features = false, features = ["json"] }
+# getrandom is usually pulled by uuid/rand, handled by wasm-bindgen implicit? 
+# tokio for wasm
+tokio = { version = "1.42.0", features = ["rt", "macros", "sync", "time"] }

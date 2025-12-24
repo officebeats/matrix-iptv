@@ -1,0 +1,130 @@
+warning: unused variable: `idx`
+   --> src\ui.rs:796:16
+    |
+796 |         .map(|(idx, c)| {
+    |                ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `render_series_categories_pane` is never used
+    --> src\ui.rs:2011:4
+     |
+2011 | fn render_series_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `render_series_streams_pane` is never used
+    --> src\ui.rs:2058:4
+     |
+2058 | fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `matrix-iptv` (lib) generated 3 warnings
+warning: unused import: `matrix_iptv_lib::api::XtreamClient`
+ --> src\bin\inspect_auth.rs:1:5
+  |
+1 | use matrix_iptv_lib::api::XtreamClient;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `matrix_iptv_lib::config::AppConfig`
+ --> src\bin\verify_playback.rs:3:5
+  |
+3 | use matrix_iptv_lib::config::AppConfig;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `std::fs`
+ --> src\bin\verify_playback.rs:4:5
+  |
+4 | use std::fs;
+  |     ^^^^^^^
+
+warning: unused variable: `config_path`
+  --> src\bin\verify_playback.rs:11:9
+   |
+11 |     let config_path = proj_dirs.config_dir().join("config.json");
+   |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_config_path`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `i`
+ --> src\bin\debug_playlists.rs:9:10
+  |
+9 |     for (i, acc) in config.accounts.iter().enumerate() {
+  |          ^ help: if this is intentional, prefix it with an underscore: `_i`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling matrix-iptv v0.1.0 (C:\Users\admin-beats\Documents\00 Vibe Coding\IPTV)
+warning: unused import: `AsyncAction`
+ --> src\bin\qa_bot.rs:2:33
+  |
+2 | use matrix_iptv_lib::app::{App, AsyncAction, CurrentScreen};
+  |                                 ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `initial_idx`
+   --> src\bin\qa_bot.rs:123:33
+    |
+123 | ...                   let initial_idx = 0;
+    |                           ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_initial_idx`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `first_cat`
+   --> src\bin\qa_bot.rs:154:37
+    |
+154 |                         if let Some(first_cat) = app.series_categories.first() {
+    |                                     ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_first_cat`
+
+warning: unused variable: `expected_url`
+   --> src\bin\qa_bot.rs:165:33
+    |
+165 | ...                   let expected_url = format!(
+    |                           ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_url`
+
+warning: `matrix-iptv` (bin "inspect_auth") generated 1 warning (run `cargo fix --bin "inspect_auth"` to apply 1 suggestion)
+warning: `matrix-iptv` (bin "verify_playback") generated 3 warnings (run `cargo fix --bin "verify_playback"` to apply 2 suggestions)
+warning: `matrix-iptv` (bin "debug_playlists") generated 1 warning
+warning: `matrix-iptv` (bin "qa_bot") generated 4 warnings (run `cargo fix --bin "qa_bot"` to apply 1 suggestion)
+error[E0433]: failed to resolve: use of unresolved module or unlinked crate `matrix_iptv`
+    --> src\main.rs:1833:78
+     |
+1833 | ...                   app.settings_state = matrix_iptv::app::SettingsState::ManageAccounts;
+     |                                            ^^^^^^^^^^^ use of unresolved module or unlinked crate `matrix_iptv`
+     |
+     = help: if you wanted to use a crate named `matrix_iptv`, use `cargo add matrix_iptv` to add it to your `Cargo.toml`
+help: consider importing this enum
+     |
+   1 + use matrix_iptv_lib::app::SettingsState;
+     |
+help: if you import `SettingsState`, refer to it directly
+     |
+1833 -                                                         app.settings_state = matrix_iptv::app::SettingsState::ManageAccounts;
+1833 +                                                         app.settings_state = SettingsState::ManageAccounts;
+     |
+
+warning: unused imports: `KeyModifiers` and `MouseEvent`
+ --> src\main.rs:6:86
+  |
+6 |         self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+  |                                                                                      ^^^^^^^^^^^^
+7 |         MouseButton, MouseEvent, MouseEventKind,
+  |                      ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Stream`
+  --> src\main.rs:22:38
+   |
+22 | use matrix_iptv_lib::api::{Category, Stream, XtreamClient};
+   |                                      ^^^^^^
+
+For more information about this error, try `rustc --explain E0433`.
+warning: `matrix-iptv` (bin "matrix-iptv") generated 2 warnings
+error: could not compile `matrix-iptv` (bin "matrix-iptv") due to 1 previous error; 2 warnings emitted

@@ -1,0 +1,21 @@
+# Rust
+/target
+Cargo.lock (if you want to keep it consistent, usually included for binaries but ignored for libs)
+
+# Config
+config.json
+*.json.bak
+
+# Logs
+*.log
+debug.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

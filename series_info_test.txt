@@ -1,0 +1,13 @@
+warning: unused variable: `idx`
+   --> src\ui.rs:799:16
+    |
+799 |         .map(|(idx, c)| {
+    |                ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `matrix-iptv` (lib) generated 1 warning
+    Finished `release` profile [optimized] target(s) in 0.22s
+     Running `target\release\test_series_info.exe`
+Category: |MULTI| APPLE+ SERIES
+Found 86 series

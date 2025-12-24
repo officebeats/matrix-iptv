@@ -1,0 +1,226 @@
+   Compiling vibe-iptv v0.1.0 (C:\Users\admin-beats\Documents\00 Vibe Coding\IPTV)
+warning: unused import: `std::path::PathBuf`
+ --> src\config.rs:3:5
+  |
+3 | use std::path::PathBuf;
+  |     ^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Text`
+ --> src\ui.rs:4:24
+  |
+4 |     text::{Line, Span, Text},
+  |                        ^^^^
+
+warning: unused import: `Datelike`
+   --> src\ui.rs:401:33
+    |
+401 |     use chrono::{Utc, TimeZone, Datelike};
+    |                                 ^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+ --> src\sports.rs:2:5
+  |
+2 | use std::collections::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `super::*`
+   --> src\parser.rs:716:9
+    |
+716 |     use super::*;
+    |         ^^^^^^^^
+
+warning: unused import: `chrono::Timelike`
+   --> src\parser.rs:717:9
+    |
+717 |     use chrono::Timelike;
+    |         ^^^^^^^^^^^^^^^^
+
+warning: unused import: `TimeZone`
+   --> src\ui.rs:401:23
+    |
+401 |     use chrono::{Utc, TimeZone, Datelike};
+    |                       ^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> src\app.rs:190:13
+    |
+190 |         let mut config = AppConfig::load().unwrap_or_default();
+    |             ----^^^^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `idx`
+   --> src\ui.rs:323:16
+    |
+323 |         .map(|(idx, c)| {
+    |                ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `idx`
+   --> src\ui.rs:434:16
+    |
+434 |         .map(|(idx, s)| {
+    |                ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+
+warning: unused variable: `idx`
+   --> src\ui.rs:686:16
+    |
+686 |         .map(|(idx, c)| {
+    |                ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+
+warning: unused variable: `idx`
+   --> src\ui.rs:780:16
+    |
+780 |         .map(|(idx, s)| {
+    |                ^^^ help: if this is intentional, prefix it with an underscore: `_idx`
+
+warning: function `render_series_categories_pane` is never used
+    --> src\ui.rs:1458:4
+     |
+1458 | fn render_series_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `render_series_streams_pane` is never used
+    --> src\ui.rs:1496:4
+     |
+1496 | fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
+     |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `vibe-iptv` (lib test) generated 12 warnings (run `cargo fix --lib -p vibe-iptv --tests` to apply 5 suggestions)
+warning: `vibe-iptv` (lib) generated 14 warnings (12 duplicates) (run `cargo fix --lib -p vibe-iptv` to apply 2 suggestions)
+warning: unused import: `AsyncAction`
+ --> src\bin\qa_bot.rs:2:42
+  |
+2 | use vibe_iptv::app::{App, CurrentScreen, AsyncAction};
+  |                                          ^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `vibe_iptv::api::XtreamClient`
+ --> src\bin\inspect_auth.rs:2:5
+  |
+2 | use vibe_iptv::api::XtreamClient;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `KeyModifiers` and `MouseEvent`
+ --> src\main.rs:5:90
+  |
+5 |     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind, MouseB...
+  |                                                                                          ^^^^^^^^^^^^  ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Stream`
+  --> src\main.rs:20:46
+   |
+20 | use vibe_iptv::api::{XtreamClient, Category, Stream};
+   |                                              ^^^^^^
+
+warning: unused import: `std::fs`
+ --> src\bin\verify_playback.rs:2:5
+  |
+2 | use std::fs;
+  |     ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `vibe_iptv::config::AppConfig`
+ --> src\bin\verify_playback.rs:3:5
+  |
+3 | use vibe_iptv::config::AppConfig;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `i`
+ --> src\bin\debug_playlists.rs:9:10
+  |
+9 |     for (i, acc) in config.accounts.iter().enumerate() {
+  |          ^ help: if this is intentional, prefix it with an underscore: `_i`
+  |
+  = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `config_path`
+  --> src\bin\verify_playback.rs:11:9
+   |
+11 |     let config_path = proj_dirs.config_dir().join("config.json");
+   |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_config_path`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `initial_idx`
+   --> src\bin\qa_bot.rs:110:34
+    |
+110 | ...                   let initial_idx = 0;
+    |                           ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_initial_idx`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `first_cat`
+   --> src\bin\qa_bot.rs:139:38
+    |
+139 |                          if let Some(first_cat) = app.series_categories.first() {
+    |                                      ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_first_cat`
+
+warning: unused variable: `expected_url`
+   --> src\bin\qa_bot.rs:150:34
+    |
+150 | ...                   let expected_url = format!("{}/series/{}/{}/{}.{}", base_clean, acc.username, acc.password, stream_id, ext);
+    |                           ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_expected_url`
+
+warning: unreachable pattern
+   --> src\main.rs:483:29
+    |
+477 | ...                   KeyCode::Char('s') => app.current_screen = CurrentScreen::Settings,
+    |                       ------------------ matches all the relevant values
+...
+483 | ...                   KeyCode::Char('s') => {
+    |                       ^^^^^^^^^^^^^^^^^^ no value can reach this
+    |
+    = note: `#[warn(unreachable_patterns)]` (part of `#[warn(unused)]`) on by default
+
+warning: unreachable pattern
+   --> src\main.rs:834:46
+    |
+790 | ...                   KeyCode::Tab => {
+    |                       ------------ matches all the relevant values
+...
+834 | ...                   KeyCode::Right | KeyCode::Tab | KeyCode::Char('s') => {
+    |                                        ^^^^^^^^^^^^ no value can reach this
+
+warning: `vibe-iptv` (bin "inspect_auth" test) generated 1 warning (run `cargo fix --bin "inspect_auth" --tests` to apply 1 suggestion)
+warning: `vibe-iptv` (bin "verify_playback" test) generated 3 warnings (run `cargo fix --bin "verify_playback" --tests` to apply 2 suggestions)
+warning: `vibe-iptv` (bin "debug_playlists" test) generated 1 warning
+warning: `vibe-iptv` (bin "qa_bot" test) generated 4 warnings (run `cargo fix --bin "qa_bot" --tests` to apply 1 suggestion)
+warning: `vibe-iptv` (bin "vibe-iptv" test) generated 4 warnings (run `cargo fix --bin "vibe-iptv" --tests` to apply 2 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3.46s
+     Running unittests src\lib.rs (C:\Users\admin-beats\Documents\00 Vibe Coding\IPTV\target\debug\deps\vibe_iptv-7ceb68481dbe718b.exe)
+
+running 1 test
+DEBUG: team1 before scrub: 'LIVE FOOTBALL 01 [EVENT ONLY] Aston Villa'
+DEBUG: team1 after scrub: 'Aston Villa'
+DEBUG: am_pm_re DID NOT match!
+DEBUG: start_time_raw for 'LIVE FOOTBALL 01 [EVENT ONLY] Aston Villa vs Sheffield Utd': ''
+
+thread 'parser::tests::test_parse_sports_event_short_time' (29708) panicked at src\parser.rs:802:9:
+assertion `left == right` failed
+  left: ""
+ right: "12:30 pm"
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test parser::tests::test_parse_sports_event_short_time ... FAILED
+
+failures:
+
+failures:
+    parser::tests::test_parse_sports_event_short_time
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--lib`

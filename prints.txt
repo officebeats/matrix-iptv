@@ -1,0 +1,12 @@
+src\main.rs:45:        println!("Checking configuration...");
+src\main.rs:50:        println!("Loaded config for {} accounts.", config.accounts.len());
+src\main.rs:57:         println!("Playing: {}", url);
+src\main.rs:93:        println!("{:?}", err);
+src\setup.rs:13:        println!("✓ mpv found.");
+src\setup.rs:17:    println!("x mpv NOT found.");
+src\setup.rs:20:        println!("Attempting to install mpv using winget...");
+src\setup.rs:23:        println!("Please install mpv manually (e.g., 'brew install mpv' or 'sudo apt install mpv').");
+src\setup.rs:47:    println!("Running: winget install -e --id \"9P3JFR0CLLL6\" --accept-source-agreements --accept-package-agreements");
+src\setup.rs:54:             println!("✓ mpv installed successfully.");
+src\setup.rs:59:    println!("Specific ID failed, trying generic 'mpv'...");
+src\setup.rs:65:        println!("✓ mpv installed successfully.");
