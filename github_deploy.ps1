@@ -1,4 +1,4 @@
-# Matrix IPTV - GitHub Deployment Automator (No-Emoji Version)
+# Matrix IPTV - GitHub Deployment Automator (Universal Fix)
 
 Write-Host "[*] Preparing Matrix IPTV for GitHub..." -ForegroundColor Cyan
 
@@ -57,7 +57,7 @@ else {
 }
 
 # 5. Setup Remote
-$remote = git remote get-url origin -ErrorAction SilentlyContinue
+$remote = git remote get-url origin 2>$null
 if (-not $remote) {
     Write-Host ""
     Write-Host "[!] ACTION REQUIRED: Link your GitHub account." -ForegroundColor Yellow
