@@ -4,23 +4,10 @@ use matrix_iptv_lib::api::XtreamClient;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let accounts = vec![
         (
-            "Trex",
-            "http://line.offcial-trex.pro",
-            "3a6aae52fb",
-            "39c165888139",
-        ),
-        ("TREX 2", "http://line.4smart.in", "02C298D", "QPA233U"),
-        (
-            "Strong 8k 2",
-            "http://susan47491.cdn-akm.me",
-            "5d267aa26217",
-            "934f8e20cc",
-        ),
-        (
-            "Promax 4k OTT",
-            "http://line.queen-4k.cc",
-            "11D246",
-            "41D1C5",
+            "Example Provider",
+            "http://example.com",
+            "username",
+            "password",
         ),
     ];
 

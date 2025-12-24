@@ -4,54 +4,16 @@ use matrix_iptv_lib::api::XtreamClient;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let accounts = vec![
         (
-            "Trex",
-            "http://line.offcial-trex.pro",
-            "3a6aae52fb",
-            "39c165888139",
-        ),
-        ("TREX 2", "http://line.4smart.in", "02C298D", "QPA233U"),
-        (
-            "Strong 8k 2",
-            "http://susan47491.cdn-akm.me",
-            "5d267aa26217",
-            "934f8e20cc",
+            "Example Provider 1",
+            "http://example.com",
+            "username",
+            "password",
         ),
         (
-            "Strong 8k3",
-            "http://darkteam.vip",
-            "13557354309740",
-            "32203023328226",
-        ),
-        (
-            "Strong 8k 4",
-            "http://bureau88228.cdn-only.me:80",
-            "0f6aa36ff19a",
-            "8af89f7179",
-        ),
-        (
-            "Premium Mega 4k FHD",
-            "http://smarters.live:80",
-            "ZPY7BP5A",
-            "ZX2JVDNQ",
-        ),
-        (
-            "Promax 4k OTT",
-            "http://line.queen-4k.cc",
-            "11D246",
-            "41D1C5",
-        ),
-        ("Mega OTT 1", "http://line.4smart.in", "45Z88W6", "Z7PHTX3"),
-        (
-            "Mega OTT 2",
-            "http://pwwkvdbn.qastertv.xyz",
-            "CZ2FWXLS",
-            "AQ9CFKL6",
-        ),
-        (
-            "Strong 8k 5",
-            "http://line.trx-ott.com",
-            "10af90a352",
-            "b616f33a73aa",
+            "Example Provider 2",
+            "http://example.org",
+            "username",
+            "password",
         ),
     ];
 

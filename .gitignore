@@ -1,14 +1,24 @@
 # Rust
 /target
-Cargo.lock (if you want to keep it consistent, usually included for binaries but ignored for libs)
+Cargo.lock
 
-# Config
+# Config (CRITICAL: DO NOT REMOVE)
 config.json
+*.json
 *.json.bak
+!Cargo.toml
+!package.json
 
-# Logs
+# Logs & Test Results
 *.log
+*.txt
 debug.txt
+strong_test_results.txt
+prints.txt
+build_output*.txt
+series_info_test.txt
+build_errors.txt
+strong_test_results.txt
 
 # OS
 .DS_Store

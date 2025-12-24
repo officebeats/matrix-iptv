@@ -11,9 +11,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config_path = proj_dirs.config_dir().join("config.json");
 
     // Use hardcoded credentials for testing
-    let base_url = "http://line.offcial-trex.pro".to_string();
-    let username = "3a6aae52fb".to_string();
-    let password = "39c165888139".to_string();
+    let base_url = "http://your-provider.com".to_string();
+    let username = "username".to_string();
+    let password = "password".to_string();
 
     println!("Testing with: {} / {}", base_url, username);
 

@@ -17,10 +17,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let trex_account = Account {
-            name: "Trex".to_string(),
-            base_url: "http://line.offcial-trex.pro".to_string(),
-            username: "3a6aae52fb".to_string(),
-            password: "39c165888139".to_string(),
+            name: "Trex Placeholder".to_string(),
+            base_url: "http://your-provider-url.com".to_string(),
+            username: "YOUR_USERNAME".to_string(),
+            password: "YOUR_PASSWORD".to_string(),
             epg_url: None,
             last_refreshed: None,
             total_channels: None,
@@ -30,10 +30,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         };
 
         let strong8k_account = Account {
-            name: "Strong 8K".to_string(),
-            base_url: "http://pledge78502.cdn-akm.me:80".to_string(),
-            username: "7c34d33c9e21".to_string(),
-            password: "037dacb169".to_string(),
+            name: "Strong 8K Placeholder".to_string(),
+            base_url: "http://your-provider-url.com".to_string(),
+            username: "YOUR_USERNAME".to_string(),
+            password: "YOUR_PASSWORD".to_string(),
             epg_url: None,
             last_refreshed: None,
             total_channels: None,
@@ -45,7 +45,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Remove existing if name matches
         config
             .accounts
-            .retain(|a| a.name != "Trex" && a.name != "Trex 3" && a.name != "Strong 8K");
+            .retain(|a| a.name != "Trex Placeholder" && a.name != "Strong 8K Placeholder");
         config.accounts.push(trex_account);
         config.accounts.push(strong8k_account);
 

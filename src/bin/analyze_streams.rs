@@ -4,9 +4,9 @@ use matrix_iptv_lib::api::XtreamClient;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Use the first working account to fetch some stream names
     let client = XtreamClient::new_with_doh(
-        "http://line.offcial-trex.pro".to_string(),
-        "3a6aae52fb".to_string(),
-        "39c165888139".to_string(),
+        "http://your-provider.com".to_string(),
+        "username".to_string(),
+        "password".to_string(),
     )
     .await?;
 
