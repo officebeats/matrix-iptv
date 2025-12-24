@@ -2,7 +2,12 @@
 
 Write-Host "[*] Preparing Matrix IPTV for GitHub..." -ForegroundColor Cyan
 
-# 1. Check for Git
+# 1. Safety Check
+if (Test-Path "config.json") {
+    Write-Host "[!] Warning: config.json detected. Ensuring it is ignored..." -ForegroundColor Yellow
+}
+
+# 2. Check for Git
 if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
     Write-Host "[!] Git is not installed. Please install it from git-scm.com first." -ForegroundColor Red
     exit
