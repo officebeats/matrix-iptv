@@ -10,7 +10,6 @@ try {
     $hasMpv = Get-Command mpv -ErrorAction SilentlyContinue
     if (-not $hasMpv) {
         Write-Host "[*] MPV Player not found. Attempting install..." -ForegroundColor Yellow
-        # Try winget but don't crash if it fails
         try { winget install info.mpv.mpv --accept-source-agreements --accept-package-agreements } catch { 
             Write-Host "[!] Auto-install failed. Please install MPV manually from mpv.io" -ForegroundColor Red
         }
@@ -42,7 +41,8 @@ try {
 
     # 5. Move Binary
     Write-Host "[*] Finalizing system files..." -ForegroundColor Cyan
-    Copy-Item "target\release\matrix-iptv.exe" "$destFolder\matrix-iptv.exe" -Force
+    $binaryPath = "$destFolder\matrix-iptv.exe"
+    Copy-Item "target\release\matrix-iptv.exe" $binaryPath -Force
 
     # 6. Global Path Support
     $oldPath = [Environment]::GetEnvironmentVariable("Path", "User")
@@ -56,10 +56,14 @@ try {
     Write-Host ""
     Write-Host "✅  SUCCESS: Matrix IPTV is installed!" -ForegroundColor Green
     Write-Host "--------------------------------------------------" -ForegroundColor Cyan
-    Write-Host "You can now open a NEW terminal and type: " -NoNewline
-    Write-Host "matrix-iptv" -ForegroundColor Green
+    Write-Host "Launching Matrix IPTV for the first time..." -ForegroundColor Yellow
+    
+    # Run the app
+    Start-Process $binaryPath
+    
     Write-Host "--------------------------------------------------" -ForegroundColor Cyan
-    Read-Host "Press Enter to finish"
+    Write-Host "Future usage: Simply type 'matrix-iptv' in any terminal." -ForegroundColor Gray
+    Read-Host "Press Enter to finish installer"
 
 }
 catch {

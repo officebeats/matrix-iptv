@@ -55,18 +55,19 @@ cargo build --release --bin matrix-iptv
 INSTALL_DIR="$HOME/.matrix-iptv"
 mkdir -p "$INSTALL_DIR"
 
+BINARY_PATH=""
 if [ "$IS_WINDOWS" = true ]; then
     echo -e "${CYAN}[*] Installing to $INSTALL_DIR (Windows)...${NC}"
-    cp target/release/matrix-iptv.exe "$INSTALL_DIR/matrix-iptv.exe"
-    # Update Windows User PATH via PowerShell (called from bash)
+    BINARY_PATH="$INSTALL_DIR/matrix-iptv.exe"
+    cp target/release/matrix-iptv.exe "$BINARY_PATH"
     powershell.exe -Command "[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';$HOME\.matrix-iptv', 'User')"
     echo -e "${GREEN}[+] Added to Windows User Path.${NC}"
 else
     echo -e "${CYAN}[*] Installing to $INSTALL_DIR...${NC}"
-    cp target/release/matrix-iptv "$INSTALL_DIR/matrix-iptv"
-    chmod +x "$INSTALL_DIR/matrix-iptv"
+    BINARY_PATH="$INSTALL_DIR/matrix-iptv"
+    cp target/release/matrix-iptv "$BINARY_PATH"
+    chmod +x "$BINARY_PATH"
 
-    # Update Unix PATH
     if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
         SHELL_CONFIG=""
         if [[ "$SHELL" == */zsh ]]; then SHELL_CONFIG="$HOME/.zshrc";
@@ -81,5 +82,12 @@ fi
 
 echo -e "\n${GREEN}[*] SUCCESS: Installation Complete!${NC}"
 echo "--------------------------------------------------"
-echo -e "Open a ${NC}NEW${NC} terminal and type: ${GREEN}matrix-iptv${NC}"
+echo -e "Launching Matrix IPTV for the first time..."
 echo "--------------------------------------------------"
+
+# Launch the app
+if [ "$IS_WINDOWS" = true ]; then
+    start "$BINARY_PATH"
+else
+    "$BINARY_PATH"
+fi
