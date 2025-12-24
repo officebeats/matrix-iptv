@@ -9,46 +9,46 @@ CYAN='\033[0;36m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}🟢 Initializing Matrix IPTV Installation...${NC}"
+echo -e "${GREEN}[*] Initializing Matrix IPTV Installation...${NC}"
 
 # 1. Determine OS
 OS="$(uname)"
 IS_WINDOWS=false
 case "$OS" in
     "Darwin")
-        echo -e "${CYAN}📡 System identified as macOS.${NC}"
+        echo -e "${CYAN}[*] System identified as macOS.${NC}"
         if ! command -v brew &> /dev/null; then
-            echo -e "${YELLOW}🟡 Homebrew not found. It's recommended for macOS.${NC}"
+            echo -e "${YELLOW}[!] Homebrew not found. It's recommended for macOS.${NC}"
         fi
         if ! command -v mpv &> /dev/null; then
-            echo -e "${YELLOW}🟡 MPV not found. Installing via brew...${NC}"
+            echo -e "${YELLOW}[!] MPV not found. Installing via brew...${NC}"
             if command -v brew &> /dev/null; then brew install mpv; fi
         fi
         ;;
     "Linux")
-        echo -e "${CYAN}📡 System identified as Linux.${NC}"
+        echo -e "${CYAN}[*] System identified as Linux.${NC}"
         if ! command -v mpv &> /dev/null; then
-            echo -e "${YELLOW}🟡 MPV not found. Please install it (e.g., sudo apt install mpv).${NC}"
+            echo -e "${YELLOW}[!] MPV not found. Please install it (e.g., sudo apt install mpv).${NC}"
         fi
         ;;
     *"MINGW"*|*"MSYS"*|*"CYGWIN"*)
-        echo -e "${CYAN}📡 System identified as Windows (Bash environment).${NC}"
+        echo -e "${CYAN}[*] System identified as Windows (Bash environment).${NC}"
         IS_WINDOWS=true
         ;;
     *)
-        echo -e "${RED}❌ Unsupported OS: $OS${NC}"
+        echo -e "${RED}[!] Unsupported OS: $OS${NC}"
         exit 1
         ;;
 esac
 
 # 2. Check for Rust
 if ! command -v cargo &> /dev/null; then
-    echo -e "${RED}❌ Rust/Cargo not found. Please install it from https://rustup.rs/ first.${NC}"
+    echo -e "${RED}[!] Rust/Cargo not found. Please install it from https://rustup.rs/ first.${NC}"
     exit 1
 fi
 
 # 3. Build the App
-echo -e "${CYAN}🚀 Building Matrix IPTV (Core Engine)...${NC}"
+echo -e "${CYAN}[*] Building Matrix IPTV (Core Engine)...${NC}"
 cargo build --release --bin matrix-iptv
 
 # 4. Install
@@ -56,13 +56,13 @@ INSTALL_DIR="$HOME/.matrix-iptv"
 mkdir -p "$INSTALL_DIR"
 
 if [ "$IS_WINDOWS" = true ]; then
-    echo -e "${CYAN}📦 Installing to $INSTALL_DIR (Windows)...${NC}"
+    echo -e "${CYAN}[*] Installing to $INSTALL_DIR (Windows)...${NC}"
     cp target/release/matrix-iptv.exe "$INSTALL_DIR/matrix-iptv.exe"
-    # Update Windows User PATH via PowerShell
+    # Update Windows User PATH via PowerShell (called from bash)
     powershell.exe -Command "[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';$HOME\.matrix-iptv', 'User')"
-    echo -e "${GREEN}✅ Added to Windows User Path.${NC}"
+    echo -e "${GREEN}[+] Added to Windows User Path.${NC}"
 else
-    echo -e "${CYAN}📦 Installing to $INSTALL_DIR...${NC}"
+    echo -e "${CYAN}[*] Installing to $INSTALL_DIR...${NC}"
     cp target/release/matrix-iptv "$INSTALL_DIR/matrix-iptv"
     chmod +x "$INSTALL_DIR/matrix-iptv"
 
@@ -74,12 +74,12 @@ else
         
         if [ -n "$SHELL_CONFIG" ]; then
             echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> "$SHELL_CONFIG"
-            echo -e "${GREEN}✅ Added to $SHELL_CONFIG.${NC}"
+            echo -e "${GREEN}[+] Added to $SHELL_CONFIG.${NC}"
         fi
     fi
 fi
 
-echo -e "\n${GREEN}🎉 INSTALLATION COMPLETE!${NC}"
+echo -e "\n${GREEN}[*] SUCCESS: Installation Complete!${NC}"
 echo "--------------------------------------------------"
 echo -e "Open a ${NC}NEW${NC} terminal and type: ${GREEN}matrix-iptv${NC}"
 echo "--------------------------------------------------"
