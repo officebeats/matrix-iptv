@@ -1,76 +1,96 @@
-# Matrix IPTV - Ultra-Safe Installer for Windows
+# Matrix IPTV - Zero-Click Universal Installer for Windows
+
 $ErrorActionPreference = "Stop"
+$installDir = "$HOME\.matrix-iptv"
+$repoUrl = "https://github.com/officebeats/matrix-iptv.git"
 
 try {
     Write-Host "--------------------------------------------------" -ForegroundColor Cyan
-    Write-Host "🟢  MATRIX IPTV SYSTEM INSTALLATION" -ForegroundColor Green
+    Write-Host "🟢  MATRIX IPTV SYSTEM INSTALLER" -ForegroundColor Green
     Write-Host "--------------------------------------------------" -ForegroundColor Cyan
 
-    # 1. Check for MPV
-    $hasMpv = Get-Command mpv -ErrorAction SilentlyContinue
-    if (-not $hasMpv) {
-        Write-Host "[*] MPV Player not found. Attempting install..." -ForegroundColor Yellow
-        try { winget install info.mpv.mpv --accept-source-agreements --accept-package-agreements } catch { 
-            Write-Host "[!] Auto-install failed. Please install MPV manually from mpv.io" -ForegroundColor Red
+    # 1. Ensure Install Directory Exists
+    if (-not (Test-Path $installDir)) {
+        New-Item -ItemType Directory -Path $installDir | Out-Null
+    }
+
+    # 2. Check for MPV (Video Engine)
+    if (-not (Get-Command mpv -ErrorAction SilentlyContinue)) {
+        Write-Host "[*] MPV Player not found. Installing system dependency..." -ForegroundColor Yellow
+        try { 
+            winget install info.mpv.mpv --accept-source-agreements --accept-package-agreements 
+            Write-Host "[+] MPV Installed successfully." -ForegroundColor Green
+        }
+        catch { 
+            Write-Host "[!] Auto-install failed. Please install MPV from mpv.io manually later." -ForegroundColor Red
         }
     }
-    else {
-        Write-Host "[+] MPV Player is already installed." -ForegroundColor Green
+
+    # 3. Check for Git (Source Control)
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Host "[*] Git not found. Installing dependency..." -ForegroundColor Yellow
+        winget install Git.Git --accept-source-agreements
+        Write-Host "[!] Git installed. You may need to RESTART your terminal after this finishes." -ForegroundColor Yellow
     }
 
-    # 2. Check for Rust
+    # 4. Check for Rust/Cargo (Compiler)
     if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-        Write-Host "--------------------------------------------------" -ForegroundColor Red
-        Write-Host "❌ ERROR: Rust/Cargo not found!" -ForegroundColor Red
-        Write-Host "To fix this, please visit: https://rustup.rs/" -ForegroundColor White
-        Write-Host "Install Rust, then run this command again." -ForegroundColor White
-        Write-Host "--------------------------------------------------" -ForegroundColor Red
+        Write-Host "[*] Rust Compiler not found. Installing language engine..." -ForegroundColor Yellow
+        # Use winget for Rustup (Official)
+        winget install Rust.Rustup --accept-source-agreements
+        Write-Host "--------------------------------------------------" -ForegroundColor Yellow
+        Write-Host "⚠️  ACTION REQUIRED: Rust has been installed." -ForegroundColor White
+        Write-Host "Please CLOSE this window and run the install command again" -ForegroundColor White
+        Write-Host "to finish the setup (Path needs to refresh)." -ForegroundColor White
+        Write-Host "--------------------------------------------------" -ForegroundColor Yellow
         Read-Host "Press Enter to exit"
-        return
+        exit
     }
 
-    # 3. Build Process
-    Write-Host "[*] Compiling high-performance engine..." -ForegroundColor Cyan
+    # 5. Fetch Latest Source
+    Set-Location $installDir
+    if (Test-Path "src-dev") {
+        Write-Host "[*] Updating local source code..." -ForegroundColor Cyan
+        Set-Location "src-dev"
+        git pull
+    }
+    else {
+        Write-Host "[*] Downloading Matrix IPTV system source..." -ForegroundColor Cyan
+        git clone $repoUrl "src-dev"
+        Set-Location "src-dev"
+    }
+
+    # 6. Build High-Performance Engine
+    Write-Host "[*] Compiling core engine (this may take a minute)..." -ForegroundColor Cyan
     cargo build --release --bin matrix-iptv
 
-    # 4. Installation Folders
-    $destFolder = "$HOME\.matrix-iptv"
-    if (-not (Test-Path $destFolder)) {
-        New-Item -ItemType Directory -Path $destFolder | Out-Null
-    }
-
-    # 5. Move Binary
-    Write-Host "[*] Finalizing system files..." -ForegroundColor Cyan
-    $binaryPath = "$destFolder\matrix-iptv.exe"
+    # 7. Finalize Paths
+    $binaryPath = "$installDir\matrix-iptv.exe"
     Copy-Item "target\release\matrix-iptv.exe" $binaryPath -Force
 
-    # 6. Global Path Support
-    $oldPath = [Environment]::GetEnvironmentVariable("Path", "User")
-    if ($oldPath -notlike "*$destFolder*") {
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath -notlike "*$installDir*") {
         Write-Host "[*] Enabling 'run-anywhere' capability..." -ForegroundColor Cyan
-        $newPath = "$oldPath;$destFolder"
-        [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-        $env:Path += ";$destFolder"
+        [Environment]::SetEnvironmentVariable("Path", $userPath + ";$installDir", "User")
+        $env:Path += ";$installDir"
     }
 
     Write-Host ""
-    Write-Host "✅  SUCCESS: Matrix IPTV is installed!" -ForegroundColor Green
+    Write-Host "✅  SUCCESS: Matrix IPTV is ready!" -ForegroundColor Green
     Write-Host "--------------------------------------------------" -ForegroundColor Cyan
-    Write-Host "Launching Matrix IPTV for the first time..." -ForegroundColor Yellow
-    
-    # Run the app
+    Write-Host "Launching Matrix IPTV..." -ForegroundColor Yellow
     Start-Process $binaryPath
     
     Write-Host "--------------------------------------------------" -ForegroundColor Cyan
-    Write-Host "Future usage: Simply type 'matrix-iptv' in any terminal." -ForegroundColor Gray
-    Read-Host "Press Enter to finish installer"
+    Write-Host "Usage: Just type 'matrix-iptv' in any future terminal." -ForegroundColor Gray
+    Read-Host "Press Enter to close installer"
 
 }
 catch {
     Write-Host ""
     Write-Host "--------------------------------------------------" -ForegroundColor Red
-    Write-Host "❌ CRITICAL ERROR DURING INSTALLATION" -ForegroundColor Red
-    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor White
+    Write-Host "❌ INSTALLER ERROR" -ForegroundColor Red
+    Write-Host "Details: $($_.Exception.Message)" -ForegroundColor White
     Write-Host "--------------------------------------------------" -ForegroundColor Red
-    Read-Host "Press Enter to exit"
+    Read-Host "Press Enter to close"
 }
