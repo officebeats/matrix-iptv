@@ -12,10 +12,10 @@ Matrix IPTV is cross-platform. Choose your system below for a one-command setup:
 
 ### **Windows**
 
-1. Open **PowerShell** (Click Start, type `powershell`).
+1. Open **Command Prompt** or **PowerShell**.
 2. Paste this command and hit **Enter**:
-   ```powershell
-   irm https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install.ps1 | iex
+   ```cmd
+   powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install.ps1 | iex"
    ```
 
 ### **Mac & Linux**
