@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Matrix IPTV - Universal Installer (Mac, Linux, Windows-Bash)
+# Matrix IPTV - Zero-Click Universal Installer (Mac, Linux)
 set -e
 
 GREEN='\033[0;32m'
@@ -11,83 +11,74 @@ NC='\033[0m' # No Color
 
 echo -e "${GREEN}[*] Initializing Matrix IPTV Installation...${NC}"
 
-# 1. Determine OS
+# 1. Dependency: Homebrew (Mac only)
 OS="$(uname)"
-IS_WINDOWS=false
-case "$OS" in
-    "Darwin")
-        echo -e "${CYAN}[*] System identified as macOS.${NC}"
-        if ! command -v brew &> /dev/null; then
-            echo -e "${YELLOW}[!] Homebrew not found. It's recommended for macOS.${NC}"
-        fi
-        if ! command -v mpv &> /dev/null; then
-            echo -e "${YELLOW}[!] MPV not found. Installing via brew...${NC}"
-            if command -v brew &> /dev/null; then brew install mpv; fi
-        fi
-        ;;
-    "Linux")
-        echo -e "${CYAN}[*] System identified as Linux.${NC}"
-        if ! command -v mpv &> /dev/null; then
-            echo -e "${YELLOW}[!] MPV not found. Please install it (e.g., sudo apt install mpv).${NC}"
-        fi
-        ;;
-    *"MINGW"*|*"MSYS"*|*"CYGWIN"*)
-        echo -e "${CYAN}[*] System identified as Windows (Bash environment).${NC}"
-        IS_WINDOWS=true
-        ;;
-    *)
-        echo -e "${RED}[!] Unsupported OS: $OS${NC}"
-        exit 1
-        ;;
-esac
-
-# 2. Check for Rust
-if ! command -v cargo &> /dev/null; then
-    echo -e "${RED}[!] Rust/Cargo not found. Please install it from https://rustup.rs/ first.${NC}"
-    exit 1
-fi
-
-# 3. Build the App
-echo -e "${CYAN}[*] Building Matrix IPTV (Core Engine)...${NC}"
-cargo build --release --bin matrix-iptv
-
-# 4. Install
-INSTALL_DIR="$HOME/.matrix-iptv"
-mkdir -p "$INSTALL_DIR"
-
-BINARY_PATH=""
-if [ "$IS_WINDOWS" = true ]; then
-    echo -e "${CYAN}[*] Installing to $INSTALL_DIR (Windows)...${NC}"
-    BINARY_PATH="$INSTALL_DIR/matrix-iptv.exe"
-    cp target/release/matrix-iptv.exe "$BINARY_PATH"
-    powershell.exe -Command "[Environment]::SetEnvironmentVariable('Path', [Environment]::GetEnvironmentVariable('Path', 'User') + ';$HOME\.matrix-iptv', 'User')"
-    echo -e "${GREEN}[+] Added to Windows User Path.${NC}"
-else
-    echo -e "${CYAN}[*] Installing to $INSTALL_DIR...${NC}"
-    BINARY_PATH="$INSTALL_DIR/matrix-iptv"
-    cp target/release/matrix-iptv "$BINARY_PATH"
-    chmod +x "$BINARY_PATH"
-
-    if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
-        SHELL_CONFIG=""
-        if [[ "$SHELL" == */zsh ]]; then SHELL_CONFIG="$HOME/.zshrc";
-        elif [[ "$SHELL" == */bash ]]; then SHELL_CONFIG="$HOME/.bashrc"; fi
-        
-        if [ -n "$SHELL_CONFIG" ]; then
-            echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> "$SHELL_CONFIG"
-            echo -e "${GREEN}[+] Added to $SHELL_CONFIG.${NC}"
-        fi
+if [[ "$OS" == "Darwin" ]]; then
+    if ! command -v brew &> /dev/null; then
+        echo -e "${YELLOW}[!] Homebrew not found. It's required for Mac dependencies. Installing...${NC}"
+        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" || true
     fi
 fi
 
-echo -e "\n${GREEN}[*] SUCCESS: Installation Complete!${NC}"
-echo "--------------------------------------------------"
-echo -e "Launching Matrix IPTV for the first time..."
-echo "--------------------------------------------------"
-
-# Launch the app
-if [ "$IS_WINDOWS" = true ]; then
-    start "$BINARY_PATH"
-else
-    "$BINARY_PATH"
+# 2. Dependency: Git
+if ! command -v git &> /dev/null; then
+    echo -e "${YELLOW}[!] Git not found. Installing...${NC}"
+    if [[ "$OS" == "Darwin" ]]; then brew install git;
+    elif command -v apt-get &> /dev/null; then sudo apt-get update && sudo apt-get install -y git;
+    fi
 fi
+
+# 3. Dependency: MPV
+if ! command -v mpv &> /dev/null; then
+    echo -e "${YELLOW}[!] MPV Player not found. Installing...${NC}"
+    if [[ "$OS" == "Darwin" ]]; then brew install mpv;
+    elif command -v apt-get &> /dev/null; then sudo apt-get install -y mpv;
+    fi
+fi
+
+# 4. Dependency: Rust
+if ! command -v cargo &> /dev/null; then
+    echo -e "${YELLOW}[!] Rust Compiler not found. Installing...${NC}"
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    source "$HOME/.cargo/env"
+fi
+
+# 5. Setup Workspace
+INSTALL_DIR="$HOME/.matrix-iptv"
+mkdir -p "$INSTALL_DIR"
+REPO_URL="https://github.com/officebeats/matrix-iptv.git"
+
+if [ ! -d "$INSTALL_DIR/src-dev/.git" ]; then
+    echo -e "${CYAN}[*] Downloading Matrix IPTV system source...${NC}"
+    git clone "$REPO_URL" "$INSTALL_DIR/src-dev"
+else
+    echo -e "${CYAN}[*] Updating system source...${NC}"
+    cd "$INSTALL_DIR/src-dev" && git pull
+fi
+
+# 6. Build
+cd "$INSTALL_DIR/src-dev"
+echo -e "${CYAN}[*] Compiling high-performance engine...${NC}"
+cargo build --release --bin matrix-iptv
+
+# 7. Finalize
+BINARY_DEST="$INSTALL_DIR/matrix-iptv"
+cp target/release/matrix-iptv "$BINARY_DEST"
+chmod +x "$BINARY_DEST"
+
+# Update PATH
+if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+    SHELL_CONFIG=""
+    if [[ "$SHELL" == */zsh ]]; then SHELL_CONFIG="$HOME/.zshrc"
+    elif [[ "$SHELL" == */bash ]]; then SHELL_CONFIG="$HOME/.bashrc"
+    else SHELL_CONFIG="$HOME/.profile"; fi
+    
+    echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> "$SHELL_CONFIG"
+    echo -e "${GREEN}[+] Added to $SHELL_CONFIG.${NC}"
+fi
+
+echo -e "\n${GREEN}[*] SUCCESS: Matrix IPTV is ready!${NC}"
+echo "--------------------------------------------------"
+echo -e "Launching Matrix IPTV..."
+"$BINARY_DEST"
+echo "--------------------------------------------------"
