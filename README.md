@@ -15,7 +15,7 @@ Matrix IPTV is cross-platform. Choose your system below for a one-command setup:
 1. Open **PowerShell** (Click Start, type `powershell`).
 2. Paste this command and hit **Enter**:
    ```powershell
-   irm https://raw.githubusercontent.com/vibe-coding/matrix-iptv/main/install.ps1 | iex
+   irm https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install.ps1 | iex
    ```
 
 ### **Mac & Linux**
@@ -23,7 +23,7 @@ Matrix IPTV is cross-platform. Choose your system below for a one-command setup:
 1. Open your **Terminal**.
 2. Paste this command and hit **Enter**:
    ```bash
-   curl -sSL https://raw.githubusercontent.com/vibe-coding/matrix-iptv/main/install.sh | bash
+   curl -sSL https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install.sh | bash
    ```
 
 _(Note: These scripts automatically install dependencies like MPV, check for Rust, build the app, and allow you to run it by simply typing `matrix-iptv` from anywhere.)_
@@ -93,7 +93,7 @@ Matrix IPTV is designed to be used without a mouse. It's faster that way.
 
 - **Build manually**: `cargo build --release`
 - **Release Automation**: This repo includes GitHub Actions to automatically build Windows/Mac/Linux binaries.
-- **GitHub**: [github.com/vibe-coding/matrix-iptv](https://github.com/vibe-coding/matrix-iptv)
+- **GitHub**: [github.com/officebeats/matrix-iptv](https://github.com/officebeats/matrix-iptv)
 
 ---
 
