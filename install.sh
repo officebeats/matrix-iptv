@@ -65,5 +65,5 @@ echo "--------------------------------------------------"
 echo -e "Launching Matrix IPTV (Press Ctrl+C to exit)..."
 echo "--------------------------------------------------"
 
-# Run the app with explicit terminal input
-"$INSTALL_DIR/matrix-iptv" < /dev/tty
+# Run the app
+"$INSTALL_DIR/matrix-iptv"
