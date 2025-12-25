@@ -9,10 +9,7 @@ CYAN='\033[0;36m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}[*] Initializing Matrix IPTV Instant Installation (v1.0.0)...${NC}"
-
-# Ensure we have a real terminal for the app launch later
-[ -t 0 ] || exec < /dev/tty
+echo -e "${GREEN}[*] Initializing Matrix IPTV Instant Installation (v1.0.3)...${NC}"
 
 # 1. Detect OS
 OS="$(uname)"
@@ -69,4 +66,4 @@ echo -e "Launching Matrix IPTV (Press Ctrl+C to exit)..."
 echo "--------------------------------------------------"
 
 # Run the app with explicit terminal input
-"$INSTALL_DIR/matrix-iptv"
+"$INSTALL_DIR/matrix-iptv" < /dev/tty
