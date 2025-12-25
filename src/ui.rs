@@ -9,9 +9,18 @@ use ratatui::{
 
 // ... existing code ...
 
-const MATRIX_GREEN: Color = Color::Rgb(0, 255, 70);
-const DARK_GREEN: Color = Color::White;
-const BRIGHT_GREEN: Color = Color::Rgb(180, 255, 180);
+// Cyberpunk Theme Palette
+const CP_GREEN: Color = Color::Rgb(57, 255, 20);   // Primary Neon Green
+const CP_PINK: Color = Color::Rgb(255, 20, 147);   // Secondary Neon Pink
+const CP_CYAN: Color = Color::Rgb(255, 255, 0);    // Accents (MAPPED TO YELLOW TO AVOID BLUE)
+const CP_YELLOW: Color = Color::Rgb(255, 255, 0);  // Warnings / Highlights
+const CP_WHITE: Color = Color::White;              // Main Text
+const CP_GRAY: Color = Color::Rgb(180, 180, 180);  // Dimmed Text (Light Gray)
+
+// Mappings to existing names to maintain code compatibility but switch theme
+const MATRIX_GREEN: Color = CP_GREEN;
+const DARK_GREEN: Color = CP_WHITE; // Using White for borders/secondary for maximum contrast
+const BRIGHT_GREEN: Color = CP_YELLOW; // Using Yellow for highlights (No Blue)
 
 // Helper function to calculate the maximum display width of category names
 fn calculate_max_category_width(categories: &[crate::api::Category], total_width: u16) -> u16 {
@@ -211,7 +220,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
             Span::raw("  "),
-            Span::styled("[Esc] Cancel", Style::default().fg(Color::LightBlue)),
+            Span::styled("[Esc] Cancel", Style::default().fg(CP_YELLOW)),
         ]))
         .alignment(Alignment::Center);
         f.render_widget(buttons, layout[1]);
@@ -317,48 +326,68 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
         ));
     }
 
-    // Breadcrumb extension with Node and Stats
-    spans.push(separator.clone());
-    let node_name = if let Some(_) = &app.current_client {
-        app.config
-            .accounts
-            .get(app.selected_account_index)
-            .map(|a| a.name.to_uppercase())
-            .unwrap_or("GUEST".to_string())
-    } else {
-        "UNCONNECTED".to_string()
-    };
-    spans.push(Span::styled(
-        format!("NODE: {}", node_name),
-        Style::default()
-            .fg(BRIGHT_GREEN)
-            .add_modifier(Modifier::BOLD),
-    ));
-
-    if let Some(info) = &app.account_info {
-        spans.push(separator.clone());
-        let active = info
-            .active_cons
-            .as_ref()
-            .map(|v| v.to_string().replace("\"", ""))
-            .unwrap_or("0".to_string());
-        let total = info
-            .max_connections
-            .as_ref()
-            .map(|v| v.to_string().replace("\"", ""))
-            .unwrap_or("1".to_string());
-        spans.push(Span::styled(
-            format!("CONS: {}/{}", active, total),
-            Style::default().fg(MATRIX_GREEN),
-        ));
-    }
-
     let tabs = Paragraph::new(Line::from(spans)).block(
         Block::default()
             .borders(Borders::BOTTOM)
             .border_style(Style::default().fg(DARK_GREEN)),
     );
     f.render_widget(tabs, chunks[0]);
+
+    // Render Stats / Info in Top Right (chunks[1])
+    if let Some(_) = &app.current_client {
+        let name = app.config
+            .accounts
+            .get(app.selected_account_index)
+            .map(|a| a.name.clone())
+            .unwrap_or("Unknown".to_string());
+            
+        let time = chrono::Local::now().format("%I:%M %p (%Z)").to_string();
+        
+        let (active, total, exp) = if let Some(info) = &app.account_info {
+            let a = info.active_cons.as_ref().map(|v| match v {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Number(n) => n.to_string(),
+                _ => "0".to_string(),
+            }).unwrap_or("0".to_string());
+            
+            let t = info.max_connections.as_ref().map(|v| match v {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Number(n) => n.to_string(),
+                _ => "1".to_string(),
+            }).unwrap_or("1".to_string());
+            
+            let e = info.exp_date.as_ref().map(|v| {
+                 let s = match v {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    _ => return "N/A".to_string(),
+                 };
+                 
+                 // Try to parse timestamp if it is one, otherwise return string
+                 if let Ok(ts) = s.parse::<i64>() {
+                     if let Some(dt) = chrono::DateTime::from_timestamp(ts, 0) {
+                         return dt.format("%Y-%m-%d").to_string();
+                     }
+                 }
+                 s
+            }).unwrap_or("N/A".to_string());
+            (a, t, e)
+        } else {
+            ("?".to_string(), "?".to_string(), "N/A".to_string())
+        };
+
+        let stats_text = format!("{} | {} | 📅 {} | 👥 {}/{} ", name, time, exp, active, total);
+        
+        let stats = Paragraph::new(stats_text)
+            .alignment(Alignment::Right)
+            .style(Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD))
+            .block(
+                 Block::default()
+                    .borders(Borders::BOTTOM)
+                    .border_style(Style::default().fg(DARK_GREEN))
+            );
+        f.render_widget(stats, chunks[1]);
+    }
 }
 
 fn render_split_view(f: &mut Frame, app: &mut App, area: Rect, is_vod: bool) {
@@ -1469,6 +1498,14 @@ fn render_login(f: &mut Frame, app: &App, area: Rect) {
         ),
         chunks[0],
     );
+    
+    // Show cursor for active field when editing
+    if mode && matches!(active, LoginField::Name) {
+        let cursor_x = chunks[0].x + app.input_name.visual_cursor() as u16 + 1;
+        let cursor_y = chunks[0].y + 1;
+        f.set_cursor(cursor_x, cursor_y);
+    }
+
     f.render_widget(
         render_input(
             "Server URL",
@@ -1478,6 +1515,13 @@ fn render_login(f: &mut Frame, app: &App, area: Rect) {
         ),
         chunks[1],
     );
+    
+    if mode && matches!(active, LoginField::Url) {
+        let cursor_x = chunks[1].x + app.input_url.visual_cursor() as u16 + 1;
+        let cursor_y = chunks[1].y + 1;
+        f.set_cursor(cursor_x, cursor_y);
+    }
+
     f.render_widget(
         render_input(
             "Username",
@@ -1487,6 +1531,13 @@ fn render_login(f: &mut Frame, app: &App, area: Rect) {
         ),
         chunks[2],
     );
+    
+    if mode && matches!(active, LoginField::Username) {
+        let cursor_x = chunks[2].x + app.input_username.visual_cursor() as u16 + 1;
+        let cursor_y = chunks[2].y + 1;
+        f.set_cursor(cursor_x, cursor_y);
+    }
+
     let mask: String = app.input_password.value().chars().map(|_| '*').collect();
     f.render_widget(
         render_input(
@@ -1497,6 +1548,13 @@ fn render_login(f: &mut Frame, app: &App, area: Rect) {
         ),
         chunks[3],
     );
+    
+    if mode && matches!(active, LoginField::Password) {
+        let cursor_x = chunks[3].x + app.input_password.visual_cursor() as u16 + 1;
+        let cursor_y = chunks[3].y + 1;
+        f.set_cursor(cursor_x, cursor_y);
+    }
+
     f.render_widget(
         render_input(
             "EPG URL (Optional)",
@@ -1506,6 +1564,12 @@ fn render_login(f: &mut Frame, app: &App, area: Rect) {
         ),
         chunks[4],
     );
+    
+    if mode && matches!(active, LoginField::EpgUrl) {
+        let cursor_x = chunks[4].x + app.input_epg_url.visual_cursor() as u16 + 1;
+        let cursor_y = chunks[4].y + 1;
+        f.set_cursor(cursor_x, cursor_y);
+    }
 
     if let Some(err) = &app.login_error {
         let error_msg = Paragraph::new(format!(" // ERROR_OVERRIDE: {}", err)).style(
@@ -1784,7 +1848,7 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         .block(
             Block::default()
                 .borders(Borders::TOP)
-                .border_style(Style::default().fg(Color::DarkGray)),
+                .border_style(Style::default().fg(CP_GRAY)),
         );
     f.render_widget(p, area);
 }
@@ -2308,29 +2372,22 @@ fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Create list items with proper styling
     let items: Vec<ListItem> = vec![
-        (0, "🔴", "LIVE CHANNELS", "[Red Pill]", Color::Red),
-        (1, "🔵", "MOVIES (VOD)", "[Blue Pill]", Color::LightBlue), // Changed to LightBlue for better visibility
-        (2, "🐇", "SERIES (VOD)", "[White Rabbit]", Color::White),
+        (0, "(=====)", "LIVE CHANNELS", "[Red Pill]", Color::Red),
+        (1, "(=====)", "MOVIES (VOD)", "[Blue Pill]", Color::Cyan), // User allowed Blue for this ref
+        (2, "(=====)", "SERIES (VOD)", "[White Rabbit]", Color::White),
     ]
+    .into_iter()
     .into_iter()
     .map(|(i, icon, label, sub, color)| {
         let is_selected = i == selected;
         
-        // If selected, we want BLACK text on the GREEN background for maximum contrast.
-        // If not selected, we use the specific colors on standard background.
-        let (icon_style, text_style, sub_style) = if is_selected {
-            (
-                Style::default().fg(Color::Black),
-                Style::default().fg(Color::Black).add_modifier(Modifier::BOLD),
-                Style::default().fg(Color::Black),
-            )
+        let icon_style = Style::default().fg(color).add_modifier(Modifier::BOLD);
+        let text_style = if is_selected {
+            Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
         } else {
-            (
-                Style::default().fg(color),
-                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
-                Style::default().fg(color),
-            )
+            Style::default().fg(CP_WHITE)
         };
+        let sub_style = Style::default().fg(color);
 
         ListItem::new(Line::from(vec![
             Span::styled(format!("  {} ", icon), icon_style),
@@ -2343,21 +2400,19 @@ fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
     let list = List::new(items)
         .highlight_style(
             Style::default()
-                .bg(MATRIX_GREEN)
-                .fg(Color::Black)
+                .fg(MATRIX_GREEN)
                 .add_modifier(Modifier::BOLD)
         )
-        .highlight_symbol("» ");
+        .highlight_symbol(">> ");
 
     let mut list_state = ratatui::widgets::ListState::default();
     list_state.select(Some(selected));
     
     f.render_stateful_widget(list, layout[1], &mut list_state);
-
     // Quote based on selection
     let (quote, color) = match selected {
         0 => ("\"You take the red pill... you stay in Wonderland,\nand I show you how deep the rabbit hole goes.\"", Color::Red),
-        1 => ("\"You take the blue pill... the story ends,\nyou wake up in your bed and believe whatever you want to believe.\"", Color::LightBlue),
+        1 => ("\"You take the blue pill... the story ends,\nyou wake up in your bed and believe whatever you want to believe.\"", Color::Cyan),
         _ => ("\"Follow the white rabbit.\"", Color::White),
     };
 

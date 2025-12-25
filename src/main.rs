@@ -264,15 +264,35 @@ async fn run_app<B: ratatui::backend::Backend>(
                     // Reset search state when fresh categories are loaded
                     app.search_mode = false;
                     app.search_query.clear();
-                    // Inject "All Channels" category
-                    cats.insert(
-                        0,
-                        Category {
-                            category_id: "ALL".to_string(),
-                            category_name: "All Channels".to_string(),
-                            parent_id: serde_json::Value::Number(serde_json::Number::from(0)),
-                        },
-                    );
+
+                    // Apply American Mode Filtering & Cleaning if enabled
+                    if app.config.american_mode {
+                        cats = cats.into_iter()
+                            .filter(|c| c.category_id == "ALL" || parser::is_american_live(&c.category_name))
+                            .map(|mut c| {
+                                c.category_name = parser::clean_american_name(&c.category_name);
+                                c
+                            })
+                            .collect();
+                    }
+
+                    // Optimization: Populate search_name once
+                    for c in &mut cats {
+                        c.search_name = c.category_name.to_lowercase();
+                    }
+
+                    // Inject "All Channels" category if not already present/filtered
+                    if !cats.iter().any(|c| c.category_id == "ALL") {
+                        cats.insert(
+                            0,
+                            Category {
+                                category_id: "ALL".to_string(),
+                                category_name: "All Channels".to_string(),
+                                parent_id: serde_json::Value::Number(serde_json::Number::from(0)),
+                                search_name: "all channels".to_string(),
+                            },
+                        );
+                    }
 
                     // Sort categories: favorites first, then alphabetically
                     cats.sort_by(|a, b| {
@@ -300,7 +320,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                         app.selected_category_index = 0;
                         app.category_list_state.select(Some(0));
                         // If we are coming from Login/Home initially, go to Content Type Selection
-                        if app.current_screen != CurrentScreen::Categories && app.current_screen != CurrentScreen::Streams {
+                        if app.current_screen == CurrentScreen::Home || app.current_screen == CurrentScreen::Login {
                             app.current_screen = CurrentScreen::ContentTypeSelection;
                         }
                     }
@@ -308,6 +328,10 @@ async fn run_app<B: ratatui::backend::Backend>(
                 }
 
                 AsyncAction::StreamsLoaded(mut streams) => {
+                    // Optimization: Populate search_name once
+                    for s in &mut streams {
+                        s.search_name = s.name.to_lowercase();
+                    }
                     // Sort streams: favorites first, then alphabetically
                     streams.sort_by(|a, b| {
                         let a_id = match &a.stream_id {
@@ -334,12 +358,17 @@ async fn run_app<B: ratatui::backend::Backend>(
                     app.all_streams = streams.clone();
                     app.streams = streams;
                     app.current_screen = CurrentScreen::Streams;
+                    app.active_pane = Pane::Streams;
                     app.state_loading = false;
                     app.selected_stream_index = 0;
                     app.stream_list_state.select(Some(0));
                 }
 
                 AsyncAction::VodCategoriesLoaded(mut cats) => {
+                     // Optimization: Populate search_name once
+                    for c in &mut cats {
+                        c.search_name = c.category_name.to_lowercase();
+                    }
                     // Reset search state when fresh VOD categories are loaded
                     app.search_mode = false;
                     app.search_query.clear();
@@ -350,6 +379,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                             category_id: "ALL".to_string(),
                             category_name: "All Movies".to_string(),
                             parent_id: serde_json::Value::Number(serde_json::Number::from(0)),
+                            search_name: "all movies".to_string(),
                         },
                     );
 
@@ -379,13 +409,17 @@ async fn run_app<B: ratatui::backend::Backend>(
                         app.selected_vod_category_index = 0;
                         app.vod_category_list_state.select(Some(0));
                         // If we are coming from Login/Home initially, go to Content Type Selection
-                        if app.current_screen != CurrentScreen::VodCategories && app.current_screen != CurrentScreen::VodStreams && app.current_screen != CurrentScreen::ContentTypeSelection {
+                        if app.current_screen == CurrentScreen::Home || app.current_screen == CurrentScreen::Login {
                              app.current_screen = CurrentScreen::ContentTypeSelection;
                         }
                     }
                     app.state_loading = false;
                 }
                 AsyncAction::VodStreamsLoaded(mut streams) => {
+                    // Optimization: Populate search_name once
+                    for s in &mut streams {
+                        s.search_name = s.name.to_lowercase();
+                    }
                     // Sort streams: favorites first, then alphabetically
                     streams.sort_by(|a, b| {
                         let a_id = match &a.stream_id {
@@ -412,6 +446,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                     app.all_vod_streams = streams.clone();
                     app.vod_streams = streams;
                     app.current_screen = CurrentScreen::VodStreams;
+                    app.active_pane = Pane::Streams;
                     app.state_loading = false;
                     app.selected_vod_stream_index = 0;
                     app.vod_stream_list_state.select(Some(0));
@@ -421,6 +456,10 @@ async fn run_app<B: ratatui::backend::Backend>(
                     // Reset search state when fresh Series categories are loaded
                     app.search_mode = false;
                     app.search_query.clear();
+                    // Optimization: Populate search_name once
+                    for c in &mut cats {
+                        c.search_name = c.category_name.to_lowercase();
+                    }
                     // Sort categories: favorites first, then alphabetically
                     cats.sort_by(|a, b| {
                         let a_fav = app.config.favorites.vod_categories.contains(&a.category_id);
@@ -439,13 +478,17 @@ async fn run_app<B: ratatui::backend::Backend>(
                         app.selected_series_category_index = 0;
                         app.series_category_list_state.select(Some(0));
                         // If we are coming from Login/Home initially, go to Content Type Selection
-                        if app.current_screen != CurrentScreen::SeriesCategories && app.current_screen != CurrentScreen::SeriesStreams && app.current_screen != CurrentScreen::ContentTypeSelection {
+                        if app.current_screen == CurrentScreen::Home || app.current_screen == CurrentScreen::Login {
                              app.current_screen = CurrentScreen::ContentTypeSelection;
                         }
                     }
                     app.state_loading = false;
                 }
                 AsyncAction::SeriesStreamsLoaded(mut streams) => {
+                    // Optimization: Populate search_name once
+                    for s in &mut streams {
+                        s.search_name = s.name.to_lowercase();
+                    }
                     // Sort streams: favorites first, then alphabetically
                     streams.sort_by(|a, b| {
                         let a_id = match &a.stream_id {
@@ -472,6 +515,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                     app.all_series_streams = streams.clone();
                     app.series_streams = streams;
                     app.current_screen = CurrentScreen::SeriesStreams;
+                    app.active_pane = Pane::Streams;
                     app.state_loading = false;
                     app.selected_series_stream_index = 0;
                     app.series_stream_list_state.select(Some(0));
@@ -1475,8 +1519,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                                                         [app.selected_category_index]
                                                         .category_id
                                                         .clone();
-                                                    // Auto-focus streams pane for better UX
-                                                    app.active_pane = Pane::Streams;
+                                                    // Auto-focus streams pane happens in StreamsLoaded to prevent lag
+                                                    // app.active_pane = Pane::Streams;
 
                                                     if let Some(client) = &app.current_client {
                                                         let client = client.clone();

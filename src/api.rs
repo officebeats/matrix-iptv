@@ -5,6 +5,8 @@ pub struct Category {
     pub category_id: String,
     pub category_name: String,
     pub parent_id: ::serde_json::Value, // frequent null or 0
+    #[serde(skip)]
+    pub search_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -31,6 +33,9 @@ pub struct Stream {
     
     #[serde(skip)]
     pub cached_parsed: Option<Box<crate::parser::ParsedStream>>,
+
+    #[serde(skip)]
+    pub search_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

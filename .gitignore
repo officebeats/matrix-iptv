@@ -29,3 +29,7 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Setup scripts (contain private credentials)
+setup_test_playlists.ps1
+test_config.json

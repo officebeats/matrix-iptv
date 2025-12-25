@@ -598,7 +598,7 @@ impl App {
                             .all_categories
                             .iter()
                             .filter(|c| {
-                                let matches_query = c.category_name.to_lowercase().contains(&query);
+                                let matches_query = c.search_name.contains(&query);
                                 if !american_mode {
                                     return matches_query;
                                 }
@@ -634,7 +634,7 @@ impl App {
                             .all_streams
                             .iter()
                             .filter(|s| {
-                                let matches_query = s.name.to_lowercase().contains(&query);
+                                let matches_query = s.search_name.contains(&query);
                                 if !american_mode {
                                     return matches_query;
                                 }
@@ -647,10 +647,8 @@ impl App {
                                     s_mod.name = clean_american_name(&s_mod.name);
                                 }
                                 
-                                // Eagerly parse and cache to allow instant scrolling
-                                let effective_name = s_mod.stream_display_name.as_deref().unwrap_or(&s_mod.name).to_string();
-                                s_mod.cached_parsed = Some(Box::new(parse_stream(&effective_name, provider_tz.as_deref())));
-                                
+                                // Optimization: Do NOT eager parse here. UI will parse visible items.
+                                // Reducing work from O(N) to O(Visible_Window) prevents navigation lag.
                                 s_mod
                             })
                             .collect();
@@ -675,7 +673,7 @@ impl App {
                             .all_vod_categories
                             .iter()
                             .filter(|c| {
-                                let matches_query = c.category_name.to_lowercase().contains(&query);
+                                let matches_query = c.search_name.contains(&query);
                                 if !american_mode {
                                     return matches_query;
                                 }
@@ -705,7 +703,7 @@ impl App {
                             .all_vod_streams
                             .iter()
                             .filter(|s| {
-                                let matches_query = s.name.to_lowercase().contains(&query);
+                                let matches_query = s.search_name.contains(&query);
                                 if !american_mode {
                                     return matches_query;
                                 }
@@ -743,7 +741,7 @@ impl App {
                             .all_series_categories
                             .iter()
                             .filter(|c| {
-                                let matches_query = c.category_name.to_lowercase().contains(&query);
+                                let matches_query = c.search_name.contains(&query);
                                 if !american_mode {
                                     return matches_query;
                                 }

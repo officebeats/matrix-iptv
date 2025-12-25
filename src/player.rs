@@ -55,12 +55,13 @@ impl Player {
             .arg("--msg-level=all=no")
             .arg("--term-status-msg=no")
             .arg("--hwdec=auto")
-            // Premium playback settings
-            .arg("--interpolation=yes")
-            .arg("--interpolation-threshold=-1")
-            .arg("--tscale=mitchell")
-            .arg("--tscale-blur=0.7")
-            .arg("--video-sync=display-resample")
+            .arg("--hwdec=auto")
+            // Add User-Agent to masquerade as a browser (crucial for some IPTV providers)
+            .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
+            // Keep window open if playback fails to see error (optional, maybe off for prod)
+            .arg("--keep-open=no")
+            // Standard options
+            .arg("--keep-open=no") // Close on finish
             // IPC for status monitoring
             .arg(format!("--input-ipc-server={}", pipe_name))
             .spawn();

@@ -52,6 +52,10 @@ static CLEAN_UNITED_STATES_BRACKETS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i
 static CLEAN_UNITED_STATES_END: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s+UNITED\s+STATES\s*$").unwrap());
 static CLEAN_UNITED_STATES_START: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^UNITED\s+STATES\s+").unwrap());
 
+// Additional cleaning patterns for @ symbols and USA variations
+static CLEAN_AT_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^\s*@+\s*").unwrap());
+static CLEAN_USA_PIPE_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^USA\s*\|\s*").unwrap());
+static CLEAN_USA_STANDALONE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\bUSA\b\s*[-|:]*\s*").unwrap());
 
 
 /// Parsed category with extracted metadata
@@ -167,26 +171,130 @@ pub fn country_flag(country: &str) -> &'static str {
 
 /// Check if a name/category is American live content
 pub fn is_american_live(name: &str) -> bool {
-    let n = name.to_uppercase();
+    // Normalize special separators first
+    let n = name.to_uppercase().replace("▎", "|");
     
-    // Explicit exclusions for international content labeled with USA keywords
-    if n.contains("AR |") || n.contains("AR|") {
-        return false;
+    // Explicit exclusions for international/foreign content
+    let foreign_patterns = [
+        // Arabic/Middle East/Asia
+        "AR |", "AR|", "|AR|", " AR ", "ARAB", "ARABIC",
+        "SA |", "SA|", "|SA|", "SAUDI", "KSA",
+        "AE |", "AE|", "|AE|", "UAE", "EMIRATES",
+        "QA |", "QA|", "|QA|", "QATAR",
+        "KW |", "KW|", "|KW|", "KUWAIT",
+        "IR |", "IR|", "|IR|", "IRAN", "PERSIAN",
+        "AF |", "AF|", "|AF|", "AFGHAN",
+        "IL |", "IL|", "|IL|", "ISRAEL",
+        "TR |", "TR|", "|TR|", "TURK", "TURKEY",
+        "IN |", "IN|", "|IN|", "INDIA", "INDIAN", "HINDI", "PUNJABI", "TAMIL", "TELUGU", "MALAYALAM", "KANNADA", "MARATHI", "BENGALI",
+        "PK |", "PK|", "|PK|", "PAKISTAN", "URDU",
+        "BD |", "BD|", "|BD|", "BANGLA", "BANGLADESH",
+        "CN |", "CN|", "|CN|", "CHINA", "CHINESE", "MANDARIN", "CANTONESE",
+        "JP |", "JP|", "|JP|", "JAPAN",
+        "KR |", "KR|", "|KR|", "KOREA",
+        "PH |", "PH|", "|PH|", "PHILIPPINES", "FILIPINO", "PINOY",
+        "VN |", "VN|", "|VN|", "VIETNAM",
+        "TH |", "TH|", "|TH|", "THAILAND",
+        "ID |", "ID|", "|ID|", "INDONESIA",
+        "MY |", "MY|", "|MY|", "MALAYSIA",
+
+        // Europe (Extended)
+        "UK |", "UK|", "|UK|", " UK ", "UNITED KINGDOM", "BRITISH",
+        "IE |", "IE|", "|IE|", " IE ", "IRELAND", "IRISH",
+        "SC |", "SC|", "|SC|", "SCOTLAND", "SPFL",
+        "FR |", "FR|", "|FR|", " FR ", "FRANCE", "FRENCH",
+        "DE |", "DE|", "|DE|", " DE ", "GERMAN", "GERMANY", "DEUTSCH",
+        "IT |", "IT|", "|IT|", " IT ", "ITALY", "ITALIAN",
+        "ES |", "ES|", "|ES|", " ES ", "SPAIN", "SPANISH", "ESPANA", "LATINO",
+        "PT |", "PT|", "|PT|", " PT ", "PORTUGAL", "PORTUGUESE", "BRAZIL",
+        "NL |", "NL|", "|NL|", " NL ", "DUTCH", "NETHERLANDS",
+        "PL |", "PL|", "|PL|", " PL ", "POLAND", "POLISH",
+        "RU |", "RU|", "|RU|", " RU ", "RUSSIA", "RUSSIAN",
+        "GR |", "GR|", "|GR|", " GR ", "GREECE", "GREEK",
+        "AL |", "AL|", "|AL|", "ALBANIA", "ALBANIAN", "SHQIP",
+        "RO |", "RO|", "|RO|", "ROMANIA", "ROMANIAN",
+        "BG |", "BG|", "|BG|", "BULGARIA", "BULGARIAN",
+        "HU |", "HU|", "|HU|", "HUNGARY", "HUNGARIAN", "MAGYAR",
+        "CZ |", "CZ|", "|CZ|", "CZECH",
+        "SK |", "SK|", "|SK|", "SLOVAKIA",
+        "HR |", "HR|", "|HR|", "CROATIA", "HRVATSKA",
+        "RS |", "RS|", "|RS|", "SERBIA", "SRPSKI",
+        "BA |", "BA|", "|BA|", "BOSNIA",
+        "MK |", "MK|", "|MK|", "MACEDONIA",
+        "SI |", "SI|", "|SI|", "SLOVENIA",
+        "EX-YU", "BALKAN", "YUGOSLAVIA",
+        "CY |", "CY|", "|CY|", "CYPRUS",
+        "MT |", "MT|", "|MT|", "MALTA",
+        "UA |", "UA|", "|UA|", "UKRAINE", "UKRAINIAN",
+
+        // Africa
+        "AFRICA", "NIGERIA", "KENYA", "SOMALIA", "ZA |", "ZA|", "SOUTH AFRICA",
+        
+        // Latin/South America (Generic)
+        "LATAM", "SUR AMERICA", "ARGENTINA", "COLOMBIA", "MEXICO", "CHILE", "PERU",
+        
+        // Adult
+        "XXX", "ADULT", "18+", "PORN",
+    ];
+    
+    for pattern in foreign_patterns {
+        if n.contains(pattern) {
+            return false;
+        }
     }
 
-    // Use more specific matching
-    n.contains("USA") || 
-    n.contains(" US") || 
-    n.starts_with("US") || 
-    n.contains("|US") ||
-    n.contains("AMERICA") ||
-    n.contains(" UNITED STATES")
+    // Default: Allow everything else (Exclusion-based filtering)
+    // This ensures we don't accidentally hide valid categories like "General", "Kids", "News"
+    true
 }
+
 
 /// Clean up names in American Mode by removing redundant labels
 /// Uses pre-compiled static regexes for performance
 pub fn clean_american_name(name: &str) -> String {
-    let mut cleaned = name.to_string();
+    // Normalize special separators first
+    let name_norm = name.replace("▎", "|");
+    let mut cleaned = name_norm.to_string();
+    
+    // Remove all @ symbols globally (handles Promax styling like "@Sports" and "XMAS @CHRISTMAS")
+    cleaned = cleaned.replace("@", "");
+
+    // Remove BOM and common hidden characters
+    cleaned = cleaned.replace("\u{feff}", "").replace("\u{200b}", "");
+
+    // Remove "u " prefix (specific to Mega OTT)
+    if cleaned.trim_start().to_lowercase().starts_with("u ") {
+        if let Some(rest) = cleaned.trim_start()[2..].trim_start().to_string().into() {
+             cleaned = rest;
+        }
+    } else if cleaned.trim_start().to_lowercase().starts_with("u  ") {
+        // Handle double space if distinct
+         if let Some(rest) = cleaned.trim_start()[3..].trim_start().to_string().into() {
+             cleaned = rest;
+        }
+    }
+    // Aggressive manual check for "u " prefix
+    if let Some(first) = cleaned.chars().next() {
+        if first == 'u' || first == 'U' {
+            // Check second char
+            let second = cleaned.chars().nth(1);
+            match second {
+                Some(c) if !c.is_alphanumeric() => {
+                    // It's u followed by space, symbol, etc. Strip it.
+                    // find index of second char to safely slice
+                    if let Some((idx, _)) = cleaned.char_indices().nth(1) {
+                         cleaned = cleaned[idx..].trim_start_matches(|c: char| !c.is_alphanumeric()).to_string();
+                    }
+                },
+                Some(_) => {}, // u followed by letter/number (e.g. "Unique"), keep it
+                None => {}, // Just "u", keep it? Or drop?
+            }
+        }
+    }
+
+    // General regex for "u " prefix (handles optional leading non-word chars like hidden symbols)
+    let re_u = Regex::new(r"(?i)^[\W_]*u\s+").unwrap();
+    cleaned = re_u.replace(&cleaned, "").to_string();
     
     // First pass: remove common leading language prefixes using pre-compiled regexes
     cleaned = CLEAN_PREFIX_EN.replace_all(&cleaned, "").to_string();
@@ -195,6 +303,7 @@ pub fn clean_american_name(name: &str) -> String {
     cleaned = CLEAN_PREFIX_ENGLISH.replace_all(&cleaned, "").to_string();
     cleaned = CLEAN_PREFIX_AMERICA.replace_all(&cleaned, "").to_string();
     cleaned = CLEAN_UNITED_STATES_PREFIX.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_USA_PIPE_PREFIX.replace_all(&cleaned, "").to_string();
     
     // Remove keywords in brackets: (USA), [USA], {USA}, (EN), etc.
     cleaned = CLEAN_ENGLISH_BRACKETS.replace_all(&cleaned, " ").to_string();
@@ -224,6 +333,9 @@ pub fn clean_american_name(name: &str) -> String {
     cleaned = CLEAN_TRAILING_HYPHEN.replace_all(&cleaned, "").to_string();
     cleaned = CLEAN_LEADING_HYPHEN.replace_all(&cleaned, "").to_string();
     cleaned = CLEAN_MULTI_SPACE.replace_all(&cleaned, " ").to_string();
+    
+    // Remove any remaining standalone USA mentions (for Mega OTT style names like "USA Sports")
+    cleaned = CLEAN_USA_STANDALONE.replace_all(&cleaned, "").to_string();
     
     // Extra cleanup for leading/trailing colons and dots
     cleaned = cleaned.trim_start_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
