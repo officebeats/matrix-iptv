@@ -3,8 +3,11 @@ name: Release Build
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -60,7 +63,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            matrix-iptv-windows/matrix-iptv-windows.exe
+            matrix-iptv-windows.exe/matrix-iptv-windows.exe
             matrix-iptv-linux/matrix-iptv-linux
             matrix-iptv-macos/matrix-iptv-macos
         env:
