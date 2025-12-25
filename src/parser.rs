@@ -111,6 +111,31 @@ pub fn country_flag(country: &str) -> &'static str {
     }
 }
 
+/// Check if a name/category is American live content
+pub fn is_american_live(name: &str) -> bool {
+    let upper = name.to_uppercase();
+    // Keywords for USA
+    upper.contains("USA") || 
+    upper.contains(" US") || 
+    upper.starts_with("US") ||
+    upper.contains("|US") ||
+    upper.contains("AMERICA") ||
+    upper.contains(" AM") ||
+    upper.starts_with("AM") ||
+    upper.contains("|AM")
+}
+
+/// Check if a name/category is English VOD content
+pub fn is_english_vod(name: &str) -> bool {
+    let upper = name.to_uppercase();
+    // Keywords for English
+    upper.contains("ENGLISH") || 
+    upper.contains("|EN|") || 
+    upper.contains(" EN") ||
+    upper.starts_with("EN") ||
+    upper.contains("-EN")
+}
+
 /// Parse a category name to extract metadata
 pub fn parse_category(name: &str) -> ParsedCategory {
     let original = name.to_string();

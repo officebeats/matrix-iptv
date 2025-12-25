@@ -1,13 +1,13 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Category {
     pub category_id: String,
     pub category_name: String,
     pub parent_id: ::serde_json::Value, // frequent null or 0
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Stream {
     pub num: Option<serde_json::Value>, // Sometimes int, sometimes string, sometimes missing
     pub name: String,

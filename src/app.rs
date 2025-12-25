@@ -1,5 +1,6 @@
 use crate::api::{Category, ServerInfo, Stream, UserInfo, XtreamClient};
 use crate::config::AppConfig;
+use crate::parser::{is_american_live, is_english_vod};
 use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
 use tui_input::Input;
@@ -351,6 +352,14 @@ impl App {
                 "Set Timezone (Current: {})",
                 self.config.get_user_timezone()
             ),
+            format!(
+                "American Playlist Mode: {}",
+                if self.config.american_mode {
+                    "ON 🇺🇸"
+                } else {
+                    "OFF"
+                }
+            ),
             "Matrix Rain Screensaver".to_string(),
             "About".to_string(),
         ];
@@ -580,12 +589,20 @@ impl App {
 
         match self.current_screen {
             CurrentScreen::Categories | CurrentScreen::Streams => {
+                let american_mode = self.config.american_mode;
                 match self.active_pane {
                     Pane::Categories => {
                         self.categories = self
                             .all_categories
                             .iter()
-                            .filter(|c| c.category_name.to_lowercase().contains(&query))
+                            .filter(|c| {
+                                let matches_query = c.category_name.to_lowercase().contains(&query);
+                                if !american_mode {
+                                    return matches_query;
+                                }
+                                // American Mode: USA channels & All Channels
+                                matches_query && (c.category_id == "ALL" || is_american_live(&c.category_name))
+                            })
                             .cloned()
                             .collect();
                         // Reset selection
@@ -600,7 +617,14 @@ impl App {
                         self.streams = self
                             .all_streams
                             .iter()
-                            .filter(|s| s.name.to_lowercase().contains(&query))
+                            .filter(|s| {
+                                let matches_query = s.name.to_lowercase().contains(&query);
+                                if !american_mode {
+                                    return matches_query;
+                                }
+                                // American Mode: USA streams
+                                matches_query && is_american_live(&s.name)
+                            })
                             .cloned()
                             .collect();
                         // Reset selection
@@ -617,12 +641,20 @@ impl App {
                 }
             }
             CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
+                let american_mode = self.config.american_mode;
                 match self.active_pane {
                     Pane::Categories => {
                         self.vod_categories = self
                             .all_vod_categories
                             .iter()
-                            .filter(|c| c.category_name.to_lowercase().contains(&query))
+                            .filter(|c| {
+                                let matches_query = c.category_name.to_lowercase().contains(&query);
+                                if !american_mode {
+                                    return matches_query;
+                                }
+                                // American Mode: English VOD categories
+                                matches_query && is_english_vod(&c.category_name)
+                            })
                             .cloned()
                             .collect();
                         // Reset selection
@@ -637,7 +669,14 @@ impl App {
                         self.vod_streams = self
                             .all_vod_streams
                             .iter()
-                            .filter(|s| s.name.to_lowercase().contains(&query))
+                            .filter(|s| {
+                                let matches_query = s.name.to_lowercase().contains(&query);
+                                if !american_mode {
+                                    return matches_query;
+                                }
+                                // American Mode: English VOD streams
+                                matches_query && is_english_vod(&s.name)
+                            })
                             .cloned()
                             .collect();
                         // Reset selection
@@ -654,12 +693,20 @@ impl App {
                 }
             }
             CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
+                let american_mode = self.config.american_mode;
                 match self.active_pane {
                     Pane::Categories => {
                         self.series_categories = self
                             .all_series_categories
                             .iter()
-                            .filter(|c| c.category_name.to_lowercase().contains(&query))
+                            .filter(|c| {
+                                let matches_query = c.category_name.to_lowercase().contains(&query);
+                                if !american_mode {
+                                    return matches_query;
+                                }
+                                // American Mode: English Series categories
+                                matches_query && is_english_vod(&c.category_name)
+                            })
                             .cloned()
                             .collect();
                         self.selected_series_category_index = 0;
@@ -673,7 +720,14 @@ impl App {
                         self.series_streams = self
                             .all_series_streams
                             .iter()
-                            .filter(|s| s.name.to_lowercase().contains(&query))
+                            .filter(|s| {
+                                let matches_query = s.name.to_lowercase().contains(&query);
+                                if !american_mode {
+                                    return matches_query;
+                                }
+                                // American Mode: English Series streams
+                                matches_query && is_english_vod(&s.name)
+                            })
                             .cloned()
                             .collect();
                         self.selected_series_stream_index = 0;

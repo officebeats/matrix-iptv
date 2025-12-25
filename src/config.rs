@@ -36,6 +36,8 @@ pub struct AppConfig {
     pub favorites: Favorites,
     #[serde(default)]
     pub timezone: Option<String>,
+    #[serde(default)]
+    pub american_mode: bool,
 }
 
 impl AppConfig {

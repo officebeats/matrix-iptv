@@ -243,6 +243,10 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
             .fg(MATRIX_GREEN)
             .add_modifier(Modifier::BOLD),
     )];
+    
+    if app.config.american_mode {
+        spans.push(Span::styled(" 🇺🇸 ", Style::default().add_modifier(Modifier::BOLD)));
+    }
 
     // Live TV Tab
     spans.push(separator.clone());

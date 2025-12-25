@@ -2410,20 +2410,26 @@ async fn run_app<B: ratatui::backend::Backend>(
                                                         app.current_screen =
                                                             CurrentScreen::TimezoneSettings;
                                                     }
-                                                    2 => {
-                                                        // Matrix Rain Screensaver
-                                                        app.show_matrix_rain = true;
-                                                        app.matrix_rain_screensaver_mode = true; // Screensaver mode (no logo)
-                                                        app.matrix_rain_start_time = Some(std::time::Instant::now());
-                                                        // Rain will be initialized automatically in the render loop
-                                                    }
-                                                    3 => {
-                                                        // About
-                                                        app.settings_state =
-                                                            matrix_iptv_lib::app::SettingsState::About;
-                                                    }
-                                                    _ => {}
-                                                }
+                                                     2 => {
+                                                         // American Mode
+                                                         app.config.american_mode = !app.config.american_mode;
+                                                         let _ = app.config.save();
+                                                         app.refresh_settings_options();
+                                                         app.update_search();
+                                                     }
+                                                     3 => {
+                                                         // Matrix Rain Screensaver
+                                                         app.show_matrix_rain = true;
+                                                         app.matrix_rain_screensaver_mode = true; // Screensaver mode (no logo)
+                                                         app.matrix_rain_start_time = Some(std::time::Instant::now());
+                                                     }
+                                                     4 => {
+                                                         // About
+                                                         app.settings_state =
+                                                             matrix_iptv_lib::app::SettingsState::About;
+                                                     }
+                                                     _ => {}
+                                                 }
                                             }
                                         }
                                         _ => {}
