@@ -2270,22 +2270,37 @@ fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Create list items with proper styling
     let items: Vec<ListItem> = vec![
+        (0, "🔴", "LIVE CHANNELS", "[Red Pill]", Color::Red),
+        (1, "🔵", "MOVIES (VOD)", "[Blue Pill]", Color::LightBlue), // Changed to LightBlue for better visibility
+        (2, "🐇", "SERIES (VOD)", "[White Rabbit]", Color::White),
+    ]
+    .into_iter()
+    .map(|(i, icon, label, sub, color)| {
+        let is_selected = i == selected;
+        
+        // If selected, we want BLACK text on the GREEN background for maximum contrast.
+        // If not selected, we use the specific colors on standard background.
+        let (icon_style, text_style, sub_style) = if is_selected {
+            (
+                Style::default().fg(Color::Black),
+                Style::default().fg(Color::Black).add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Black),
+            )
+        } else {
+            (
+                Style::default().fg(color),
+                Style::default().fg(Color::White).add_modifier(Modifier::BOLD),
+                Style::default().fg(color),
+            )
+        };
+
         ListItem::new(Line::from(vec![
-            Span::styled("  🔴 ", Style::default().fg(Color::Red)),
-            Span::styled("LIVE CHANNELS", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-            Span::styled(" [Red Pill]", Style::default().fg(Color::Red)),
-        ])),
-        ListItem::new(Line::from(vec![
-            Span::styled("  🔵 ", Style::default().fg(Color::Blue)),
-            Span::styled("MOVIES (VOD)", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-            Span::styled(" [Blue Pill]", Style::default().fg(Color::Blue)),
-        ])),
-        ListItem::new(Line::from(vec![
-            Span::styled("  🐇 ", Style::default().fg(Color::White)),
-            Span::styled("SERIES (VOD)", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-            Span::styled(" [White Rabbit]", Style::default().fg(Color::White)),
-        ])),
-    ];
+            Span::styled(format!("  {} ", icon), icon_style),
+            Span::styled(label, text_style),
+            Span::styled(format!(" {}", sub), sub_style),
+        ]))
+    })
+    .collect();
 
     let list = List::new(items)
         .highlight_style(
@@ -2304,7 +2319,7 @@ fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
     // Quote based on selection
     let (quote, color) = match selected {
         0 => ("\"You take the red pill... you stay in Wonderland,\nand I show you how deep the rabbit hole goes.\"", Color::Red),
-        1 => ("\"You take the blue pill... the story ends,\nyou wake up in your bed and believe whatever you want to believe.\"", Color::Blue),
+        1 => ("\"You take the blue pill... the story ends,\nyou wake up in your bed and believe whatever you want to believe.\"", Color::LightBlue),
         _ => ("\"Follow the white rabbit.\"", Color::White),
     };
 
