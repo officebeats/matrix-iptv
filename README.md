@@ -8,7 +8,9 @@ Matrix IPTV is a blazing fast, keyboard-driven interface for browsing Live TV, M
 
 ## 🚀 Instant Installation
 
-Matrix IPTV is cross-platform. Copy and paste the command for your system below. The installer will automatically check for dependencies (MPV, Rust, Git) and set everything up for you.
+Matrix IPTV is cross-platform. Copy and paste the command for your system below. The installer will automatically download the pre-built binary and set everything up for you in seconds.
+
+**Prerequisite:** You just need [MPV Player](https://mpv.io) installed (the installer will try to do this for you).
 
 ### **Windows**
 
@@ -35,6 +37,24 @@ The installer will automatically launch the app for you the first time. For futu
 ```bash
 matrix-iptv
 ```
+
+---
+
+## ✨ Why so fast?
+
+We now provide **pre-compiled binary releases**. This means:
+
+- ❌ **No Rust** required for the user.
+- ❌ **No Git** required for the user.
+- ❌ **No waiting** for compilation.
+- ✅ **Instant** setup and launch.
+
+---
+
+## 🛠️ Troubleshooting
+
+- **404 Error**: If you see a 404 error during installation, ensure your GitHub repository is set to **Public** so the script can download the files.
+- **MPV Error**: If video doesn't play, ensure [MPV](https://mpv.io) is installed and available in your system path.
 
 ---
 

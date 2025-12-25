@@ -1,73 +1,50 @@
-# Matrix IPTV - Zero-Click Universal Installer for Windows
+# Matrix IPTV - Instant Binary Installer for Windows
 
 $ErrorActionPreference = "Stop"
 $installDir = "$HOME\.matrix-iptv"
-$repoUrl = "https://github.com/officebeats/matrix-iptv.git"
+$binaryUrl = "https://github.com/officebeats/matrix-iptv/releases/latest/download/matrix-iptv-windows.exe"
 
 try {
     Write-Host "--------------------------------------------------" -ForegroundColor Cyan
-    Write-Host "🟢  MATRIX IPTV SYSTEM INSTALLER" -ForegroundColor Green
+    Write-Host "🟢  MATRIX IPTV INSTANT INSTALLER" -ForegroundColor Green
     Write-Host "--------------------------------------------------" -ForegroundColor Cyan
 
-    # 1. Ensure Install Directory Exists
+    # 1. Setup Folder
     if (-not (Test-Path $installDir)) {
         New-Item -ItemType Directory -Path $installDir | Out-Null
     }
 
-    # 2. Check for MPV (Video Engine)
+    # 2. Runtime Dependency: MPV
     if (-not (Get-Command mpv -ErrorAction SilentlyContinue)) {
-        Write-Host "[*] MPV Player not found. Installing system dependency..." -ForegroundColor Yellow
+        Write-Host "[*] MPV Player not found (needed for video). Installing..." -ForegroundColor Yellow
         try { 
             winget install info.mpv.mpv --accept-source-agreements --accept-package-agreements 
-            Write-Host "[+] MPV Installed successfully." -ForegroundColor Green
         }
         catch { 
             Write-Host "[!] Auto-install failed. Please install MPV from mpv.io manually later." -ForegroundColor Red
         }
     }
 
-    # 3. Check for Git (Source Control)
-    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-        Write-Host "[*] Git not found. Installing dependency..." -ForegroundColor Yellow
-        winget install Git.Git --accept-source-agreements
-        Write-Host "[!] Git installed. You may need to RESTART your terminal after this finishes." -ForegroundColor Yellow
+    # 3. Download Binary (Instant)
+    Write-Host "[*] Downloading high-performance binary (Instant)..." -ForegroundColor Cyan
+    $destPath = "$installDir\matrix-iptv.exe"
+    
+    # Try to download. Note: Requires the repo to be PUBLIC or have a release.
+    try {
+        Invoke-WebRequest -Uri $binaryUrl -OutFile $destPath -Headers @{"Cache-Control" = "no-cache" }
     }
-
-    # 4. Check for Rust/Cargo (Compiler)
-    if (-not (Get-Command cargo -ErrorAction SilentlyContinue)) {
-        Write-Host "[*] Rust Compiler not found. Installing language engine..." -ForegroundColor Yellow
-        # Use winget for Rustup (Official)
-        winget install Rust.Rustup --accept-source-agreements
-        Write-Host "--------------------------------------------------" -ForegroundColor Yellow
-        Write-Host "⚠️  ACTION REQUIRED: Rust has been installed." -ForegroundColor White
-        Write-Host "Please CLOSE this window and run the install command again" -ForegroundColor White
-        Write-Host "to finish the setup (Path needs to refresh)." -ForegroundColor White
-        Write-Host "--------------------------------------------------" -ForegroundColor Yellow
+    catch {
+        Write-Host "--------------------------------------------------" -ForegroundColor Red
+        Write-Host "❌ DOWNLOAD ERROR" -ForegroundColor Red
+        Write-Host "The pre-built binary wasn't found. This usually means:" -ForegroundColor White
+        Write-Host "1. The GitHub repository is still PRIVATE." -ForegroundColor White
+        Write-Host "2. No 'Release' has been created yet on GitHub." -ForegroundColor White
+        Write-Host "--------------------------------------------------" -ForegroundColor Red
         Read-Host "Press Enter to exit"
-        exit
+        return
     }
 
-    # 5. Fetch Latest Source
-    Set-Location $installDir
-    if (Test-Path "src-dev") {
-        Write-Host "[*] Updating local source code..." -ForegroundColor Cyan
-        Set-Location "src-dev"
-        git pull
-    }
-    else {
-        Write-Host "[*] Downloading Matrix IPTV system source..." -ForegroundColor Cyan
-        git clone $repoUrl "src-dev"
-        Set-Location "src-dev"
-    }
-
-    # 6. Build High-Performance Engine
-    Write-Host "[*] Compiling core engine (this may take a minute)..." -ForegroundColor Cyan
-    cargo build --release --bin matrix-iptv
-
-    # 7. Finalize Paths
-    $binaryPath = "$installDir\matrix-iptv.exe"
-    Copy-Item "target\release\matrix-iptv.exe" $binaryPath -Force
-
+    # 4. Global Path Support
     $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if ($userPath -notlike "*$installDir*") {
         Write-Host "[*] Enabling 'run-anywhere' capability..." -ForegroundColor Cyan
@@ -79,18 +56,14 @@ try {
     Write-Host "✅  SUCCESS: Matrix IPTV is ready!" -ForegroundColor Green
     Write-Host "--------------------------------------------------" -ForegroundColor Cyan
     Write-Host "Launching Matrix IPTV..." -ForegroundColor Yellow
-    Start-Process $binaryPath
+    Start-Process $destPath
     
     Write-Host "--------------------------------------------------" -ForegroundColor Cyan
     Write-Host "Usage: Just type 'matrix-iptv' in any future terminal." -ForegroundColor Gray
-    Read-Host "Press Enter to close installer"
+    Read-Host "Press Enter to finish"
 
 }
 catch {
-    Write-Host ""
-    Write-Host "--------------------------------------------------" -ForegroundColor Red
-    Write-Host "❌ INSTALLER ERROR" -ForegroundColor Red
-    Write-Host "Details: $($_.Exception.Message)" -ForegroundColor White
-    Write-Host "--------------------------------------------------" -ForegroundColor Red
-    Read-Host "Press Enter to close"
+    Write-Host "❌ CRITICAL ERROR: $($_.Exception.Message)" -ForegroundColor Red
+    Read-Host "Press Enter to exit"
 }
