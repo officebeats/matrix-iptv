@@ -985,6 +985,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     // Reset search state
                                     app.search_mode = false;
                                     app.search_query.clear();
+                                    app.update_search();
                                 }
                                 KeyCode::Char('2') => {
                                     app.current_screen = CurrentScreen::VodCategories;
@@ -992,6 +993,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     // Reset search state
                                     app.search_mode = false;
                                     app.search_query.clear();
+                                    app.update_search();
                                 },
                                 KeyCode::Char('3') => {
                                     app.current_screen = CurrentScreen::SeriesCategories;
@@ -999,6 +1001,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     // Reset search state
                                     app.search_mode = false;
                                     app.search_query.clear();
+                                    app.update_search();
                                 },
                                 KeyCode::Char('j') | KeyCode::Down => {
                                     app.selected_content_type_index = (app.selected_content_type_index + 1) % 3;
@@ -1018,6 +1021,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                             // Reset search state
                                             app.search_mode = false;
                                             app.search_query.clear();
+                                            app.update_search();
                                         }
                                         1 => {
                                             app.current_screen = CurrentScreen::VodCategories;
@@ -1025,6 +1029,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                             // Reset search state
                                             app.search_mode = false;
                                             app.search_query.clear();
+                                            app.update_search();
                                         }
                                         2 => {
                                             app.current_screen = CurrentScreen::SeriesCategories;
@@ -1032,6 +1037,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                             // Reset search state
                                             app.search_mode = false;
                                             app.search_query.clear();
+                                            app.update_search();
                                         }
                                         _ => {}
                                     }
@@ -1319,8 +1325,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                                             // Going back to Home, clear all state
                                             app.streams.clear();
                                             app.all_streams.clear();
-                                            app.categories.clear();
-                                            app.all_categories.clear();
                                             app.selected_stream_index = 0;
                                             app.selected_category_index = 0;
                                             app.stream_list_state.select(None);
@@ -1594,8 +1598,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                                         app.update_search();
                                     }
                                     KeyCode::Esc | KeyCode::Backspace => {
-                                        app.vod_categories.clear();
-                                        app.all_vod_categories.clear();
                                         app.vod_streams.clear();
                                         app.all_vod_streams.clear();
                                         app.selected_vod_category_index = 0;
@@ -1971,8 +1973,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     }
                                     KeyCode::Esc => {
                                         // Clear series state and go back to content selection
-                                        app.series_categories.clear();
-                                        app.all_series_categories.clear();
                                         app.series_streams.clear();
                                         app.all_series_streams.clear();
                                         app.selected_series_category_index = 0;
@@ -1986,8 +1986,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     }
                                     KeyCode::Backspace => {
                                         // Navigate back
-                                        app.series_categories.clear();
-                                        app.all_series_categories.clear();
                                         app.series_streams.clear();
                                         app.all_series_streams.clear();
                                         app.selected_series_category_index = 0;

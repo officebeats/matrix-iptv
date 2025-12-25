@@ -33,7 +33,7 @@ impl Quality {
         match self {
             Quality::UHD4K => Color::Magenta,
             Quality::FHD => Color::Green,
-            Quality::HD => Color::Blue,
+            Quality::HD => Color::LightBlue,
             Quality::SD => Color::DarkGray,
         }
     }
@@ -73,7 +73,7 @@ impl ContentType {
 /// Get color for country/region code
 pub fn country_color(country: &str) -> Color {
     match country.to_uppercase().as_str() {
-        "US" | "USA" | "AM" => Color::Blue,
+        "US" | "USA" | "AM" => Color::LightBlue,
         "UK" | "GB" | "EU" => Color::Green,
         "FR" | "FRANCE" => Color::Cyan,
         "CA" | "CANADA" => Color::Red,
@@ -594,7 +594,7 @@ impl StreamingSource {
     pub fn color(&self) -> Color {
         match self {
             StreamingSource::Netflix => Color::Red,
-            StreamingSource::Disney => Color::Blue,
+            StreamingSource::Disney => Color::LightBlue,
             StreamingSource::Apple => Color::White,
             StreamingSource::Amazon => Color::Yellow,
             StreamingSource::HBO => Color::Magenta,

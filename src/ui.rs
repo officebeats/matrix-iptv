@@ -2098,7 +2098,7 @@ fn render_timezone_settings(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .highlight_style(
             Style::default()
-                .bg(Color::Blue)
+                .bg(Color::LightBlue)
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
         )
