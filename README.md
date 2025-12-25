@@ -25,7 +25,7 @@ Matrix IPTV is cross-platform. Copy and paste the command for your system below.
 1. Open your **Terminal**.
 2. Paste this command and hit **Enter**:
    ```bash
-   curl -sSL https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install.sh | bash
+   curl -sSL https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install.sh -o install_matrix.sh && bash install_matrix.sh && rm install_matrix.sh
    ```
 
 ---
