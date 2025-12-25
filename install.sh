@@ -9,7 +9,10 @@ CYAN='\033[0;36m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}[*] Initializing Matrix IPTV Instant Installation...${NC}"
+echo -e "${GREEN}[*] Initializing Matrix IPTV Instant Installation (v1.0.0)...${NC}"
+
+# Ensure we have a real terminal for the app launch later
+[ -t 0 ] || exec < /dev/tty
 
 # 1. Detect OS
 OS="$(uname)"
@@ -33,12 +36,13 @@ BINARY_URL="https://github.com/officebeats/matrix-iptv/releases/latest/download/
 
 # 3. Download Binary
 echo -e "${CYAN}[*] Downloading pre-built binary for $OS (Instant)...${NC}"
-if ! curl -L -o "$INSTALL_DIR/matrix-iptv" "$BINARY_URL"; then
+# Use -f to catch 404s
+if ! curl -L -f -o "$INSTALL_DIR/matrix-iptv" "$BINARY_URL"; then
     echo -e "${RED}--------------------------------------------------${NC}"
     echo -e "${RED}❌ DOWNLOAD ERROR${NC}"
-    echo -e "The pre-built binary wasn't found. This usually means:"
-    echo -e "1. The GitHub repository is still PRIVATE."
-    echo -e "2. No 'Release' has been created yet on GitHub."
+    echo -e "The pre-built binary wasn't found at: $BINARY_URL"
+    echo -e "This usually means the GitHub Release (v1.0.0) is still building."
+    echo -e "Please wait 1-2 minutes and try again."
     echo -e "${RED}--------------------------------------------------${NC}"
     exit 1
 fi
@@ -52,12 +56,17 @@ if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     elif [[ "$SHELL" == */bash ]]; then SHELL_CONFIG="$HOME/.bashrc"
     else SHELL_CONFIG="$HOME/.profile"; fi
     
-    echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> "$SHELL_CONFIG"
-    echo -e "${GREEN}[+] Added to $SHELL_CONFIG.${NC}"
+    # Don't add if already there
+    if ! grep -q "$INSTALL_DIR" "$SHELL_CONFIG" 2>/dev/null; then
+        echo "export PATH=\"\$PATH:$INSTALL_DIR\"" >> "$SHELL_CONFIG"
+        echo -e "${GREEN}[+] Added to $SHELL_CONFIG.${NC}"
+    fi
 fi
 
 echo -e "\n${GREEN}[*] SUCCESS: Matrix IPTV is ready!${NC}"
 echo "--------------------------------------------------"
-echo -e "Launching Matrix IPTV..."
-"$INSTALL_DIR/matrix-iptv"
+echo -e "Launching Matrix IPTV (Press Ctrl+C to exit)..."
 echo "--------------------------------------------------"
+
+# Run the app with explicit terminal input
+"$INSTALL_DIR/matrix-iptv"
