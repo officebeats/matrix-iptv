@@ -1744,6 +1744,9 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             spans.push(Span::styled("[Enter]", key_style));
             spans.push(Span::styled(":Select", action_style));
             spans.push(separator.clone());
+            spans.push(Span::styled("[/]", key_style));
+            spans.push(Span::styled(":Search", action_style));
+            spans.push(separator.clone());
             spans.push(Span::styled("[x]", key_style));
             spans.push(Span::styled(":Settings", action_style));
         }
@@ -1756,6 +1759,9 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             spans.push(separator.clone());
             spans.push(Span::styled("[f]", key_style));
             spans.push(Span::styled(":Fav", action_style));
+            spans.push(separator.clone());
+            spans.push(Span::styled("[/]", key_style));
+            spans.push(Span::styled(":Search", action_style));
         }
         CurrentScreen::VodCategories => {
             spans.push(Span::styled("[Esc]", key_style));
@@ -1766,6 +1772,9 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             spans.push(separator.clone());
             spans.push(Span::styled("[f]", key_style));
             spans.push(Span::styled(":Fav", action_style));
+            spans.push(separator.clone());
+            spans.push(Span::styled("[/]", key_style));
+            spans.push(Span::styled(":Search", action_style));
         }
         CurrentScreen::VodStreams => {
             spans.push(Span::styled("[Esc]", key_style));
@@ -1776,6 +1785,9 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             spans.push(separator.clone());
             spans.push(Span::styled("[f]", key_style));
             spans.push(Span::styled(":Fav", action_style));
+            spans.push(separator.clone());
+            spans.push(Span::styled("[/]", key_style));
+            spans.push(Span::styled(":Search", action_style));
         }
         CurrentScreen::SeriesCategories => {
             spans.push(Span::styled("[Esc]", key_style));
