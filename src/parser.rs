@@ -1,4 +1,58 @@
 use ratatui::style::Color;
+use regex::Regex;
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc, Timelike};
+use once_cell::sync::Lazy;
+
+// Pre-compiled regexes for performance - only compiled once
+static TIME_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)(?:(\d{1,2})[/.[:punct:]](\d{1,2})\s+)?\(?\[?(\d{1,2})[:.](\\d{2})\s*(am|pm)?\]?\)?\s*([A-Z]{2,4})?").unwrap()
+});
+static START_TIME_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)start:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").unwrap()
+});
+static STOP_TIME_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)stop:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").unwrap()
+});
+static YEAR_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\((\d{4})\)").unwrap()
+});
+static YEAR_STRIP_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\(\d{4}\)").unwrap()
+});
+
+// American Mode cleaning regexes - pre-compiled for performance
+static CLEAN_PREFIX_EN: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^EN\s*[-|:]\s*").unwrap());
+static CLEAN_PREFIX_US: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^US\s*[-|:]\s*").unwrap());
+static CLEAN_PREFIX_USA: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^USA\s*[-|:]\s*").unwrap());
+static CLEAN_PREFIX_ENGLISH: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^ENGLISH\s*[-|:]\s*").unwrap());
+static CLEAN_PREFIX_AMERICA: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^AMERICA\s*[-|:]\s*").unwrap());
+static CLEAN_TRAILING_PIPE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*\|\s*$").unwrap());
+static CLEAN_LEADING_PIPE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*\|\s*").unwrap());
+static CLEAN_MULTI_PIPE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*\|\s*\|+").unwrap());
+static CLEAN_TRAILING_HYPHEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+-\s*$").unwrap());
+static CLEAN_LEADING_HYPHEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-\s+").unwrap());
+static CLEAN_MULTI_SPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
+
+// Keyword removal patterns (generated at compile time for common keywords)
+static CLEAN_ENGLISH_BRACKETS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s*[\(\[\{]\s*ENGLISH\s*[\)\]\}]").unwrap());
+static CLEAN_USA_BRACKETS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s*[\(\[\{]\s*USA\s*[\)\]\}]").unwrap());
+static CLEAN_US_BRACKETS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s*[\(\[\{]\s*US\s*[\)\]\}]").unwrap());
+static CLEAN_EN_BRACKETS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s*[\(\[\{]\s*EN\s*[\)\]\}]").unwrap());
+static CLEAN_ENGLISH_END: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s+ENGLISH\s*$").unwrap());
+static CLEAN_USA_END: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s+USA\s*$").unwrap());
+static CLEAN_US_END: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s+US\s*$").unwrap());
+static CLEAN_EN_END: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s+EN\s*$").unwrap());
+static CLEAN_ENGLISH_START: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^ENGLISH\s+").unwrap());
+static CLEAN_USA_START: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^USA\s+").unwrap());
+static CLEAN_US_START: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^US\s+").unwrap());
+static CLEAN_EN_START: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^EN\s+").unwrap());
+// UNITED STATES patterns
+static CLEAN_UNITED_STATES_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^UNITED\s+STATES\s*[-|:]\s*").unwrap());
+static CLEAN_UNITED_STATES_BRACKETS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s*[\(\[\{]\s*UNITED\s+STATES\s*[\)\]\}]").unwrap());
+static CLEAN_UNITED_STATES_END: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s+UNITED\s+STATES\s*$").unwrap());
+static CLEAN_UNITED_STATES_START: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^UNITED\s+STATES\s+").unwrap());
+
+
 
 /// Parsed category with extracted metadata
 #[derive(Debug, Clone)]
@@ -113,27 +167,99 @@ pub fn country_flag(country: &str) -> &'static str {
 
 /// Check if a name/category is American live content
 pub fn is_american_live(name: &str) -> bool {
-    let upper = name.to_uppercase();
-    // Keywords for USA
-    upper.contains("USA") || 
-    upper.contains(" US") || 
-    upper.starts_with("US") ||
-    upper.contains("|US") ||
-    upper.contains("AMERICA") ||
-    upper.contains(" AM") ||
-    upper.starts_with("AM") ||
-    upper.contains("|AM")
+    let n = name.to_uppercase();
+    
+    // Explicit exclusions for international content labeled with USA keywords
+    if n.contains("AR |") || n.contains("AR|") {
+        return false;
+    }
+
+    // Use more specific matching
+    n.contains("USA") || 
+    n.contains(" US") || 
+    n.starts_with("US") || 
+    n.contains("|US") ||
+    n.contains("AMERICA") ||
+    n.contains(" UNITED STATES")
+}
+
+/// Clean up names in American Mode by removing redundant labels
+/// Uses pre-compiled static regexes for performance
+pub fn clean_american_name(name: &str) -> String {
+    let mut cleaned = name.to_string();
+    
+    // First pass: remove common leading language prefixes using pre-compiled regexes
+    cleaned = CLEAN_PREFIX_EN.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_PREFIX_US.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_PREFIX_USA.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_PREFIX_ENGLISH.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_PREFIX_AMERICA.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_UNITED_STATES_PREFIX.replace_all(&cleaned, "").to_string();
+    
+    // Remove keywords in brackets: (USA), [USA], {USA}, (EN), etc.
+    cleaned = CLEAN_ENGLISH_BRACKETS.replace_all(&cleaned, " ").to_string();
+    cleaned = CLEAN_USA_BRACKETS.replace_all(&cleaned, " ").to_string();
+    cleaned = CLEAN_US_BRACKETS.replace_all(&cleaned, " ").to_string();
+    cleaned = CLEAN_EN_BRACKETS.replace_all(&cleaned, " ").to_string();
+    cleaned = CLEAN_UNITED_STATES_BRACKETS.replace_all(&cleaned, " ").to_string();
+    
+    // Remove keywords at end of string
+    cleaned = CLEAN_ENGLISH_END.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_USA_END.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_US_END.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_EN_END.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_UNITED_STATES_END.replace_all(&cleaned, "").to_string();
+    
+    // Remove keywords at start of string
+    cleaned = CLEAN_ENGLISH_START.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_USA_START.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_US_START.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_EN_START.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_UNITED_STATES_START.replace_all(&cleaned, "").to_string();
+    
+    // Final cleanup: remove redundant pipes, hyphens, and double spaces
+    cleaned = CLEAN_TRAILING_PIPE.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_LEADING_PIPE.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_MULTI_PIPE.replace_all(&cleaned, " |").to_string();
+    cleaned = CLEAN_TRAILING_HYPHEN.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_LEADING_HYPHEN.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_MULTI_SPACE.replace_all(&cleaned, " ").to_string();
+    
+    // Extra cleanup for leading/trailing colons and dots
+    cleaned = cleaned.trim_start_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
+                     .trim_end_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
+                     .to_string();
+
+    cleaned.trim().to_string()
 }
 
 /// Check if a name/category is English VOD content
 pub fn is_english_vod(name: &str) -> bool {
     let upper = name.to_uppercase();
+    
+    // Explicit exclusions for foreign language content
+    let foreign_keywords = ["FRANCE", "FRENCH", "INDIA", "INDIAN", "HINDI", "TURKISH", "TURK", 
+                            "ARABIC", "ARAB", "SPANISH", "LATINO", "GERMAN", "ITALIAN", 
+                            "PORTUGUESE", "RUSSIAN", "CHINESE", "KOREAN", "JAPANESE",
+                            "POLISH", "DUTCH", "SWEDISH", "DANISH", "NORWEGIAN"];
+    for kw in foreign_keywords {
+        if upper.contains(kw) {
+            return false;
+        }
+    }
+    
     // Keywords for English
     upper.contains("ENGLISH") || 
     upper.contains("|EN|") || 
-    upper.contains(" EN") ||
-    upper.starts_with("EN") ||
-    upper.contains("-EN")
+    upper.contains("| EN |") ||
+    upper.contains("EN |") ||
+    upper.starts_with("EN ") ||
+    upper.starts_with("EN-") ||
+    upper.starts_with("EN|") ||
+    upper.contains("-EN-") ||
+    upper.contains(" EN ") ||
+    upper.ends_with(" EN") ||
+    upper.ends_with("|EN")
 }
 
 /// Parse a category name to extract metadata
@@ -257,8 +383,6 @@ pub fn parse_category(name: &str) -> ParsedCategory {
     }
 }
 
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
-use regex::Regex;
 
 /// Parsed stream/channel with extracted metadata
 #[derive(Debug, Clone)]
@@ -350,11 +474,11 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
 
     // Regex for Time: HH:MM (required), optional DD/MM before, optional am/pm after, optional TZ after
     // Capture groups: 1=DD(opt), 2=MM(opt), 3=HH, 4=MM, 5=am/pm(opt), 6=TZ(opt)
-    let re = Regex::new(r"(?i)(?:(\d{1,2})[/.[:punct:]](\d{1,2})\s+)?\(?\[?(\d{1,2})[:.](\d{2})\s*(am|pm)?\]?\)?\s*([A-Z]{2,4})?").unwrap();
+    // Using pre-compiled static TIME_REGEX for performance
 
     // We only try to parse time if it looks like a live event or sports channel to avoid false positives in VOD titles
     if is_live_event || upper.contains("SPORT") || upper.contains("VS") {
-        if let Some(caps) = re.captures(&display_name) {
+        if let Some(caps) = TIME_REGEX.captures(&display_name) {
             let now = Utc::now();
             let current_year = now.year();
 
@@ -533,9 +657,7 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
 
     // Backup: If start_time is still None, try to find a raw 'start: YYYY-MM-DD' in the name anyway
     if start_time.is_none() {
-        let st_re =
-            regex::Regex::new(r"(?i)start:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").unwrap();
-        if let Some(caps) = st_re.captures(&display_name) {
+        if let Some(caps) = START_TIME_REGEX.captures(&display_name) {
             if let Ok(naive_dt) =
                 NaiveDateTime::parse_from_str(caps.get(1).unwrap().as_str(), "%Y-%m-%d %H:%M:%S")
             {
@@ -554,9 +676,7 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     }
 
     // Parse stop time if present (Strong8K format: stop:YYYY-MM-DD HH:MM:SS)
-    let stop_re =
-        regex::Regex::new(r"(?i)stop:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").unwrap();
-    if let Some(caps) = stop_re.captures(&display_name) {
+    if let Some(caps) = STOP_TIME_REGEX.captures(&display_name) {
         if let Ok(naive_dt) =
             NaiveDateTime::parse_from_str(caps.get(1).unwrap().as_str(), "%Y-%m-%d %H:%M:%S")
         {
@@ -775,7 +895,7 @@ pub fn parse_movie(name: &str) -> ParsedMovie {
     // Extract year from title: (2024), (1995), etc.
     // We use a loop to remove ALL instances of (YYYY) from the title if we find one
     let mut found_year = None;
-    if let Some(caps) = Regex::new(r"\((\d{4})\)").unwrap().captures(&title) {
+    if let Some(caps) = YEAR_REGEX.captures(&title) {
         if let Some(m) = caps.get(1) {
             if let Ok(y) = m.as_str().parse::<u16>() {
                 if y >= 1900 && y <= 2030 {
@@ -788,8 +908,7 @@ pub fn parse_movie(name: &str) -> ParsedMovie {
     if let Some(y) = found_year {
         year = Some(y);
         // Remove all (YYYY) patterns from title to deduplicate
-        let year_regex = Regex::new(r"\(\d{4}\)").unwrap();
-        title = year_regex.replace_all(&title, "").trim().to_string();
+        title = YEAR_STRIP_REGEX.replace_all(&title, "").trim().to_string();
     }
 
     // Detect quality
@@ -944,5 +1063,17 @@ mod tests {
         let st = parsed.start_time.unwrap();
         // 20:00 EST is definitely not 20:00 UTC
         assert!(st.hour() != 20);
+    }
+
+    #[test]
+    fn test_clean_american_name() {
+        assert_eq!(clean_american_name("ALGERIE +6H USA"), "ALGERIE +6H");
+        assert_eq!(clean_american_name("ENGLISH KIDS"), "KIDS");
+        assert_eq!(clean_american_name("EN | Breaking Bad"), "Breaking Bad");
+        assert_eq!(clean_american_name("Breaking Bad (US)"), "Breaking Bad");
+        assert_eq!(clean_american_name("Breaking Bad [USA]"), "Breaking Bad");
+        assert_eq!(clean_american_name("Breaking Bad - EN"), "Breaking Bad");
+        assert_eq!(clean_american_name("USA: Movie Name"), "Movie Name");
+        assert_eq!(clean_american_name("UNITED STATES - Movie"), "Movie");
     }
 }

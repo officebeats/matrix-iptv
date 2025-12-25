@@ -19,6 +19,7 @@ iana-time-zone = "0.1.64"
 regex = "1.12.2"
 clap = { version = "4.5", features = ["derive"] }
 rand = "0.8"
+once_cell = "1.19"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ratatui = { version = "0.29.0", features = ["crossterm"] }

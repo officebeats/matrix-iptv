@@ -14,26 +14,31 @@ const DARK_GREEN: Color = Color::White;
 const BRIGHT_GREEN: Color = Color::Rgb(180, 255, 180);
 
 // Helper function to calculate the maximum display width of category names
-fn calculate_max_category_width(categories: &[crate::api::Category]) -> u16 {
+fn calculate_max_category_width(categories: &[crate::api::Category], total_width: u16) -> u16 {
     if categories.is_empty() {
         return 25; // Minimum default width
     }
     
-    categories
+    let max_content = categories
         .iter()
         .map(|c| {
             // Account for: folder icon (2) + space (1) + name + padding (2)
             (c.category_name.len() as u16) + 5
         })
         .max()
-        .unwrap_or(25)
+        .unwrap_or(25);
+
+    // Dynamic max width: up to 40% of screen or at least 45
+    let dynamic_max = (total_width * 40 / 100).max(45);
+    
+    max_content
         .max(25) // Minimum width
-        .min(45) // Maximum width to prevent overly wide columns
+        .min(dynamic_max) // Capped dynamic max width
 }
 
 // Helper function to calculate optimal column split for 2-column layout
 fn calculate_two_column_split(categories: &[crate::api::Category], total_width: u16) -> (u16, u16) {
-    let cat_width = calculate_max_category_width(categories);
+    let cat_width = calculate_max_category_width(categories, total_width);
     let min_stream_width = 60; // Minimum width for streams column
     
     // Ensure we have enough space for both columns
@@ -50,11 +55,12 @@ fn calculate_two_column_split(categories: &[crate::api::Category], total_width: 
 fn calculate_three_column_split(
     categories: &[crate::api::Category],
     series: &[crate::api::Stream],
+    episodes: &[crate::api::SeriesEpisode],
     total_width: u16,
 ) -> (u16, u16, u16) {
-    let cat_width = calculate_max_category_width(categories);
+    let cat_width = calculate_max_category_width(categories, total_width);
     
-    let series_width = if series.is_empty() {
+    let series_max_content = if series.is_empty() {
         35
     } else {
         series
@@ -65,12 +71,31 @@ fn calculate_three_column_split(
             })
             .max()
             .unwrap_or(35)
-            .max(35)
-            .min(55) // Cap series column
     };
     
+    // Dynamic max for series: up to 35% of screen or at least 45
+    let series_dynamic_max = (total_width * 35 / 100).max(45);
+    let series_width = series_max_content.max(35).min(series_dynamic_max);
+    
+    let episode_max_content = if episodes.is_empty() {
+        45
+    } else {
+        episodes
+            .iter()
+            .map(|ep| {
+                let title = ep.title.as_deref().unwrap_or("Untitled");
+                // Account for: Play icon (2) + Season/Episode (6) + Separator (3) + title + padding (1)
+                (title.len() as u16) + 12
+            })
+            .max()
+            .unwrap_or(45)
+    };
+
+    // Dynamic max for episodes based on remaining space or at least 50
     let min_episode_width = 50;
-    let total_needed = cat_width + series_width + min_episode_width;
+    let episode_width = episode_max_content.max(min_episode_width);
+    
+    let total_needed = cat_width + series_width + episode_width;
     
     if total_needed > total_width {
         // Use proportional split if too wide
@@ -78,7 +103,7 @@ fn calculate_three_column_split(
     } else {
         // Use exact widths
         let remaining = total_width - cat_width - series_width;
-        (cat_width, series_width, remaining)
+        (cat_width, series_width, remaining.max(episode_width))
     }
 }
 
@@ -508,8 +533,12 @@ fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: C
     use std::str::FromStr;
 
     // Get user timezone
-    let tz_str = app.config.get_user_timezone();
-    let user_tz: Tz = Tz::from_str(&tz_str).unwrap_or(chrono_tz::Europe::London);
+    // Get user timezone (use cached value to avoid expensive system calls)
+    if app.loading_tick % 30 == 0 {
+         app.cached_user_timezone = app.config.get_user_timezone();
+    }
+    let tz_str = &app.cached_user_timezone;
+    let user_tz: Tz = Tz::from_str(tz_str).unwrap_or(chrono_tz::Europe::London);
     let now = Utc::now().with_timezone(&user_tz);
 
     // Calculate visible window to avoid parsing all items
@@ -545,7 +574,12 @@ fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: C
                 .accounts
                 .get(app.selected_account_index)
                 .and_then(|a| a.server_timezone.as_deref());
-            let mut parsed = parse_stream(effective_name, provider_tz);
+            
+            let mut parsed = if let Some(ref cached) = s.cached_parsed {
+                cached.as_ref().clone()
+            } else {
+                 parse_stream(effective_name, provider_tz)
+            };
 
             // Revert to original name or scrub if event is stale (> 3 hours old)
             if let Some(start_time_utc) = parsed.start_time {
@@ -2353,6 +2387,7 @@ fn render_series_view(f: &mut Frame, app: &mut App, area: Rect) {
     let (cat_width, series_width, episode_width) = calculate_three_column_split(
         &app.series_categories,
         &app.series_streams,
+        &app.series_episodes,
         area.width,
     );
     

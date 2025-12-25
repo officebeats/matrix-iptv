@@ -28,6 +28,9 @@ pub struct Stream {
     pub container_extension: Option<String>, // Series might not have this
     pub rating: Option<serde_json::Value>,
     pub rating_5: Option<serde_json::Value>,
+    
+    #[serde(skip)]
+    pub cached_parsed: Option<Box<crate::parser::ParsedStream>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

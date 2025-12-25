@@ -21,7 +21,7 @@ use matrix_iptv_lib::app::{App, AsyncAction, CurrentScreen, Guide, InputMode, Lo
 
 use matrix_iptv_lib::api::{Category, XtreamClient};
 use matrix_iptv_lib::config::Account;
-use matrix_iptv_lib::{player, setup, ui};
+use matrix_iptv_lib::{parser, player, setup, ui};
 
 #[derive(clap::Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -530,7 +530,12 @@ async fn run_app<B: ratatui::backend::Backend>(
                         for (_season_key, season_episodes) in episodes_map {
                             if let serde_json::Value::Array(ep_array) = season_episodes {
                                 for ep_val in ep_array {
-                                    if let Ok(episode) = serde_json::from_value::<matrix_iptv_lib::api::SeriesEpisode>(ep_val.clone()) {
+                                    if let Ok(mut episode) = serde_json::from_value::<matrix_iptv_lib::api::SeriesEpisode>(ep_val.clone()) {
+                                        if app.config.american_mode {
+                                            if let Some(ref title) = episode.title {
+                                                episode.title = Some(parser::clean_american_name(title));
+                                            }
+                                        }
                                         episodes.push(episode);
                                     }
                                 }

@@ -1148,6 +1148,7 @@ dependencies = [
  "futures",
  "hickory-resolver",
  "iana-time-zone",
+ "once_cell",
  "rand 0.8.5",
  "ratatui",
  "regex",

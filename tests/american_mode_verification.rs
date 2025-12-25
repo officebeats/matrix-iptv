@@ -28,6 +28,16 @@ fn test_american_mode_filtering() {
             category_name: "AMERICA | Movies".to_string(),
             parent_id: json!(0),
         },
+        Category {
+            category_id: "4".to_string(),
+            category_name: "AM | Armenian Channel".to_string(),
+            parent_id: json!(0),
+        },
+        Category {
+            category_id: "5".to_string(),
+            category_name: "AR | ALGERIE +6H USA".to_string(),
+            parent_id: json!(0),
+        },
     ];
     
     app.all_categories = categories;
@@ -39,12 +49,17 @@ fn test_american_mode_filtering() {
     // American Mode OFF (Default)
     app.config.american_mode = false;
     app.update_search();
-    assert_eq!(app.categories.len(), 4, "Should show all 4 categories when American Mode is OFF");
+    assert_eq!(app.categories.len(), 6, "Should show all 6 categories when American Mode is OFF");
     
     // American Mode ON
     app.config.american_mode = true;
     app.update_search();
-    assert_eq!(app.categories.len(), 3, "Should show 3 categories (All, USA, AMERICA) when American Mode is ON");
+    assert_eq!(app.categories.len(), 3, "Should show 3 categories (All, USA, AMERICA) and filter out UK, AM (Armenian), and AR (Arabic)");
+    assert!(app.categories.iter().any(|c| c.category_name.contains("USA") && !c.category_name.contains("AR |")));
+    assert!(app.categories.iter().any(|c| c.category_name.contains("AMERICA")));
+    assert!(!app.categories.iter().any(|c| c.category_name.contains("UK")));
+    assert!(!app.categories.iter().any(|c| c.category_name.contains("AM |")));
+    assert!(!app.categories.iter().any(|c| c.category_name.contains("AR |")));
 }
 
 #[test]

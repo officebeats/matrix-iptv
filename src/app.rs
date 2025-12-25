@@ -1,6 +1,6 @@
 use crate::api::{Category, ServerInfo, Stream, UserInfo, XtreamClient};
 use crate::config::AppConfig;
-use crate::parser::{is_american_live, is_english_vod};
+use crate::parser::{is_american_live, is_english_vod, clean_american_name, parse_stream};
 use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
 use tui_input::Input;
@@ -76,6 +76,7 @@ pub struct App {
     pub input_mode: InputMode,
     pub should_quit: bool,
     pub state_loading: bool,
+    pub cached_user_timezone: String,
 
     // Home / Accounts
     pub selected_account_index: usize,
@@ -227,6 +228,7 @@ impl App {
         let matrix_rain_start = Some(std::time::Instant::now());
 
         let mut app = App {
+            cached_user_timezone: config.get_user_timezone(),
             config,
             current_screen: CurrentScreen::Home,
             input_mode: InputMode::Normal,
@@ -603,7 +605,15 @@ impl App {
                                 // American Mode: USA channels & All Channels
                                 matches_query && (c.category_id == "ALL" || is_american_live(&c.category_name))
                             })
-                            .cloned()
+                            .map(|c| {
+                                if american_mode {
+                                    let mut cleaned = c.clone();
+                                    cleaned.category_name = clean_american_name(&cleaned.category_name);
+                                    cleaned
+                                } else {
+                                    c.clone()
+                                }
+                            })
                             .collect();
                         // Reset selection
                         self.selected_category_index = 0;
@@ -614,6 +624,12 @@ impl App {
                         }
                     }
                     Pane::Streams => {
+                        let provider_tz = self
+                            .config
+                            .accounts
+                            .get(self.selected_account_index)
+                            .and_then(|a| a.server_timezone.clone());
+
                         self.streams = self
                             .all_streams
                             .iter()
@@ -625,7 +641,18 @@ impl App {
                                 // American Mode: USA streams
                                 matches_query && is_american_live(&s.name)
                             })
-                            .cloned()
+                            .map(|s| {
+                                let mut s_mod = s.clone();
+                                if american_mode {
+                                    s_mod.name = clean_american_name(&s_mod.name);
+                                }
+                                
+                                // Eagerly parse and cache to allow instant scrolling
+                                let effective_name = s_mod.stream_display_name.as_deref().unwrap_or(&s_mod.name).to_string();
+                                s_mod.cached_parsed = Some(Box::new(parse_stream(&effective_name, provider_tz.as_deref())));
+                                
+                                s_mod
+                            })
                             .collect();
                         // Reset selection
                         self.selected_stream_index = 0;
@@ -655,7 +682,15 @@ impl App {
                                 // American Mode: English VOD categories
                                 matches_query && is_english_vod(&c.category_name)
                             })
-                            .cloned()
+                            .map(|c| {
+                                if american_mode {
+                                    let mut cleaned = c.clone();
+                                    cleaned.category_name = clean_american_name(&cleaned.category_name);
+                                    cleaned
+                                } else {
+                                    c.clone()
+                                }
+                            })
                             .collect();
                         // Reset selection
                         self.selected_vod_category_index = 0;
@@ -677,7 +712,15 @@ impl App {
                                 // American Mode: English VOD streams
                                 matches_query && is_english_vod(&s.name)
                             })
-                            .cloned()
+                            .map(|s| {
+                                if american_mode {
+                                    let mut cleaned = s.clone();
+                                    cleaned.name = clean_american_name(&cleaned.name);
+                                    cleaned
+                                } else {
+                                    s.clone()
+                                }
+                            })
                             .collect();
                         // Reset selection
                         self.selected_vod_stream_index = 0;
@@ -707,7 +750,15 @@ impl App {
                                 // American Mode: English Series categories
                                 matches_query && is_english_vod(&c.category_name)
                             })
-                            .cloned()
+                            .map(|c| {
+                                if american_mode {
+                                    let mut cleaned = c.clone();
+                                    cleaned.category_name = clean_american_name(&cleaned.category_name);
+                                    cleaned
+                                } else {
+                                    c.clone()
+                                }
+                            })
                             .collect();
                         self.selected_series_category_index = 0;
                         if !self.series_categories.is_empty() {
@@ -728,7 +779,15 @@ impl App {
                                 // American Mode: English Series streams
                                 matches_query && is_english_vod(&s.name)
                             })
-                            .cloned()
+                            .map(|s| {
+                                if american_mode {
+                                    let mut cleaned = s.clone();
+                                    cleaned.name = clean_american_name(&cleaned.name);
+                                    cleaned
+                                } else {
+                                    s.clone()
+                                }
+                            })
                             .collect();
                         self.selected_series_stream_index = 0;
                         if !self.series_streams.is_empty() {
