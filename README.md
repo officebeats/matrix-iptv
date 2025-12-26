@@ -65,7 +65,9 @@ curl -sSL https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install
 
 ## 🎬 How to Run
 
-Simply open any terminal and type:
+The app will **auto-launch** instantly after installation! 🚀
+
+For future sessions, simply open any terminal and type:
 
 ```bash
 matrix-iptv
