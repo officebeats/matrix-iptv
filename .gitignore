@@ -8,6 +8,13 @@ config.json
 *.json.bak
 !Cargo.toml
 !package.json
+!test_config.json
+
+# Binaries
+bin/*.exe
+bin/matrix-iptv
+bin/matrix-iptv-macos
+bin/matrix-iptv-linux
 
 # Logs & Test Results
 *.log
@@ -32,4 +39,3 @@ Thumbs.db
 
 # Setup scripts (contain private credentials)
 setup_test_playlists.ps1
-test_config.json
