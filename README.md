@@ -135,6 +135,17 @@ The installation scripts will attempt to install these for you:
 
 ---
 
+---
+
+## ⚡ Community & Support
+
+Optimized with ❤️ by **Ernesto "Beats"**
+
+[![Twitter](https://img.shields.io/badge/Twitter-1DA1F2?style=for-the-badge&logo=twitter&logoColor=white)](https://x.com/officebeats)
+[![Discord](https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/users/317887730703138826)
+
+---
+
 ## 📜 License
 
-MIT // Optimized for Power Users by **"Beats"** // [ProductMG.com](https://www.productmg.com)
+MIT // [ProductMG.com](https://www.productmg.com)
