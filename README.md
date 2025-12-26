@@ -1,10 +1,23 @@
 # 🟢 Matrix IPTV CLI
 
+![Matrix IPTV CLI Hero](./assets/hero.png)
+
 **// THE_PREMIUM_TERMINAL_IPTV_DECODER //**
 
 Matrix IPTV CLI is a blazing fast, keyboard-driven interface for browsing Live TV, Movies, and Series. Inspired by the Matrix and built with Rust, it's designed to be the ultimate premium TUI (Terminal User Interface) for IPTV power users.
 
-This project is being actively optimized by **"Beats"** with a primary focus on **Live TV and Sports** performance, ensuring zero-latency navigation and professional-grade video clarity.
+This project is being actively optimized by **Ernesto "Beats"** with a primary focus on **Live TV and Sports** performance, ensuring zero-latency navigation and professional-grade video clarity.
+
+---
+
+## 📸 Gallery
+
+<p align="center">
+  <img src="./assets/playlists.png" width="45%" />
+  <img src="./assets/pill.png" width="45%" />
+  <br />
+  <img src="./assets/live.png" width="90%" />
+</p>
 
 ---
 
