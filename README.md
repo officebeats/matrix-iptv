@@ -157,6 +157,25 @@ The installation scripts will attempt to install these for you:
 
 ---
 
+---
+
+## 🛒 Where to Buy Playlists
+
+The experimental "USA Mode" is optimized for **Strong 8K**, **TRex**, and **Mega OTT** playlists. These are typically sourced from third-party marketplaces:
+
+- **Platforms**: **z2u.com** or **g2g.com**
+- **Search Terms**: "Strong 8k IPTV", "Trex IPTV", "Mega OTT"
+- **Duration**: Usually sold in **1-month**, **6-month**, or **1-year** increments.
+
+### ✅ Buying Tips
+
+1.  **Check Ratings**: Always choose a seller with a **high rating (98%+)** and a high sales count. These are 2-sided marketplaces, so reputation is everything.
+2.  **Safe Payment**: Use strictly secure payment methods like **Google Pay** or **Apple Pay** directly through your device. Avoid direct bank transfers or obscure payment links.
+
+> **⚠️ Disclaimer:** Matrix IPTV CLI and its creator, Ernesto "Beats", are **not affiliated** with z2u, g2g, or any IPTV provider. We do not sell or distribute content. All transactions on these platforms are at your own risk. This guide is for informational purposes only (experimental "USA Mode" testing).
+
+---
+
 ## ⚡ Community & Support
 
 Built and optimized with ❤️ by **Ernesto "Beats"** with the help of google antigravity and vibe coding during his PTO vacation time.
