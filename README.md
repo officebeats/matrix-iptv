@@ -90,7 +90,10 @@ The **USA Mode** is a powerful filtering and cleaning engine strictly optimized 
 
 #### **How to use:**
 
-Simply press the **`u`** key at any time while browsing to toggle USA Mode on or off. The app will remember your preference.
+1. Press the **`x`** key to open **Settings**.
+2. Navigate to **USA Mode**.
+3. Press **`Enter`** to toggle it On/Off.
+4. Press **`Esc`** to return and apply the filtering instantly.
 
 - **Strict Geo-Filtering**: Automatically hides international categories (UK, AR, etc.) in these optimized playlists to keep your list clean.
 - **Clean Channel Names**: Removes redundant tags like `US |`, `USA |`, and `FHD |` from channel names, leaving you with just the name of the network.
