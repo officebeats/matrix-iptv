@@ -62,7 +62,7 @@ matrix-iptv
 
 ## ✨ Features
 
-- **🇺🇸 USA Mode**: Strictly optimized for **Strong 8K**, **Mega OTT**, and **TRex**. Hides international clutter and cleans channel names instantly.
+- **USA Mode**: Strictly optimized for **Strong 8K**, **Mega OTT**, and **TRex**. Hides international clutter and cleans channel names instantly.
 - **⚡ Instant Response**: Built in Rust for maximum performance. Navigate tens of thousands of channels with zero lag.
 - **📡 Xtream API Native**: Strictly optimized for **Xtream API** providers (support for M3U is not planned at this time).
 - **🏟️ Sports & Live Focused**: Layout and performance tuned specifically for the most demanding live events.
@@ -84,7 +84,7 @@ Matrix IPTV CLI is refined for high-density, high-quality playlists, including:
 
 ---
 
-## 🇺🇸 USA Mode
+## USA Mode
 
 The **USA Mode** is a powerful filtering and cleaning engine strictly optimized for **Strong 8K**, **Mega OTT**, and **TRex IPTV** playlists.
 
