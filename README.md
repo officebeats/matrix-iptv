@@ -2,37 +2,57 @@
 
 **// THE_PREMIUM_TERMINAL_IPTV_DECODER //**
 
-Matrix IPTV is a blazing fast, keyboard-driven interface for browsing Live TV, Movies, and Series. Inspired by the Matrix and built with Rust, it's designed to be the ultimate premium TUI (Terminal User Interface) for IPTV power users.
+Matrix IPTV CLI is a blazing fast, keyboard-driven interface for browsing Live TV, Movies, and Series. Inspired by the Matrix and built with Rust, it's designed to be the ultimate premium TUI (Terminal User Interface) for IPTV power users.
+
+This project is being actively optimized by **"Beats"** with a primary focus on **Live TV and Sports** performance, ensuring zero-latency navigation and professional-grade video clarity.
 
 ---
 
 ## 🚀 Instant Installation
 
-Matrix IPTV is cross-platform. Copy and paste the command for your system below. The installer will automatically download the pre-built binary and set everything up for you in seconds.
+**Prerequisites:** Matrix IPTV CLI requires **MPV Player** (for video) and **Node.js** (for the CLI).
 
-**Prerequisite:** You just need [MPV Player](https://mpv.io) installed (the installer will try to do this for you).
+#### **Don't have MPV Player?**
 
-### **Windows**
+- **Windows:** `winget install info.mpv.mpv`
+- **Mac:** `brew install mpv`
+- **Linux:** `sudo apt install mpv`
 
-1. Open **Command Prompt** or **PowerShell**.
-2. Paste this command and hit **Enter**:
-   ```cmd
-   powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install.ps1 | iex"
-   ```
+#### **Don't have Node.js?**
 
-### **Mac & Linux**
+- **Windows:** `winget install OpenJS.NodeJS`
+- **Mac:** `brew install node`
+- **Linux:** `sudo apt install nodejs npm`
 
-1. Open your **Terminal**.
-2. Paste this command and hit **Enter**:
-   ```bash
-   curl -sSL https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install.sh -o install_matrix.sh && bash install_matrix.sh && rm install_matrix.sh
-   ```
+### **Global NPM Install (Recommended)**
+
+If you have Node.js installed, this is the easiest way to stay updated:
+
+```bash
+npm install -g @officebeats/matrix-iptv-cli
+```
+
+### **One-Click Scripts**
+
+Alternatively, use these platform-specific one-liners:
+
+#### **Windows**
+
+```powershell
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install.ps1 | iex"
+```
+
+#### **Mac & Linux**
+
+```bash
+curl -sSL https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install.sh -o install_matrix.sh && bash install_matrix.sh && rm install_matrix.sh
+```
 
 ---
 
 ## 🎬 How to Run
 
-The installer will automatically launch the app for you the first time. For future use, simply open any terminal and type:
+Simply open any terminal and type:
 
 ```bash
 matrix-iptv
@@ -40,82 +60,81 @@ matrix-iptv
 
 ---
 
-## ✨ Why so fast?
-
-We now provide **pre-compiled binary releases**. This means:
-
-- ❌ **No Rust** required for the user.
-- ❌ **No Git** required for the user.
-- ❌ **No waiting** for compilation.
-- ✅ **Instant** setup and launch.
-
----
-
-## 🛠️ Troubleshooting
-
-- **404 Error**: If you see a 404 error during installation, ensure your GitHub repository is set to **Public** so the script can download the files.
-- **MPV Error**: If video doesn't play, ensure [MPV](https://mpv.io) is installed and available in your system path.
-
----
-
 ## ✨ Features
 
-- **⚡ Blazing Fast**: No more slow sluggish menus. Navigate thousands of channels instantly.
-- **🎯 Provider Optimized**: Specifically tuned for **Trex** and **Strong8k** playlists for maximum speed and reliability.
+- **🇺🇸 USA Mode**: Strictly optimized for **Strong 8K**, **Mega OTT**, and **TRex**. Hides international clutter and cleans channel names instantly.
+- **⚡ Instant Response**: Built in Rust for maximum performance. Navigate tens of thousands of channels with zero lag.
+- **📡 Xtream API Native**: Strictly optimized for **Xtream API** providers (support for M3U is not planned at this time).
+- **🏟️ Sports & Live Focused**: Layout and performance tuned specifically for the most demanding live events.
 - **📁 "All" Content Navigation**: Browse everything at once with "All Channels" and "All Movies" views.
 - **🎬 Full Series Support**: Dedicated multi-column view for Series, Seasons, and Episodes.
 - **📟 Infinite Screensaver**: High-performance Matrix rain screensaver (find it in Settings).
 - **📡 Secure**: Uses Private DNS-over-HTTPS (DoH) for connecting to your provider.
-- **📽️ Native Playback**: Uses the legendary **MPV** player for the smoothest possible video.
+- **📽️ Headless Playback**: Integrated borderless fullscreen mode for a cinematic experience without window distractions.
 
 ---
 
 ## 🏎️ Optimized Providers
 
-Matrix IPTV is refined to work perfectly with:
+Matrix IPTV CLI is refined for high-density, high-quality playlists, including:
 
-- **Trex IPTV**: Optimized category parsing.
-- **Strong8k**: Enhanced metadata and series support.
+- **Strong 8K**: Custom filtering logic to remove international clutter (AR|, etc.) and maximize US sports visibility.
+- **Mega OTT**: Optimized category parsing and rapid metadata loading.
+- **TRex IPTV**: Enhanced sport category prioritization and fast channel tuning.
+
+---
+
+## 🇺🇸 USA Mode
+
+The **USA Mode** is a powerful filtering and cleaning engine strictly optimized for **Strong 8K**, **Mega OTT**, and **TRex IPTV** playlists.
+
+#### **How to use:**
+
+Simply press the **`u`** key at any time while browsing to toggle USA Mode on or off. The app will remember your preference.
+
+- **Strict Geo-Filtering**: Automatically hides international categories (UK, AR, etc.) in these optimized playlists to keep your list clean.
+- **Clean Channel Names**: Removes redundant tags like `US |`, `USA |`, and `FHD |` from channel names, leaving you with just the name of the network.
+- **Smart Filtering**: Prioritizes American sports and local networks (NFL, NBA, ESPN) for an effortless viewing experience.
+
+---
+
+## 📽️ MPV Enhancements
+
+We leverage advanced **MPV** flags to ensure professional-level video quality even on lower-end hardware:
+
+- **Headless Fullscreen**: Launches directly into borderless fullscreen (`--no-border`, `--fs`) for a professional, TV-like experience.
+- **Advanced Anti-Aliasing**: Uses `spline36` scaling, providing superior edge smoothing and diagonal line clarity on any machine.
+- **Oversample Upscaling**: High-quality temporal upscaling that sharpens images while reducing movement flickering (Temporal AA).
+- **Motion Smoothing**: High-performance `display-resample` interpolation for fluid sports playback at native refresh rates.
+- **Hardware Acceleration**: Automatic `hwdec=auto-safe` with modern Windows `d3d11-flip` presentation for zero-copy GPU decoding.
+- **Anti-Ringing Filter**: Eliminates halos around sharp edges and logos for a cleaner, high-end look.
 
 ---
 
 ## ⌨️ Common Controls
 
-Matrix IPTV is designed to be used without a mouse. It's faster that way.
-
 | Key                     | Action                                                     |
 | :---------------------- | :--------------------------------------------------------- |
 | **`Enter`**             | **Play Channel / Select Category**                         |
 | **`Esc` / `Backspace`** | **Go Back**                                                |
+| **`f`**                 | **Favorite** (Add/Remove current item from Favorites)      |
 | **`/`**                 | **Search** (Filters results instantly)                     |
 | **`j` / `↓`**           | Move Down                                                  |
 | **`k` / `↑`**           | Move Up                                                    |
-| **`l`**                 | Switch to **Live TV**                                      |
-| **`v`**                 | Switch to **Movies** (VOD)                                 |
-| **`s`**                 | Switch to **Series Mode**                                  |
 | **`x`**                 | **Settings** (Update your playlist or turn on Screensaver) |
-| **`n`**                 | **Add New Playlist** (New Uplink)                          |
 | **`q`**                 | **Quit**                                                   |
 
 ---
 
 ## 🛠️ Prerequisites
 
-The installation scripts will attempt to install these for you, but you can also get them manually:
+The installation scripts will attempt to install these for you:
 
 - **MPV Player**: [mpv.io](https://mpv.io)
-- **Rust Compiler**: [rustup.rs](https://rustup.rs)
-
----
-
-## 🌐 Developers & Advanced
-
-- **Build manually**: `cargo build --release`
-- **Release Automation**: This repo includes GitHub Actions to automatically build Windows/Mac/Linux binaries.
-- **GitHub**: [github.com/officebeats/matrix-iptv](https://github.com/officebeats/matrix-iptv)
+- **Rust Compiler**: [rustup.rs](https://rustup.rs) (Only required for manual builds)
 
 ---
 
 ## 📜 License
 
-MIT // Created by Ernesto "Beats" // [ProductMG.com](https://www.productmg.com)
+MIT // Optimized for Power Users by **"Beats"** // [ProductMG.com](https://www.productmg.com)

@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (name, url, user, pass) in accounts {
         println!("Testing: {} ({})", name, url);
 
-        match XtreamClient::new_with_doh(url.to_string(), user.to_string(), pass.to_string()).await
+        match XtreamClient::new_with_doh(url.to_string(), user.to_string(), pass.to_string(), matrix_iptv_lib::config::DnsProvider::System).await
         {
             Ok(client) => {
                 match client.authenticate().await {

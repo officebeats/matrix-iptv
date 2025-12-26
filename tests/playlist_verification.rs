@@ -6,8 +6,8 @@ use serde_json::json;
 fn test_navigation_sync_live_tv() {
     let mut app = App::new();
     app.all_categories = vec![
-        Category { category_id: "1".to_string(), category_name: "Action".to_string(), parent_id: json!(0) },
-        Category { category_id: "2".to_string(), category_name: "Drama".to_string(), parent_id: json!(0) },
+        Category { category_id: "1".to_string(), category_name: "Action".to_string(), parent_id: json!(0), ..Default::default() },
+        Category { category_id: "2".to_string(), category_name: "Drama".to_string(), parent_id: json!(0), ..Default::default() },
     ];
     
     // Enter screen
@@ -38,7 +38,7 @@ fn test_navigation_sync_live_tv() {
 fn test_navigation_sync_vod() {
     let mut app = App::new();
     app.all_vod_categories = vec![
-        Category { category_id: "10".to_string(), category_name: "Movie1".to_string(), parent_id: json!(0) },
+        Category { category_id: "10".to_string(), category_name: "Movie1".to_string(), parent_id: json!(0), ..Default::default() },
     ];
     
     app.current_screen = CurrentScreen::VodCategories;
@@ -66,7 +66,7 @@ fn test_navigation_sync_vod() {
 fn test_navigation_sync_series() {
     let mut app = App::new();
     app.all_series_categories = vec![
-        Category { category_id: "20".to_string(), category_name: "Series1".to_string(), parent_id: json!(0) },
+        Category { category_id: "20".to_string(), category_name: "Series1".to_string(), parent_id: json!(0), ..Default::default() },
     ];
     
     app.current_screen = CurrentScreen::SeriesCategories;

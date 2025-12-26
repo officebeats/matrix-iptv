@@ -1,4 +1,6 @@
 use crate::app::{App, CurrentScreen, Guide, InputMode, LoginField, Pane};
+use crate::parser::{country_color, country_flag, parse_stream, parse_category, parse_vod_category, parse_movie, Quality, ContentType};
+use crate::sports::SportsEvent;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -6,21 +8,25 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph},
     Frame,
 };
+use chrono::Utc;
+use chrono_tz::Tz;
+use std::str::FromStr;
 
-// ... existing code ...
+// Cyberpunk Theme Palette (Optimized for Visibility)
+const CP_GREEN: Color = Color::Rgb(57, 255, 20);   // Vibrant Neon Green
+// const CP_PINK: Color = Color::Rgb(255, 105, 180);  // Hot Pink
+const CP_CYAN: Color = Color::Rgb(0, 255, 255);    // Bright Cyan (Light Blue)
+const CP_YELLOW: Color = Color::Rgb(255, 255, 0);  // Pure Yellow
+const CP_WHITE: Color = Color::White;              // Pure White
+const CP_GRAY: Color = Color::Rgb(220, 220, 220);  // Bright Silver (for unselected)
 
-// Cyberpunk Theme Palette
-const CP_GREEN: Color = Color::Rgb(57, 255, 20);   // Primary Neon Green
-const CP_PINK: Color = Color::Rgb(255, 20, 147);   // Secondary Neon Pink
-const CP_CYAN: Color = Color::Rgb(255, 255, 0);    // Accents (MAPPED TO YELLOW TO AVOID BLUE)
-const CP_YELLOW: Color = Color::Rgb(255, 255, 0);  // Warnings / Highlights
-const CP_WHITE: Color = Color::White;              // Main Text
-const CP_GRAY: Color = Color::Rgb(180, 180, 180);  // Dimmed Text (Light Gray)
-
-// Mappings to existing names to maintain code compatibility but switch theme
+// Mappings
 const MATRIX_GREEN: Color = CP_GREEN;
-const DARK_GREEN: Color = CP_WHITE; // Using White for borders/secondary for maximum contrast
-const BRIGHT_GREEN: Color = CP_YELLOW; // Using Yellow for highlights (No Blue)
+const DARK_GREEN: Color = CP_GREEN; // Use Green for borders too for that Matrix vibe
+const BRIGHT_GREEN: Color = CP_CYAN; // Use Cyan for highlights now instead of Yellow for variety
+const BRIGHT_YELLOW: Color = CP_YELLOW; 
+// const BRIGHT_WHITE: Color = Color::White;
+const BRIGHT_GRAY: Color = CP_GRAY;
 
 // Helper function to calculate the maximum display width of category names
 fn calculate_max_category_width(categories: &[crate::api::Category], total_width: u16) -> u16 {
@@ -114,6 +120,175 @@ fn calculate_three_column_split(
         let remaining = total_width - cat_width - series_width;
         (cat_width, series_width, remaining.max(episode_width))
     }
+}
+
+// Helper to stylize channel names with PPV/VIP/RAW/FPS extraction and sports icons
+fn stylize_channel_name(
+    name: &str,
+    is_vip: bool,
+    is_ended: bool, // New argument
+    quality: Option<Quality>,
+    content_type: Option<ContentType>,
+    sports_event: Option<&SportsEvent>,
+    base_style: Style,
+) -> (Vec<Span<'static>>, Option<&'static str>) {
+    let mut spans = Vec::new();
+    
+    // If ended, override all special colors to match the base_style (which should be Gray + Strikethrough)
+    // Otherwise use the standard palette
+    let (t1_color, t2_color, ppv_color, vip_color, raw_color, hd_color, fhd_color, fps_color) = if is_ended {
+        (BRIGHT_GRAY, BRIGHT_GRAY, BRIGHT_GRAY, BRIGHT_GRAY, BRIGHT_GRAY, BRIGHT_GRAY, BRIGHT_GRAY, BRIGHT_GRAY)
+    } else {
+        (Color::Cyan, CP_GREEN, Color::Rgb(255, 105, 180), Color::Yellow, Color::Cyan, Color::Cyan, CP_GREEN, Color::Yellow)
+    };
+
+    let mut found_vip = false;
+    let mut found_ppv = false;
+    let mut found_4k = false;
+    let mut found_hd = false;
+    let mut found_fhd = false;
+    let mut detected_sport_icon = "";
+
+    // FIRST: Check for sports event override
+    if let Some(event) = sports_event {
+        // Construct Team1 vs Team2
+        
+        // Try to detect sport from name first (for icon)
+        let words: Vec<&str> = name.split_whitespace().collect();
+        for word in words {
+             let check = word.replace(&['(', ')', '[', ']', '{', '}', ':'][..], "").trim().to_uppercase();
+             detected_sport_icon = match check.as_str() {
+                 "NBA" => "🏀",
+                 "NFL" => "🏈",
+                 "MLB" => "⚾",
+                 "NHL" => "🏒",
+                 "UFC" | "MMA" => "🥊",
+                 "F1" | "NASCAR" | "RACING" => "🏎️",
+                 "GOLF" | "PGA" => "⛳",
+                 "TENNIS" | "ATP" | "WTA" => "🎾",
+                 "SOCCER" | "FOOTBALL" | "LEAGUE" | "BUNDESLIGA" | "LALIGA" | "PREMIER" | "UEFA" | "FIFA" => "⚽",
+                 "CRICKET" => "🏏",
+                 "RUGBY" => "🏉",
+                 _ => detected_sport_icon,
+             };
+             if !detected_sport_icon.is_empty() { break; }
+        }
+
+        // Just Teams
+        spans.push(Span::styled(format!("{}", event.team1), base_style.fg(t1_color)));
+        spans.push(Span::styled(" vs ", base_style));
+        spans.push(Span::styled(format!("{}", event.team2), base_style.fg(t2_color)));
+        
+        // Append Time if needed? 
+        // No, UI renders time separately.
+        
+    } else {
+        // ... Existing Logic ...
+        let words: Vec<&str> = name.split_whitespace().collect();
+        for (i, word) in words.iter().enumerate() {
+            if i > 0 {
+                spans.push(Span::raw(" "));
+            }
+            
+            // Split by forward slash to handle combined tags like HD/RAW
+            let sub_parts: Vec<&str> = word.split('/').collect();
+            for (j, sub) in sub_parts.iter().enumerate() {
+                if j > 0 {
+                    spans.push(Span::styled("/", base_style));
+                }
+
+                // aggressive clean: parens and brackets and colons
+                let upper = sub.replace(&['(', ')', '[', ']', '{', '}', ':'][..], "").trim().to_uppercase();
+                let check_word = upper.as_str();
+
+                // Check for keywords
+                match check_word {
+                    "PPV" => {
+                        found_ppv = true;
+                        spans.push(Span::styled("(PPV)", base_style.fg(ppv_color).add_modifier(Modifier::BOLD)));
+                    }
+                    "VIP" => {
+                        found_vip = true;
+                        spans.push(Span::styled("(VIP)", base_style.fg(vip_color).add_modifier(Modifier::BOLD)));
+                    }
+                    "RAW" => {
+                        spans.push(Span::styled("(RAW)", base_style.fg(raw_color).add_modifier(Modifier::BOLD)));
+                    }
+                    "HD" | "HQ" => {
+                        found_hd = true;
+                        spans.push(Span::styled("(HD)", base_style.fg(hd_color).add_modifier(Modifier::BOLD)));
+                    }
+                    "FHD" | "1080" | "1080P" => {
+                        found_fhd = true;
+                        spans.push(Span::styled("(FHD)", base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
+                    }
+                    val if ["4K", "UHD", "HEVC"].contains(&val) => {
+                        found_4k = true;
+                        spans.push(Span::styled(format!("({})", val), base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
+                    }
+                    val if val.ends_with("FPS") && val.len() > 3 => {
+                        // 60fps, 50fps
+                        spans.push(Span::styled(format!("({})", val.to_lowercase()), base_style.fg(fps_color).add_modifier(Modifier::BOLD)));
+                    }
+                    _ => {
+                        // Check for Sports Icons (store for prefixing, don't append)
+                        if detected_sport_icon.is_empty() {
+                             detected_sport_icon = match check_word {
+                                 "NBA" => "🏀",
+                                 "NFL" => "🏈",
+                                 "MLB" => "⚾",
+                                 "NHL" => "🏒",
+                                 "UFC" | "MMA" => "🥊",
+                                 "F1" | "NASCAR" | "RACING" => "🏎️",
+                                 "GOLF" | "PGA" => "⛳",
+                                 "TENNIS" | "ATP" | "WTA" => "🎾",
+                                 "SOCCER" | "FOOTBALL" | "LEAGUE" | "BUNDESLIGA" | "LALIGA" | "PREMIER" | "UEFA" | "FIFA" => "⚽",
+                                 "CRICKET" => "🏏",
+                                 "RUGBY" => "🏉",
+                                 _ => "",
+                             };
+                        }
+                        
+                        spans.push(Span::styled(format!("{}", sub), base_style));
+                    }
+                }
+            }
+        }
+    }
+
+    // Prepend Sport Icon if found (Only if NOT ended? Or keep it?)
+    // User didn't say to remove icon for ended streams, just text color. 
+    // But if Gray Strikethrough, colored icon looks weird? 
+    // Emojis ignore color usually. Keep it.
+    if !detected_sport_icon.is_empty() {
+        spans.insert(0, Span::raw(" "));
+        spans.insert(0, Span::styled(detected_sport_icon, base_style));
+    }
+
+    // Append missing tags
+    if is_vip && !found_vip {
+         spans.push(Span::styled(" (VIP)", base_style.fg(vip_color).add_modifier(Modifier::BOLD)));
+    }
+    
+    if let Some(ct) = content_type {
+        if ct == ContentType::PPV && !found_ppv {
+             spans.push(Span::styled(" (PPV)", base_style.fg(ppv_color).add_modifier(Modifier::BOLD)));
+        }
+    }
+    
+    if let Some(q) = quality {
+        if (q == Quality::UHD4K) && !found_4k {
+             spans.push(Span::styled(" (4K)", base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
+        } else if (q == Quality::FHD) && !found_fhd {
+             spans.push(Span::styled(" (FHD)", base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
+        } else if (q == Quality::HD) && !found_hd {
+             spans.push(Span::styled(" (HD)", base_style.fg(hd_color).add_modifier(Modifier::BOLD)));
+        }
+    }
+
+    // Return spans AND detected icon
+    let icon_ret = if detected_sport_icon.is_empty() { None } else { Some(detected_sport_icon) };
+    (spans, icon_ret)
 }
 
 pub fn ui(f: &mut Frame, app: &mut App) {
@@ -217,13 +392,44 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             Span::raw("  "),
             Span::styled(
                 "[N] Discard ",
-                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::Rgb(255, 60, 60)).add_modifier(Modifier::BOLD),
             ),
             Span::raw("  "),
             Span::styled("[Esc] Cancel", Style::default().fg(CP_YELLOW)),
         ]))
         .alignment(Alignment::Center);
         f.render_widget(buttons, layout[1]);
+    }
+
+    // Global Error Overlay (universal visibility for background failures)
+    if let Some(err) = &app.login_error {
+        // Don't show overlay on Login screen as it has its own inline error display
+        if app.current_screen != CurrentScreen::Login {
+            let error_msg = Paragraph::new(format!(" // ERROR_TRAP: {}", err))
+                .style(
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Red)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .block(
+                    Block::default()
+                        .title(" SYSTEM FAILURE ")
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Red)),
+                );
+
+            let area = centered_rect(70, 20, size);
+            f.render_widget(Clear, area);
+            f.render_widget(error_msg, area);
+            
+            // Helpful hint to dismiss
+            let hint = Paragraph::new("Press [Esc] to dispel error trace")
+                .alignment(Alignment::Center)
+                .style(Style::default().fg(Color::Gray).add_modifier(Modifier::ITALIC));
+            let hint_area = Rect::new(area.x, area.y + area.height - 2, area.width, 1);
+            f.render_widget(hint, hint_area);
+        }
     }
 }
 
@@ -341,7 +547,10 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
             .map(|a| a.name.clone())
             .unwrap_or("Unknown".to_string());
             
-        let time = chrono::Local::now().format("%I:%M %p (%Z)").to_string();
+        let tz_str = app.config.get_user_timezone();
+        let user_tz: Tz = Tz::from_str(&tz_str).unwrap_or(chrono_tz::Europe::London);
+        let now = Utc::now().with_timezone(&user_tz);
+        let time = now.format("%I:%M:%S %p %Z").to_string();
         
         let (active, total, exp) = if let Some(info) = &app.account_info {
             let a = info.active_cons.as_ref().map(|v| match v {
@@ -376,7 +585,7 @@ fn render_header(f: &mut Frame, app: &App, area: Rect) {
             ("?".to_string(), "?".to_string(), "N/A".to_string())
         };
 
-        let stats_text = format!("{} | {} | 📅 {} | 👥 {}/{} ", name, time, exp, active, total);
+        let stats_text = format!("{} | {} | Exp: {} | 👥 {}/{} ", name, time, exp, active, total);
         
         let stats = Paragraph::new(stats_text)
             .alignment(Alignment::Right)
@@ -438,7 +647,7 @@ fn render_split_view(f: &mut Frame, app: &mut App, area: Rect, is_vod: bool) {
 }
 
 fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
-    use crate::parser::{country_color, country_flag, parse_category};
+
 
     // Calculate visible window to avoid parsing all items
     let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
@@ -491,34 +700,17 @@ fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_color
                 .map(|c| country_color(c))
                 .unwrap_or(Color::White);
 
-            spans.push(Span::styled(
-                parsed.display_name.clone(),
-                Style::default().fg(name_color),
-            ));
+                let (styled_name, _) = stylize_channel_name(
+                    &parsed.display_name,
+                    parsed.is_vip,
+                    false, // is_ended
+                    parsed.quality,
+                    parsed.content_type,
+                    None,
+                    Style::default().fg(name_color),
+                );
+                spans.extend(styled_name);
 
-            // Quality badge
-            if let Some(quality) = parsed.quality {
-                spans.push(Span::raw(" "));
-                spans.push(Span::styled(
-                    quality.badge(),
-                    Style::default()
-                        .fg(quality.color())
-                        .add_modifier(Modifier::BOLD),
-                ));
-            }
-
-            // Content type icon
-            if let Some(content) = parsed.content_type {
-                let icon = content.icon();
-                if !icon.is_empty() {
-                    spans.push(Span::raw(format!(" {}", icon)));
-                }
-            }
-
-            // VIP indicator
-            if parsed.is_vip {
-                spans.push(Span::styled(" ⭐", Style::default().fg(Color::Yellow)));
-            }
 
             ListItem::new(Line::from(spans))
         })
@@ -556,12 +748,6 @@ fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_color
 }
 
 fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
-    use crate::parser::{country_color, country_flag, parse_stream};
-    use chrono::Utc;
-    use chrono_tz::Tz;
-    use std::str::FromStr;
-
-    // Get user timezone
     // Get user timezone (use cached value to avoid expensive system calls)
     if app.loading_tick % 30 == 0 {
          app.cached_user_timezone = app.config.get_user_timezone();
@@ -569,6 +755,7 @@ fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: C
     let tz_str = &app.cached_user_timezone;
     let user_tz: Tz = Tz::from_str(tz_str).unwrap_or(chrono_tz::Europe::London);
     let now = Utc::now().with_timezone(&user_tz);
+    let tz_name = now.format("%Z").to_string();
 
     // Calculate visible window to avoid parsing all items
     let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
@@ -673,7 +860,7 @@ fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: C
 
             let base_style = if is_ended {
                 Style::default()
-                    .fg(Color::Gray)
+                    .fg(BRIGHT_GRAY)
                     .add_modifier(Modifier::ITALIC)
                     .add_modifier(Modifier::CROSSED_OUT)
             } else {
@@ -692,9 +879,9 @@ fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: C
                 spans.push(Span::styled(
                     "★ ",
                     Style::default().fg(if is_ended {
-                        Color::Gray
+                        BRIGHT_GRAY
                     } else {
-                        Color::Yellow
+                        BRIGHT_YELLOW
                     }),
                 ));
             }
@@ -710,109 +897,53 @@ fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: C
             }
 
             // Channel name / Sports Event
-            if let Some(ref event) = parsed.sports_event {
-                use crate::sports::get_team_color;
-
-                let t1_color = if is_ended {
-                    Color::Gray
-                } else {
-                    get_team_color(&event.team1)
-                };
-                let t2_color = if is_ended {
-                    Color::Gray
-                } else {
-                    get_team_color(&event.team2)
-                };
-
-                // Show original channel name (e.g. "NBA 08")
-                let short_name = parsed
-                    .display_name
-                    .split(':')
-                    .next()
-                    .unwrap_or(&parsed.display_name);
-                spans.push(Span::styled(
-                    format!("{}: ", short_name.trim()),
-                    base_style.fg(Color::Gray),
-                ));
-
-                spans.push(Span::styled(
-                    format!("{} ", event.team1),
-                    base_style.fg(t1_color),
-                ));
-                if let Some(ref abbr) = event.team1_abbr {
-                    let abbr_color = if is_ended {
-                        Color::Gray
-                    } else {
-                        get_team_color(abbr)
-                    };
-                    spans.push(Span::styled(
-                        format!("({}) ", abbr),
-                        base_style.fg(abbr_color),
-                    ));
-                }
-
-                spans.push(Span::styled("x ", base_style.fg(Color::Gray)));
-
-                spans.push(Span::styled(
-                    format!("{} ", event.team2),
-                    base_style.fg(t2_color),
-                ));
-                if let Some(ref abbr) = event.team2_abbr {
-                    let abbr_color = if is_ended {
-                        Color::Gray
-                    } else {
-                        get_team_color(abbr)
-                    };
-                    spans.push(Span::styled(
-                        format!("({}) ", abbr),
-                        base_style.fg(abbr_color),
-                    ));
-                }
+            let name_color = if is_ended {
+                BRIGHT_GRAY
             } else {
-                let name_color = if is_ended {
-                    Color::Gray
-                } else {
-                    parsed
-                        .country
-                        .as_ref()
-                        .map(|c| country_color(c))
-                        .unwrap_or(Color::White)
-                };
-                spans.push(Span::styled(
-                    parsed.display_name.clone(),
-                    base_style.fg(name_color),
-                ));
-            }
+                parsed
+                    .country
+                    .as_ref()
+                    .map(|c| country_color(c))
+                    .unwrap_or(Color::White)
+            };
+
+            let (styled_name, detected_sport_icon) = stylize_channel_name(
+                &parsed.display_name,
+                false,
+                is_ended, // Pass is_ended
+                parsed.quality,
+                None,
+                parsed.sports_event.as_ref(),
+                base_style.fg(name_color),
+            );
+            spans.extend(styled_name);
 
             // EVENT TIME
             if let Some(local_time) = local_time_opt {
                 let time_str = local_time.format("%I:%M %p").to_string();
 
                 let (time_color, status_text) = if is_ended {
-                    (Color::Gray, " [ENDED]")
+                    (BRIGHT_GRAY, " [ENDED]".to_string())
                 } else if diff_mins <= 0 {
-                    (Color::Red, " LIVE NOW")
-                } else if diff_mins < 60 {
-                    (Color::Yellow, " SOON")
+                    (Color::Rgb(255, 60, 60), " LIVE NOW".to_string())
                 } else {
-                    (Color::White, "")
+                    (CP_CYAN, format!(" [{}]", time_str))
                 };
 
-                let date_label = if local_time.date_naive() == now.date_naive() {
-                    "Today".to_string()
-                } else if local_time.date_naive()
-                    == now.date_naive().succ_opt().unwrap_or(now.date_naive())
-                {
-                    "Tomorrow".to_string()
-                } else if local_time.date_naive()
-                    == now.date_naive().pred_opt().unwrap_or(now.date_naive())
-                {
-                    "Yesterday".to_string()
-                } else {
-                    local_time.format("%d/%m").to_string()
+                let days_diff = now.date_naive().signed_duration_since(local_time.date_naive()).num_days();
+                let (date_label, suppress_time) = match days_diff {
+                    0 => ("Today".to_string(), false),
+                    -1 => ("Tomorrow".to_string(), false),
+                    1 => ("Yesterday".to_string(), true),
+                    d if d > 1 => (local_time.format("%A").to_string(), true), // Past > 1 day: [Monday] No Time
+                    _ => (local_time.format("%d/%m").to_string(), false),
                 };
 
-                let display_str = format!(" [{} {}]", date_label, time_str);
+                let display_str = if suppress_time {
+                    format!(" [{}]", date_label)
+                } else {
+                    format!(" [{} {}]", date_label, time_str)
+                };
 
                 spans.push(Span::styled(
                     display_str,
@@ -820,33 +951,31 @@ fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: C
                 ));
                 if !status_text.is_empty() {
                     if status_text == " LIVE NOW" {
-                        // Blinking dot effect using loading_tick
-                        if app.loading_tick % 10 < 5 {
-                            spans.push(Span::styled(" 🔴", Style::default().fg(Color::Red)));
+                        let blink_on = app.loading_tick % 10 < 5;
+                        let icon = detected_sport_icon.unwrap_or("🔴");
+                        
+                        // Icon Blink (Visible/Invisible)
+                        if blink_on {
+                            spans.push(Span::styled(format!(" {}", icon), Style::default().fg(Color::Red)));
                         } else {
-                            spans.push(Span::raw("   "));
+                            spans.push(Span::raw("   ")); // Approximate spacing for blink
                         }
+
+                        // Text Blink (Red/Gray)
+                        let blink_color = if blink_on { time_color } else { Color::DarkGray };
+                        spans.push(Span::styled(
+                            status_text,
+                            base_style.fg(blink_color).add_modifier(Modifier::BOLD),
+                        ));
+                    } else {
+                        spans.push(Span::styled(
+                            status_text,
+                            base_style.fg(time_color).add_modifier(Modifier::BOLD),
+                        ));
                     }
-                    spans.push(Span::styled(
-                        status_text,
-                        base_style.fg(time_color).add_modifier(Modifier::BOLD),
-                    ));
                 }
             }
 
-            // Quality badge
-            if let Some(quality) = parsed.quality {
-                spans.push(Span::raw(" "));
-                let q_color = if is_ended {
-                    Color::DarkGray
-                } else {
-                    quality.color()
-                };
-                spans.push(Span::styled(
-                    quality.badge(),
-                    base_style.fg(q_color).add_modifier(Modifier::BOLD),
-                ));
-            }
 
             // Live event indicator (Explicit)
             if parsed.is_live_event && parsed.start_time.is_none() {
@@ -869,11 +998,15 @@ fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: C
         .collect();
 
     let title = if app.streams.is_empty() {
-        format!(" // LIVE_STREAMS / [NULL] / TZ: {} ", tz_str)
+        format!(" // LIVE_STREAMS / [NULL] / TZ: {} ({}) ", tz_str, tz_name)
     } else {
-        format!(" // LIVE_STREAMS ({}) / TZ: {} ", app.streams.len(), tz_str)
+        format!(
+            " // LIVE_STREAMS ({}) / TZ: {} ({}) ",
+            app.streams.len(),
+            tz_str,
+            tz_name
+        )
     };
-
     let list = List::new(items)
         .block(
             Block::default()
@@ -908,7 +1041,7 @@ fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: C
         let p = Paragraph::new(format!(" ❌ Player Error: {}", err)).style(
             Style::default()
                 .fg(Color::White)
-                .bg(Color::Red)
+                .bg(Color::Rgb(255, 60, 60))
                 .add_modifier(Modifier::BOLD),
         );
         f.render_widget(p, error_area);
@@ -916,7 +1049,7 @@ fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: C
 }
 
 fn render_vod_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
-    use crate::parser::parse_vod_category;
+
 
     // Calculate visible window to avoid parsing all items
     let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
@@ -1035,7 +1168,7 @@ fn render_vod_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
 }
 
 fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
-    use crate::parser::parse_movie;
+
 
     // Calculate visible window to avoid parsing all items
     let visible_height = area.height.saturating_sub(2) as usize; // Account for borders
@@ -1399,26 +1532,6 @@ fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
     ])])
     .alignment(Alignment::Center);
     f.render_widget(footer_info, main_layout[2]);
-
-    // Login Error overlay
-    if let Some(err) = &app.login_error {
-        let error_msg = Paragraph::new(format!(" // ERROR_TRAP: {}", err))
-            .style(
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(Color::Red)),
-            );
-
-        let area = centered_rect(60, 15, area);
-        f.render_widget(Clear, area);
-        f.render_widget(error_msg, area);
-    }
 }
 
 fn render_login(f: &mut Frame, app: &App, area: Rect) {
@@ -1426,7 +1539,7 @@ fn render_login(f: &mut Frame, app: &App, area: Rect) {
         .title("ADD NEW PLAYLIST")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Gray));
+        .border_style(Style::default().fg(MATRIX_GREEN));
     f.render_widget(block.clone(), area);
 
     let chunks = Layout::default()
@@ -1503,7 +1616,7 @@ fn render_login(f: &mut Frame, app: &App, area: Rect) {
     if mode && matches!(active, LoginField::Name) {
         let cursor_x = chunks[0].x + app.input_name.visual_cursor() as u16 + 1;
         let cursor_y = chunks[0].y + 1;
-        f.set_cursor(cursor_x, cursor_y);
+        f.set_cursor_position((cursor_x, cursor_y));
     }
 
     f.render_widget(
@@ -1519,7 +1632,7 @@ fn render_login(f: &mut Frame, app: &App, area: Rect) {
     if mode && matches!(active, LoginField::Url) {
         let cursor_x = chunks[1].x + app.input_url.visual_cursor() as u16 + 1;
         let cursor_y = chunks[1].y + 1;
-        f.set_cursor(cursor_x, cursor_y);
+        f.set_cursor_position((cursor_x, cursor_y));
     }
 
     f.render_widget(
@@ -1535,7 +1648,7 @@ fn render_login(f: &mut Frame, app: &App, area: Rect) {
     if mode && matches!(active, LoginField::Username) {
         let cursor_x = chunks[2].x + app.input_username.visual_cursor() as u16 + 1;
         let cursor_y = chunks[2].y + 1;
-        f.set_cursor(cursor_x, cursor_y);
+        f.set_cursor_position((cursor_x, cursor_y));
     }
 
     let mask: String = app.input_password.value().chars().map(|_| '*').collect();
@@ -1552,7 +1665,7 @@ fn render_login(f: &mut Frame, app: &App, area: Rect) {
     if mode && matches!(active, LoginField::Password) {
         let cursor_x = chunks[3].x + app.input_password.visual_cursor() as u16 + 1;
         let cursor_y = chunks[3].y + 1;
-        f.set_cursor(cursor_x, cursor_y);
+        f.set_cursor_position((cursor_x, cursor_y));
     }
 
     f.render_widget(
@@ -1568,7 +1681,7 @@ fn render_login(f: &mut Frame, app: &App, area: Rect) {
     if mode && matches!(active, LoginField::EpgUrl) {
         let cursor_x = chunks[4].x + app.input_epg_url.visual_cursor() as u16 + 1;
         let cursor_y = chunks[4].y + 1;
-        f.set_cursor(cursor_x, cursor_y);
+        f.set_cursor_position((cursor_x, cursor_y));
     }
 
     if let Some(err) = &app.login_error {
@@ -1855,14 +1968,45 @@ fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         }
     };
 
-    let p = Paragraph::new(Line::from(spans))
-        .alignment(Alignment::Left)
-        .block(
+    // Create the main keybindings paragraph (left side)
+    let keybindings = Paragraph::new(Line::from(spans))
+        .alignment(Alignment::Left);
+
+    // If USA mode is enabled, create a split layout
+    if app.config.american_mode {
+        let footer_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(1), Constraint::Length(15)])
+            .split(area);
+
+        // Left side: keybindings
+        let left_block = Block::default()
+            .borders(Borders::TOP)
+            .border_style(Style::default().fg(CP_GRAY));
+        f.render_widget(keybindings.block(left_block), footer_layout[0]);
+
+        // Right side: USA MODE
+        let usa_spans = vec![
+            Span::styled("[", Style::default().fg(Color::White)),
+            Span::styled("U", Style::default().fg(Color::Rgb(255, 80, 80)).add_modifier(Modifier::BOLD)),
+            Span::styled("S", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled("A", Style::default().fg(Color::Rgb(100, 149, 237)).add_modifier(Modifier::BOLD)),
+            Span::styled("]", Style::default().fg(Color::White)),
+            Span::styled(" MODE", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        ];
+        let usa_paragraph = Paragraph::new(Line::from(usa_spans))
+            .alignment(Alignment::Right)
+            .block(Block::default().borders(Borders::TOP).border_style(Style::default().fg(CP_GRAY)));
+        f.render_widget(usa_paragraph, footer_layout[1]);
+    } else {
+        // Normal footer without USA mode
+        let p = keybindings.block(
             Block::default()
                 .borders(Borders::TOP)
                 .border_style(Style::default().fg(CP_GRAY)),
         );
-    f.render_widget(p, area);
+        f.render_widget(p, area);
+    }
 }
 
 fn render_loading(f: &mut Frame, app: &App, area: Rect) {
@@ -2208,7 +2352,7 @@ fn render_timezone_settings(f: &mut Frame, app: &mut App, area: Rect) {
             Block::default()
                 .title(" Select Timezone (↑/↓ to Navigate, Enter to Select) ")
                 .borders(Borders::TOP)
-                .border_style(Style::default().fg(Color::Gray)),
+                .border_style(Style::default().fg(MATRIX_GREEN)),
         )
         .highlight_style(
             Style::default()

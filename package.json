@@ -1,0 +1,26 @@
+{
+  "name": "@officebeats/matrix-iptv-cli",
+  "version": "3.0.0",
+  "description": "The premium Terminal IPTV Decoder",
+  "main": "index.js",
+  "bin": {
+    "matrix-iptv": "./bin/cli.js"
+  },
+  "scripts": {
+    "postinstall": "node scripts/install-binary.js"
+  },
+  "keywords": [
+    "iptv",
+    "cli",
+    "tui",
+    "matrix",
+    "sports",
+    "xtream"
+  ],
+  "author": "Beats",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.2",
+    "cli-progress": "^3.12.0"
+  }
+}

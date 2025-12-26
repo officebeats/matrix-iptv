@@ -7,6 +7,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         "http://your-provider.com".to_string(),
         "username".to_string(),
         "password".to_string(),
+        matrix_iptv_lib::config::DnsProvider::System,
     )
     .await?;
 

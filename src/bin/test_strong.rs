@@ -21,6 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         strong_account.base_url.clone(),
         strong_account.username.clone(),
         strong_account.password.clone(),
+        config.dns_provider,
     ).await?;
     
     // Test authentication

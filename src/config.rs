@@ -6,6 +6,39 @@ use std::fs;
 #[cfg(not(target_arch = "wasm32"))]
 
 
+/// DNS-over-HTTPS provider options
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
+pub enum DnsProvider {
+    Quad9,
+    AdGuard,
+    Cloudflare,
+    Google,
+    #[default]
+    System,
+}
+
+impl DnsProvider {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            DnsProvider::Quad9 => "Quad9 (Recommended)",
+            DnsProvider::AdGuard => "AdGuard",
+            DnsProvider::Cloudflare => "Cloudflare",
+            DnsProvider::Google => "Google",
+            DnsProvider::System => "System DNS",
+        }
+    }
+
+    pub fn all() -> &'static [DnsProvider] {
+        &[
+            DnsProvider::Quad9,
+            DnsProvider::AdGuard,
+            DnsProvider::Cloudflare,
+            DnsProvider::Google,
+            DnsProvider::System,
+        ]
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Account {
     pub name: String,
@@ -38,6 +71,8 @@ pub struct AppConfig {
     pub timezone: Option<String>,
     #[serde(default)]
     pub american_mode: bool,
+    #[serde(default)]
+    pub dns_provider: DnsProvider,
 }
 
 impl AppConfig {
@@ -182,6 +217,11 @@ impl AppConfig {
 
     pub fn set_timezone(&mut self, tz: String) {
         self.timezone = Some(tz);
+        let _ = self.save();
+    }
+
+    pub fn set_dns_provider(&mut self, provider: DnsProvider) {
+        self.dns_provider = provider;
         let _ = self.save();
     }
 }

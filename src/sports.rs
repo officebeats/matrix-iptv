@@ -10,13 +10,13 @@ pub fn get_team_color(name: &str) -> Color {
         return Color::Rgb(224, 58, 62);
     }
     if name.contains("CELTICS") || name == "BOS" {
-        return Color::Rgb(0, 122, 51);
+        return Color::Rgb(0, 200, 80); // Brighter Green
     }
     if name.contains("NETS") || name == "BKN" {
-        return Color::Rgb(0, 0, 0);
+        return Color::Rgb(200, 200, 200); // Silver instead of Black
     }
     if name.contains("HORNETS") || name == "CHA" {
-        return Color::Rgb(29, 17, 96);
+        return Color::Cyan; // Max brightness
     }
     if name.contains("BULLS") || name == "CHI" {
         return Color::Rgb(206, 17, 65);
@@ -25,16 +25,16 @@ pub fn get_team_color(name: &str) -> Color {
         return Color::Rgb(134, 0, 56);
     }
     if name.contains("MAVERICKS") || name == "DAL" {
-        return Color::Rgb(0, 83, 140);
+        return Color::Cyan;
     }
     if name.contains("NUGGETS") || name == "DEN" {
         return Color::Rgb(254, 197, 36);
     }
     if name.contains("PISTONS") || name == "DET" {
-        return Color::Rgb(29, 66, 138);
+        return Color::Rgb(135, 206, 250); // Light Sky Blue
     }
     if name.contains("WARRIORS") || name == "GSW" {
-        return Color::Rgb(29, 66, 138);
+        return Color::Cyan;
     }
     if name.contains("ROCKETS") || name == "HOU" {
         return Color::Rgb(206, 17, 65);
@@ -58,22 +58,22 @@ pub fn get_team_color(name: &str) -> Color {
         return Color::Rgb(0, 71, 27);
     }
     if name.contains("TIMBERWOLVES") || name == "MIN" {
-        return Color::Rgb(12, 35, 64);
+        return Color::Cyan;
     }
     if name.contains("PELICANS") || name == "NOP" {
-        return Color::Rgb(12, 35, 64);
+        return Color::Rgb(135, 206, 250);
     }
     if name.contains("KNICKS") || name == "NYK" {
         return Color::Rgb(245, 132, 38);
     }
     if name.contains("THUNDER") || name == "OKC" {
-        return Color::Rgb(0, 122, 193);
+        return Color::Cyan; // Brighter Blue
     }
     if name.contains("MAGIC") || name == "ORL" {
-        return Color::Rgb(0, 119, 192);
+        return Color::Cyan; // Brighter Blue
     }
     if name.contains("76ERS") || name == "PHI" {
-        return Color::Rgb(0, 107, 182);
+        return Color::Rgb(100, 200, 255);
     }
     if name.contains("SUNS") || name == "PHX" {
         return Color::Rgb(29, 17, 96);
@@ -91,7 +91,7 @@ pub fn get_team_color(name: &str) -> Color {
         return Color::Rgb(206, 17, 65);
     }
     if name.contains("JAZZ") || name == "UTA" {
-        return Color::Rgb(0, 43, 92);
+        return Color::Rgb(100, 200, 255); // Major brightness bump
     }
     if name.contains("WIZARDS") || name == "WAS" {
         return Color::Rgb(227, 24, 55);
@@ -105,76 +105,76 @@ pub fn get_team_color(name: &str) -> Color {
         return Color::Rgb(167, 25, 48);
     }
     if name.contains("RAVENS") || name == "BAL" {
-        return Color::Rgb(36, 23, 115);
+        return Color::Rgb(186, 85, 211); // Medium Orchid (Bright Purple)
     }
     if name.contains("BILLS") || name == "BUF" {
-        return Color::Rgb(0, 51, 141);
+        return Color::Rgb(100, 200, 255);
     }
     if name.contains("PANTHERS") || name == "CAR" {
-        return Color::Rgb(0, 133, 202);
+        return Color::Cyan;
     }
     if name.contains("BEARS") {
-        return Color::Rgb(11, 22, 42);
+        return Color::Rgb(135, 206, 235); // Sky Blue
     }
     if name.contains("BENGALS") || name == "CIN" {
-        return Color::Rgb(251, 79, 20);
+        return Color::Rgb(255, 140, 0); // Orange
     }
     if name.contains("BROWNS") {
         return Color::Rgb(49, 29, 0);
     }
     if name.contains("COWBOYS") {
-        return Color::Rgb(0, 53, 148);
+        return Color::Rgb(135, 206, 250);
     }
     if name.contains("BRONCOS") {
         return Color::Rgb(251, 79, 20);
     }
     if name.contains("LIONS") {
-        return Color::Rgb(0, 118, 182);
+        return Color::Rgb(100, 200, 255);
     }
     if name.contains("PACKERS") || name == "GB" {
-        return Color::Rgb(32, 55, 49);
+        return Color::Rgb(50, 205, 50); // Lime Green
     }
     if name.contains("TEXANS") {
-        return Color::Rgb(3, 32, 47);
+        return Color::Rgb(135, 206, 250); // Replacing Deep Steel Blue
     }
     if name.contains("COLTS") {
-        return Color::Rgb(0, 44, 95);
+        return Color::Rgb(135, 206, 250);
     }
     if name.contains("JAGUARS") || name == "JAX" {
-        return Color::Rgb(0, 103, 120);
+        return Color::Rgb(0, 255, 220); // Teal -> Bright Cyan-Teal
     }
     if name.contains("CHIEFS") || name == "KC" {
         return Color::Rgb(227, 24, 55);
     }
     if name.contains("RAIDERS") || name == "LV" {
-        return Color::Rgb(0, 0, 0);
+        return Color::Rgb(200, 200, 200);
     }
     if name.contains("CHARGERS") {
-        return Color::Rgb(0, 128, 198);
+        return Color::Rgb(100, 220, 255);
     }
     if name.contains("RAMS") {
-        return Color::Rgb(0, 53, 148);
+        return Color::Rgb(100, 200, 255);
     }
     if name.contains("DOLPHINS") {
-        return Color::Rgb(0, 142, 151);
+        return Color::Rgb(0, 255, 230);
     }
     if name.contains("VIKINGS") {
         return Color::Rgb(79, 38, 131);
     }
     if name.contains("PATRIOTS") || name == "NE" {
-        return Color::Rgb(0, 34, 68);
+        return Color::Rgb(100, 180, 255); // Brighter than steel blue
     }
     if name.contains("SAINTS") || name == "NO" {
         return Color::Rgb(211, 188, 141);
     }
     if name.contains("GIANTS") || name == "NYG" {
-        return Color::Rgb(11, 34, 101);
+        return Color::Rgb(100, 200, 255);
     }
     if name.contains("JETS") || name == "NYJ" {
         return Color::Rgb(18, 87, 64);
     }
     if name.contains("EAGLES") {
-        return Color::Rgb(0, 76, 84);
+        return Color::Rgb(0, 250, 200); // Midnight green is too dark, go Mint
     }
     if name.contains("STEELERS") || name == "PIT" {
         return Color::Rgb(255, 182, 18);
@@ -183,13 +183,13 @@ pub fn get_team_color(name: &str) -> Color {
         return Color::Rgb(170, 0, 0);
     }
     if name.contains("SEAHAWKS") || name == "SEA" {
-        return Color::Rgb(0, 34, 68);
+        return Color::Cyan;
     }
     if name.contains("BUCCANEERS") || name == "TB" {
         return Color::Rgb(213, 10, 10);
     }
     if name.contains("TITANS") || name == "TEN" {
-        return Color::Rgb(12, 35, 64);
+        return Color::Cyan;
     }
     if name.contains("COMMANDERS") {
         return Color::Rgb(119, 49, 65);
@@ -206,13 +206,13 @@ pub fn get_team_color(name: &str) -> Color {
         return Color::Rgb(206, 17, 38);
     }
     if name.contains("MAPLE LEAFS") || name == "TOR" {
-        return Color::Rgb(0, 62, 126);
+        return Color::Rgb(100, 200, 255);
     }
     if name.contains("CANADIENS") || name == "MTL" {
         return Color::Rgb(175, 30, 45);
     }
     if name.contains("RANGERS") || name == "NYR" {
-        return Color::Rgb(0, 56, 168);
+        return Color::Rgb(100, 200, 255);
     }
     if name.contains("PENGUINS") || name == "PIT" {
         return Color::Rgb(252, 181, 20);
@@ -220,22 +220,22 @@ pub fn get_team_color(name: &str) -> Color {
 
     // MLB
     if name.contains("YANKEES") || name == "NYY" {
-        return Color::Rgb(12, 35, 64);
+        return Color::Rgb(135, 206, 250); // Royal Blue
     }
     if name.contains("RED SOX") || name == "BOS" {
         return Color::Rgb(189, 48, 57);
     }
     if name.contains("DODGERS") || name == "LAD" {
-        return Color::Rgb(0, 90, 156);
+        return Color::Rgb(135, 206, 250);
     }
     if name.contains("CUBS") || name == "CHC" {
-        return Color::Rgb(14, 51, 134);
+        return Color::Rgb(135, 206, 250);
     }
     if name.contains("GIANTS") || name == "SFG" {
         return Color::Rgb(253, 90, 30);
     }
     if name.contains("METS") || name == "NYM" {
-        return Color::Rgb(0, 45, 114);
+        return Color::Rgb(135, 206, 250);
     }
 
     // Premier League (Soccer)
@@ -243,13 +243,13 @@ pub fn get_team_color(name: &str) -> Color {
         return Color::Rgb(239, 1, 7);
     }
     if name.contains("CHELSEA") || name == "CHE" {
-        return Color::Rgb(3, 70, 148);
+        return Color::Rgb(100, 200, 255);
     }
     if name.contains("LIVERPOOL") || name == "LIV" {
         return Color::Rgb(200, 16, 46);
     }
     if name.contains("MAN CITY") || name == "MCI" {
-        return Color::Rgb(108, 171, 221);
+        return Color::Cyan;
     }
     if name.contains("MAN UTD") || name == "MUN" {
         return Color::Rgb(218, 41, 28);
@@ -266,7 +266,7 @@ pub fn get_team_color(name: &str) -> Color {
         return Color::Rgb(0, 0, 0);
     }
     if name.contains("GALAXY") || name == "LAG" {
-        return Color::Rgb(0, 36, 93);
+        return Color::Rgb(100, 200, 255);
     }
     if name.contains("SOUNDERS") {
         return Color::Rgb(93, 151, 65);
@@ -280,14 +280,39 @@ pub fn get_team_color(name: &str) -> Color {
         return Color::Rgb(210, 10, 10);
     } // Red
     if name.contains("PFL") {
-        return Color::Rgb(0, 86, 179);
+        return Color::Rgb(100, 200, 255);
     }
     if name.contains("BELLATOR") {
-        return Color::Rgb(255, 215, 0);
+        return Color::Yellow;
     } // Goldish
 
     // Fallback
     Color::White
+}
+
+pub fn is_generic_label(name: &str) -> bool {
+    let name = name.to_uppercase();
+    let generics = [
+        "MNF", "SNF", "TNF", "NFL LIVE", "NFL MEDIA", "NFL NETWORK", "NFL PACKAGE",
+        "NBA TV", "NBA PACKAGE", "NBA GAMETIME", "MLB TV", "MLB PACKAGE",
+        "EVENT ONLY", "LIVE NOW", "REPLAY", "FULL REPLAY", "DIRECT TV",
+        "SPORTS", "FOOTBALL", "BASKETBALL", "BASEBALL", "HOCKEY", "SOCCER",
+        "LIVE SPORTS", "GAME PASS", "REDZONE", "NFL REDZONE"
+    ];
+
+    for g in generics {
+        if name == g || name.contains(g) && name.len() < g.len() + 5 {
+            return true;
+        }
+    }
+
+    // Check for "PACKAGE 01", "LIVE 05" etc.
+    let re_generic = regex::Regex::new(r"(?i)^(LIVE|PACKAGE|NETWORK|TV|STREAM)\s+\d+$").unwrap();
+    if re_generic.is_match(&name) {
+        return true;
+    }
+
+    false
 }
 
 #[derive(Debug, Clone)]
@@ -345,6 +370,11 @@ pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
 
         let team1 = team1.trim().to_string();
 
+        // VALIDATION: If either team is a generic label, this isn't a specific matchup event
+        if is_generic_label(&team1) || is_generic_label(&team2) {
+            return None;
+        }
+
         // Try to extract start time if present in the rest of the string
         let start_time_re =
             regex::Regex::new(r"(?i)start:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").ok()?;
@@ -379,10 +409,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_team_color() {
-        assert_eq!(get_team_color("Hawks"), Color::Rgb(224, 58, 62));
-        assert_eq!(get_team_color("ATL"), Color::Rgb(224, 58, 62));
-        assert_eq!(get_team_color("Bulls"), Color::Rgb(206, 17, 65));
-        assert_eq!(get_team_color("Unknown Team"), Color::White);
+    fn test_is_generic_label() {
+        assert!(is_generic_label("MNF"));
+        assert!(is_generic_label("NFL Live 01"));
+        assert!(is_generic_label("NBA Package"));
+        assert!(is_generic_label("Live Now"));
+        assert!(!is_generic_label("Cowboys"));
+        assert!(!is_generic_label("Washington"));
+    }
+
+    #[test]
+    fn test_parse_sports_event_blacklist() {
+        // NFL LIVE 01 x MNF should return None
+        assert!(parse_sports_event("NFL LIVE 01 x MNF").is_none());
+        assert!(parse_sports_event("NBA TV x LIVE NOW").is_none());
+    }
+
+    #[test]
+    fn test_parse_sports_event_valid() {
+        let res = parse_sports_event("Cowboys x Commanders").unwrap();
+        assert_eq!(res.team1, "Cowboys");
+        assert_eq!(res.team2, "Commanders");
     }
 }

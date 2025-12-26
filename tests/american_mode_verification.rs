@@ -12,31 +12,37 @@ fn test_american_mode_filtering() {
             category_id: "ALL".to_string(),
             category_name: "All Channels".to_string(),
             parent_id: json!(0),
+            ..Default::default()
         },
         Category {
             category_id: "1".to_string(),
             category_name: "USA | News".to_string(),
             parent_id: json!(0),
+            ..Default::default()
         },
         Category {
             category_id: "2".to_string(),
             category_name: "UK | Sports".to_string(),
             parent_id: json!(0),
+            ..Default::default()
         },
         Category {
             category_id: "3".to_string(),
             category_name: "AMERICA | Movies".to_string(),
             parent_id: json!(0),
+            ..Default::default()
         },
         Category {
             category_id: "4".to_string(),
             category_name: "AM | Armenian Channel".to_string(),
             parent_id: json!(0),
+            ..Default::default()
         },
         Category {
             category_id: "5".to_string(),
             category_name: "AR | ALGERIE +6H USA".to_string(),
             parent_id: json!(0),
+            ..Default::default()
         },
     ];
     
@@ -72,16 +78,19 @@ fn test_vod_english_filtering() {
             category_id: "1".to_string(),
             category_name: "Action | EN".to_string(),
             parent_id: json!(0),
+            ..Default::default()
         },
         Category {
             category_id: "2".to_string(),
             category_name: "Comedy | FR".to_string(),
             parent_id: json!(0),
+            ..Default::default()
         },
         Category {
             category_id: "3".to_string(),
             category_name: "Drama | ENGLISH".to_string(),
             parent_id: json!(0),
+            ..Default::default()
         },
     ];
     

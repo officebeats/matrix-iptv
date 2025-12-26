@@ -1,6 +1,6 @@
 use ratatui::style::Color;
 use regex::Regex;
-use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc, Timelike};
+use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use once_cell::sync::Lazy;
 
 // Pre-compiled regexes for performance - only compiled once
@@ -20,42 +20,35 @@ static YEAR_STRIP_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\(\d{4}\)").unwrap()
 });
 
-// American Mode cleaning regexes - pre-compiled for performance
-static CLEAN_PREFIX_EN: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^EN\s*[-|:]\s*").unwrap());
-static CLEAN_PREFIX_US: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^US\s*[-|:]\s*").unwrap());
-static CLEAN_PREFIX_USA: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^USA\s*[-|:]\s*").unwrap());
-static CLEAN_PREFIX_ENGLISH: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^ENGLISH\s*[-|:]\s*").unwrap());
-static CLEAN_PREFIX_AMERICA: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^AMERICA\s*[-|:]\s*").unwrap());
+// American Mode cleaning regexes - pre-compiled and combined for performance
+static CLEAN_U_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^[\W_]*u\s+").unwrap());
+
+static CLEAN_PREFIX_COMBINED: Lazy<Regex> = Lazy::new(|| {
+    // Order matters: Longest matches first to avoid partial replacements (e.g. USA vs US)
+    Regex::new(r"(?i)^(?:UNITED\s+STATES|ENGLISH|AMERICA|USA|US|EN)(?:\s*[-|:]\s*)").unwrap()
+});
+
+static CLEAN_BRACKETS_COMBINED: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\s*[\(\[\{]\s*(?:UNITED\s+STATES|ENGLISH|AMERICA|USA|US|EN)\s*[\)\]\}]").unwrap()
+});
+
+static CLEAN_END_COMBINED: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)\s+(?:UNITED\s+STATES|ENGLISH|AMERICA|USA|US|EN)\s*$").unwrap()
+});
+
+static CLEAN_START_COMBINED: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"(?i)^(?:UNITED\s+STATES|ENGLISH|AMERICA|USA|US|EN)\s+").unwrap()
+});
+
+// Standalone USA mentions (e.g. "USA Sports")
+static CLEAN_USA_STANDALONE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\bUSA\b\s*[-|:]*\s*").unwrap());
+
 static CLEAN_TRAILING_PIPE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*\|\s*$").unwrap());
 static CLEAN_LEADING_PIPE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*\|\s*").unwrap());
 static CLEAN_MULTI_PIPE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*\|\s*\|+").unwrap());
 static CLEAN_TRAILING_HYPHEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+-\s*$").unwrap());
 static CLEAN_LEADING_HYPHEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-\s+").unwrap());
 static CLEAN_MULTI_SPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
-
-// Keyword removal patterns (generated at compile time for common keywords)
-static CLEAN_ENGLISH_BRACKETS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s*[\(\[\{]\s*ENGLISH\s*[\)\]\}]").unwrap());
-static CLEAN_USA_BRACKETS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s*[\(\[\{]\s*USA\s*[\)\]\}]").unwrap());
-static CLEAN_US_BRACKETS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s*[\(\[\{]\s*US\s*[\)\]\}]").unwrap());
-static CLEAN_EN_BRACKETS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s*[\(\[\{]\s*EN\s*[\)\]\}]").unwrap());
-static CLEAN_ENGLISH_END: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s+ENGLISH\s*$").unwrap());
-static CLEAN_USA_END: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s+USA\s*$").unwrap());
-static CLEAN_US_END: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s+US\s*$").unwrap());
-static CLEAN_EN_END: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s+EN\s*$").unwrap());
-static CLEAN_ENGLISH_START: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^ENGLISH\s+").unwrap());
-static CLEAN_USA_START: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^USA\s+").unwrap());
-static CLEAN_US_START: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^US\s+").unwrap());
-static CLEAN_EN_START: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^EN\s+").unwrap());
-// UNITED STATES patterns
-static CLEAN_UNITED_STATES_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^UNITED\s+STATES\s*[-|:]\s*").unwrap());
-static CLEAN_UNITED_STATES_BRACKETS: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s*[\(\[\{]\s*UNITED\s+STATES\s*[\)\]\}]").unwrap());
-static CLEAN_UNITED_STATES_END: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\s+UNITED\s+STATES\s*$").unwrap());
-static CLEAN_UNITED_STATES_START: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^UNITED\s+STATES\s+").unwrap());
-
-// Additional cleaning patterns for @ symbols and USA variations
-static CLEAN_AT_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^\s*@+\s*").unwrap());
-static CLEAN_USA_PIPE_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^USA\s*\|\s*").unwrap());
-static CLEAN_USA_STANDALONE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\bUSA\b\s*[-|:]*\s*").unwrap());
 
 
 /// Parsed category with extracted metadata
@@ -89,10 +82,10 @@ impl Quality {
 
     pub fn color(&self) -> Color {
         match self {
-            Quality::UHD4K => Color::Magenta,
-            Quality::FHD => Color::Green,
-            Quality::HD => Color::LightBlue,
-            Quality::SD => Color::DarkGray,
+            Quality::UHD4K => Color::Rgb(255, 0, 255), // Neon Magenta
+            Quality::FHD => Color::Rgb(57, 255, 20),   // Neon Green
+            Quality::HD => Color::Rgb(0, 255, 255),    // Bright Cyan
+            Quality::SD => Color::White,               // Safe White
         }
     }
 }
@@ -114,16 +107,7 @@ pub enum ContentType {
 impl ContentType {
     pub fn icon(&self) -> &'static str {
         match self {
-            ContentType::Sports => "⚽",
-            ContentType::News => "📰",
-            ContentType::Movies => "🎬",
-            ContentType::Kids => "🧸",
-            ContentType::Music => "🎵",
-            ContentType::Documentary => "📚",
-            ContentType::Entertainment => "📺",
-            ContentType::Religious => "✝️",
-            ContentType::PPV => "💎",
-            ContentType::General => "",
+            _ => "",
         }
     }
 }
@@ -131,12 +115,12 @@ impl ContentType {
 /// Get color for country/region code
 pub fn country_color(country: &str) -> Color {
     match country.to_uppercase().as_str() {
-        "US" | "USA" | "AM" => Color::LightBlue,
-        "UK" | "GB" | "EU" => Color::Green,
-        "FR" | "FRANCE" => Color::Cyan,
-        "CA" | "CANADA" => Color::Red,
-        "VIP" => Color::Yellow,
-        "4K" => Color::Magenta,
+        "US" | "USA" | "AM" => Color::Rgb(0, 255, 255),
+        "UK" | "GB" | "EU" => Color::Rgb(57, 255, 20),
+        "FR" | "FRANCE" => Color::Rgb(255, 105, 180),
+        "CA" | "CANADA" => Color::Rgb(255, 69, 0), // Orange Red
+        "VIP" => Color::Rgb(255, 255, 0),
+        "4K" => Color::Rgb(255, 0, 255),
         _ => Color::White,
     }
 }
@@ -163,18 +147,59 @@ pub fn country_flag(country: &str) -> &'static str {
         "PL" | "POLAND" => "🇵🇱",
         "RU" | "RUSSIA" => "🇷🇺",
         "UA" | "UKRAINE" => "🇺🇦",
-        "VIP" => "⭐",
-        "4K" => "🟣",
         _ => "",
     }
 }
 
 /// Check if a name/category is American live content
+// Generic Country Prefix Regex (e.g. "AZ |", "BR |", "C |")
+static GENERIC_COUNTRY_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^([A-Z]{1,3})\s*[|:]").unwrap());
+
+/// Check if a name/category is American live content
 pub fn is_american_live(name: &str) -> bool {
     // Normalize special separators first
-    let n = name.to_uppercase().replace("▎", "|");
+    let n = name.to_uppercase().replace("▎", "|").replace("︳", "|");
+
+    // 0. Strict Blocker for known international junk that slips through (e.g. "AR|")
+    // This handles cases where a prefix like Arabic (AR) is used without a space.
+    if (n.starts_with("AR |") || n.starts_with("AR|") || n.starts_with("AR :") || n.starts_with("AR:")) && !n.contains("USA") {
+        return false;
+    }
+
+    // 1. Prefix Blocker (First line of defense)
+    // If it starts with "XX |" or "XXX |", we verify if XX is explicitly a US or Sports marker.
+    // If not, we block it unless the name contains a strong US keyword (like "USA").
+    if let Some(caps) = GENERIC_COUNTRY_PREFIX.captures(&n) {
+        if let Some(match_str) = caps.get(1) {
+             let p = match_str.as_str();
+             // Whitelist strict US/Sports/Quality prefixes
+             let allowed_prefixes = [
+                 "US", "USA", "VIP", "4K", "3D", "XXX", "PPV", 
+                 "NBA", "NFL", "UFC", "MLB", "NHL", "F1", "UHD", "FHD", "RAW"
+             ];
+             
+             if !allowed_prefixes.contains(&p) {
+                 // It has a prefix like "UK", "CA", "FR". 
+                 // We block it UNLESS it explicitly mentions USA inside the name.
+                 if !n.contains("USA") && !n.contains("US LOCALS") && !n.contains("AMERICA") && !n.contains("UNITED STATES") {
+                    return false; 
+                 }
+             }
+        }
+    }
+
+    // 2. Explicit Positive check
+    // If it passed the prefix check (or has no prefix), we check if it's definitively American.
+    let positive_keywords = [
+        "USA", "U.S.A", " US ", "[US]", "(US)", "|US|", "AMERICA", "UNITED STATES", "LOCAL", "LOCALS", 
+        "NFL", "NBA", "MLB", "NHL", "NCAA", "ESPN", "BALLY", "YES NETWORK", "MSG", "ABC", "NBC", "CBS", "FOX",
+        "4K", "UHD", "FHD", "VIP", "PPV", "UFC"
+    ];
+    if positive_keywords.iter().any(|&k| n.contains(k)) || n.starts_with("US ") || n.starts_with("US|") || n.starts_with("US:") || n.starts_with("US-") {
+        return true;
+    }
     
-    // Explicit exclusions for international/foreign content
+    // 2. Explicit exclusions for international/foreign content (Backup for non-prefixed items)
     let foreign_patterns = [
         // Arabic/Middle East/Asia
         "AR |", "AR|", "|AR|", " AR ", "ARAB", "ARABIC",
@@ -197,6 +222,15 @@ pub fn is_american_live(name: &str) -> bool {
         "TH |", "TH|", "|TH|", "THAILAND",
         "ID |", "ID|", "|ID|", "INDONESIA",
         "MY |", "MY|", "|MY|", "MALAYSIA",
+        "ASIA |", "ASIA|", "|ASIA|", " ASIA", 
+        "AM |", "AM|", "|AM|", "ARMENIA", "ARMENIAN",
+        "KH |", "KH|", "KURDISH", "KURD",
+        "AZ |", "AZ|", "AZERBAIJAN",
+        "GE |", "GE|", "GEORGIA",
+        "HK |", "HK|", "HONG KONG",
+
+        // Africa
+        "AFRICA", "NIGERIA", "KENYA", "SOMALIA", "ZA |", "ZA|", "SOUTH AFRICA", "MAROC", "MOROCCO", "TUNISIA", "ALGERIA", "EGYPT",
 
         // Europe (Extended)
         "UK |", "UK|", "|UK|", " UK ", "UNITED KINGDOM", "BRITISH",
@@ -206,8 +240,9 @@ pub fn is_american_live(name: &str) -> bool {
         "DE |", "DE|", "|DE|", " DE ", "GERMAN", "GERMANY", "DEUTSCH",
         "IT |", "IT|", "|IT|", " IT ", "ITALY", "ITALIAN",
         "ES |", "ES|", "|ES|", " ES ", "SPAIN", "SPANISH", "ESPANA", "LATINO",
-        "PT |", "PT|", "|PT|", " PT ", "PORTUGAL", "PORTUGUESE", "BRAZIL",
+        "PT |", "PT|", "|PT|", " PT ", "PORTUGAL", "PORTUGUESE", "BRAZIL", "BR |", "BR|",
         "NL |", "NL|", "|NL|", " NL ", "DUTCH", "NETHERLANDS",
+        "BE |", "BE|", "|BE|", "BELGIUM",
         "PL |", "PL|", "|PL|", " PL ", "POLAND", "POLISH",
         "RU |", "RU|", "|RU|", " RU ", "RUSSIA", "RUSSIAN",
         "GR |", "GR|", "|GR|", " GR ", "GREECE", "GREEK",
@@ -215,23 +250,34 @@ pub fn is_american_live(name: &str) -> bool {
         "RO |", "RO|", "|RO|", "ROMANIA", "ROMANIAN",
         "BG |", "BG|", "|BG|", "BULGARIA", "BULGARIAN",
         "HU |", "HU|", "|HU|", "HUNGARY", "HUNGARIAN", "MAGYAR",
-        "CZ |", "CZ|", "|CZ|", "CZECH",
+        "CZ |", "CZ|", "|CZ|", "CZECH", "CS |", "CS|",
         "SK |", "SK|", "|SK|", "SLOVAKIA",
         "HR |", "HR|", "|HR|", "CROATIA", "HRVATSKA",
         "RS |", "RS|", "|RS|", "SERBIA", "SRPSKI",
         "BA |", "BA|", "|BA|", "BOSNIA",
         "MK |", "MK|", "|MK|", "MACEDONIA",
         "SI |", "SI|", "|SI|", "SLOVENIA",
-        "EX-YU", "BALKAN", "YUGOSLAVIA",
+        "EX-YU", "BALKAN", "YUGOSLAVIA", "CG |", "CG|", "MONTENEGRO",
         "CY |", "CY|", "|CY|", "CYPRUS",
         "MT |", "MT|", "|MT|", "MALTA",
         "UA |", "UA|", "|UA|", "UKRAINE", "UKRAINIAN",
+        "AT |", "AT|", "|AT|", "AUSTRIA", "AUSTRIAN",
+        "CH |", "CH|", "|CH|", "SWISS", "SWITZERLAND",
+        "SE |", "SE|", "|SE|", "SWEDEN", "SWEDISH",
+        "DK |", "DK|", "|DK|", "DENMARK", "DANISH",
+        "NO |", "NO|", "|NO|", "NORWAY", "NORWEGIAN",
+        "FI |", "FI|", "|FI|", "FINLAND", "FINNISH",
+        "IS |", "IS|", "ICELAND",
 
-        // Africa
-        "AFRICA", "NIGERIA", "KENYA", "SOMALIA", "ZA |", "ZA|", "SOUTH AFRICA",
-        
+        // Oceania
+        "AU |", "AU|", "|AU|", "AUSTRALIA",
+        "NZ |", "NZ|", "|NZ|", "NEW ZEALAND",
+
         // Latin/South America (Generic)
-        "LATAM", "SUR AMERICA", "ARGENTINA", "COLOMBIA", "MEXICO", "CHILE", "PERU",
+        "LATAM", "SUR AMERICA", "ARGENTINA", "COLOMBIA", "CHILE", "PERU", "VENEZUELA", "BOLIVIA", "ECUADOR", "URUGUAY", "PARAGUAY", "CR |", "CR|", "CARIBBEAN",
+        
+        // Canada
+        "CANADA", "CA |", "CA|", " C |", "C |", 
         
         // Adult
         "XXX", "ADULT", "18+", "PORN",
@@ -244,7 +290,6 @@ pub fn is_american_live(name: &str) -> bool {
     }
 
     // Default: Allow everything else (Exclusion-based filtering)
-    // This ensures we don't accidentally hide valid categories like "General", "Kids", "News"
     true
 }
 
@@ -253,78 +298,26 @@ pub fn is_american_live(name: &str) -> bool {
 /// Uses pre-compiled static regexes for performance
 pub fn clean_american_name(name: &str) -> String {
     // Normalize special separators first
-    let name_norm = name.replace("▎", "|");
-    let mut cleaned = name_norm.to_string();
+    let mut cleaned = name.replace("▎", "|");
     
-    // Remove all @ symbols globally (handles Promax styling like "@Sports" and "XMAS @CHRISTMAS")
+    // Remove all @ symbols globally
     cleaned = cleaned.replace("@", "");
 
     // Remove BOM and common hidden characters
     cleaned = cleaned.replace("\u{feff}", "").replace("\u{200b}", "");
 
-    // Remove "u " prefix (specific to Mega OTT)
-    if cleaned.trim_start().to_lowercase().starts_with("u ") {
-        if let Some(rest) = cleaned.trim_start()[2..].trim_start().to_string().into() {
-             cleaned = rest;
-        }
-    } else if cleaned.trim_start().to_lowercase().starts_with("u  ") {
-        // Handle double space if distinct
-         if let Some(rest) = cleaned.trim_start()[3..].trim_start().to_string().into() {
-             cleaned = rest;
-        }
-    }
-    // Aggressive manual check for "u " prefix
-    if let Some(first) = cleaned.chars().next() {
-        if first == 'u' || first == 'U' {
-            // Check second char
-            let second = cleaned.chars().nth(1);
-            match second {
-                Some(c) if !c.is_alphanumeric() => {
-                    // It's u followed by space, symbol, etc. Strip it.
-                    // find index of second char to safely slice
-                    if let Some((idx, _)) = cleaned.char_indices().nth(1) {
-                         cleaned = cleaned[idx..].trim_start_matches(|c: char| !c.is_alphanumeric()).to_string();
-                    }
-                },
-                Some(_) => {}, // u followed by letter/number (e.g. "Unique"), keep it
-                None => {}, // Just "u", keep it? Or drop?
-            }
-        }
-    }
-
-    // General regex for "u " prefix (handles optional leading non-word chars like hidden symbols)
-    let re_u = Regex::new(r"(?i)^[\W_]*u\s+").unwrap();
-    cleaned = re_u.replace(&cleaned, "").to_string();
+    // Remove "u " prefix using pre-compiled regex (handles Mega OTT)
+    cleaned = CLEAN_U_PREFIX.replace(&cleaned, "").to_string();
     
-    // First pass: remove common leading language prefixes using pre-compiled regexes
-    cleaned = CLEAN_PREFIX_EN.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_PREFIX_US.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_PREFIX_USA.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_PREFIX_ENGLISH.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_PREFIX_AMERICA.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_UNITED_STATES_PREFIX.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_USA_PIPE_PREFIX.replace_all(&cleaned, "").to_string();
+    // Remove common leading language prefixes
+    cleaned = CLEAN_PREFIX_COMBINED.replace_all(&cleaned, "").to_string();
     
     // Remove keywords in brackets: (USA), [USA], {USA}, (EN), etc.
-    cleaned = CLEAN_ENGLISH_BRACKETS.replace_all(&cleaned, " ").to_string();
-    cleaned = CLEAN_USA_BRACKETS.replace_all(&cleaned, " ").to_string();
-    cleaned = CLEAN_US_BRACKETS.replace_all(&cleaned, " ").to_string();
-    cleaned = CLEAN_EN_BRACKETS.replace_all(&cleaned, " ").to_string();
-    cleaned = CLEAN_UNITED_STATES_BRACKETS.replace_all(&cleaned, " ").to_string();
+    cleaned = CLEAN_BRACKETS_COMBINED.replace_all(&cleaned, " ").to_string();
     
-    // Remove keywords at end of string
-    cleaned = CLEAN_ENGLISH_END.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_USA_END.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_US_END.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_EN_END.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_UNITED_STATES_END.replace_all(&cleaned, "").to_string();
-    
-    // Remove keywords at start of string
-    cleaned = CLEAN_ENGLISH_START.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_USA_START.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_US_START.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_EN_START.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_UNITED_STATES_START.replace_all(&cleaned, "").to_string();
+    // Remove keywords at end/start of string
+    cleaned = CLEAN_END_COMBINED.replace_all(&cleaned, "").to_string();
+    cleaned = CLEAN_START_COMBINED.replace_all(&cleaned, "").to_string();
     
     // Final cleanup: remove redundant pipes, hyphens, and double spaces
     cleaned = CLEAN_TRAILING_PIPE.replace_all(&cleaned, "").to_string();
@@ -334,15 +327,20 @@ pub fn clean_american_name(name: &str) -> String {
     cleaned = CLEAN_LEADING_HYPHEN.replace_all(&cleaned, "").to_string();
     cleaned = CLEAN_MULTI_SPACE.replace_all(&cleaned, " ").to_string();
     
-    // Remove any remaining standalone USA mentions (for Mega OTT style names like "USA Sports")
+    // Remove any remaining standalone USA mentions
     cleaned = CLEAN_USA_STANDALONE.replace_all(&cleaned, "").to_string();
     
     // Extra cleanup for leading/trailing colons and dots
     cleaned = cleaned.trim_start_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
                      .trim_end_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
+                     .trim()
                      .to_string();
 
-    cleaned.trim().to_string()
+    if cleaned.is_empty() {
+        return name.to_string();
+    }
+
+    cleaned
 }
 
 /// Check if a name/category is English VOD content
@@ -535,6 +533,59 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
             .trim_matches('═')
             .trim()
             .to_string();
+    }
+
+    // Check for "u " prefix (specific to Mega OTT and others)
+    // We do this loop to handle cases like "u u NFL" or "u [u] NFL"
+    let mut clean_loop = true;
+    while clean_loop {
+        clean_loop = false;
+        let start_len = display_name.len();
+        
+        // Remove "u " prefix
+        if display_name.trim_start().to_lowercase().starts_with("u ") {
+            if let Some(rest) = display_name.trim_start()[2..].trim_start().to_string().into() {
+                display_name = rest;
+                clean_loop = true;
+            }
+        }
+        
+        // Remove "u " with regex (for hidden chars)
+        let re_u = Regex::new(r"(?i)^[\W_]*u\s+").unwrap();
+        if re_u.is_match(&display_name) {
+             display_name = re_u.replace(&display_name, "").to_string();
+             clean_loop = true;
+        }
+        
+        // Remove "MNF", "TNF", "SNF" from start if it's duplicated later
+        // e.g. "MNF 8: Saints x Titans" -> "Saints x Titans"
+        let re_mnf = Regex::new(r"(?i)^(MNF|TNF|SNF|NBA|NFL)\s+\d*[:|-]?\s*").unwrap();
+        if re_mnf.is_match(&display_name) {
+             display_name = re_mnf.replace(&display_name, "").to_string();
+             clean_loop = true;
+        }
+
+        if display_name.len() < start_len {
+            clean_loop = true;
+        }
+    }
+
+    // Aggressive cleanup for pipe separators | often used to separate "Channel" from "Event"
+    // Example: "NFL 01 - ... : NFL | 01 x 12/25 ..."
+    // We want to discard the left side if it looks like channel info
+    if let Some(idx) = display_name.rfind('|') {
+        let suffix = display_name[idx + 1..].trim();
+        // Heuristic: If suffix starts with a digit and "x" or "vs", it's likely the event part "01 x Team"
+        // And the prefix is just channel spam.
+        let re_event_start = Regex::new(r"(?i)^\d+\s*(x|vs|at|-)\s+").unwrap();
+        if re_event_start.is_match(suffix) {
+            display_name = suffix.to_string();
+        } 
+        // Heuristic 2: If the part before the pipe is super long compared to after? 
+        // Or if the part after contains " x " or " vs "
+        else if (suffix.contains(" x ") || suffix.contains(" vs ") || suffix.contains(" at ")) && suffix.len() > 5 {
+             display_name = suffix.to_string();
+        }
     }
 
     // Detect country/region prefix patterns
@@ -850,14 +901,14 @@ impl StreamingSource {
 
     pub fn color(&self) -> Color {
         match self {
-            StreamingSource::Netflix => Color::Red,
-            StreamingSource::Disney => Color::LightBlue,
+            StreamingSource::Netflix => Color::Rgb(255, 50, 50),
+            StreamingSource::Disney => Color::Rgb(100, 200, 255),
             StreamingSource::Apple => Color::White,
-            StreamingSource::Amazon => Color::Yellow,
-            StreamingSource::HBO => Color::Magenta,
-            StreamingSource::Paramount => Color::Cyan,
-            StreamingSource::Peacock => Color::Green,
-            StreamingSource::Hulu => Color::LightGreen,
+            StreamingSource::Amazon => Color::Rgb(255, 255, 0),
+            StreamingSource::HBO => Color::Rgb(255, 0, 255),
+            StreamingSource::Paramount => Color::Rgb(0, 255, 255),
+            StreamingSource::Peacock => Color::Rgb(57, 255, 20),
+            StreamingSource::Hulu => Color::Rgb(50, 255, 50),
             StreamingSource::Other => Color::White,
         }
     }
@@ -1167,6 +1218,7 @@ mod tests {
 
     #[test]
     fn test_parse_timezone_triangulation() {
+        use chrono::Timelike;
         let name = "SPORT: Team A x Team B [20:00]";
         // Provider is in New York (EST)
         let parsed = parse_stream(name, Some("America/New_York"));
@@ -1187,5 +1239,22 @@ mod tests {
         assert_eq!(clean_american_name("Breaking Bad - EN"), "Breaking Bad");
         assert_eq!(clean_american_name("USA: Movie Name"), "Movie Name");
         assert_eq!(clean_american_name("UNITED STATES - Movie"), "Movie");
+    }
+
+    #[test]
+    fn test_redundancy_stripping_exact() {
+        let input = "NFL 01 - 12/25 1PM Cowboys at Commanders: NFL | 01 x 12/25 1PM Cowboys at Commanders";
+        let parsed = parse_stream(input, None);
+        // Current logic strips before last pipe
+        // Expected: "01 x 12/25 1PM Cowboys at Commanders"
+        assert_eq!(parsed.display_name, "01 x 12/25 1PM Cowboys at Commanders");
+    }
+
+    #[test]
+    fn test_redundancy_stripping_u_prefix() {
+        let input = "u NFL 02 - 12/25 4: NFL | 02 x 12/25 [Today 10:30 AM]";
+        let parsed = parse_stream(input, None);
+        // "u " should be stripped, then pipe logic applies
+        assert_eq!(parsed.display_name, "02 x 12/25 [Today 10:30 AM]");
     }
 }

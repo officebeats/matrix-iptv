@@ -10,6 +10,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         account.base_url.clone(),
         account.username.clone(),
         account.password.clone(),
+        config.dns_provider,
     ).await?;
     
     client.authenticate().await?;

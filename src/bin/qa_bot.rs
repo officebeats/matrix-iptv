@@ -57,6 +57,7 @@ async fn run_qa() {
             base_url.clone(),
             acc.username.clone(),
             acc.password.clone(),
+            app.config.dns_provider,
         )
         .await;
 

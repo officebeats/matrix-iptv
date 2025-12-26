@@ -19,7 +19,8 @@ use tui_input::backend::crossterm::EventHandler;
 
 use matrix_iptv_lib::app::{App, AsyncAction, CurrentScreen, Guide, InputMode, LoginField, Pane};
 
-use matrix_iptv_lib::api::{Category, XtreamClient};
+use matrix_iptv_lib::api::{Category, Stream, XtreamClient};
+use std::collections::HashSet;
 use matrix_iptv_lib::config::Account;
 use matrix_iptv_lib::{parser, player, setup, ui};
 
@@ -182,76 +183,110 @@ async fn run_app<B: ratatui::backend::Backend>(
                     if let Some(client) = &app.current_client {
                         let client = client.clone();
                         let tx = tx.clone();
+                        let am = app.config.american_mode;
+                        let account_name = app.config.accounts.get(app.selected_account_index)
+                                            .map(|a| a.name.clone()).unwrap_or_default();
 
-                        // 1. Categories (Priority)
+                        // 1. Live Categories (Priority)
                         let c1 = client.clone();
                         let t1 = tx.clone();
+                        let cat_favs = app.config.favorites.categories.clone();
+                        let account_name_live = account_name.clone();
+
                         tokio::spawn(async move {
                             match c1.get_live_categories().await {
-                                Ok(cats) => {
+                                Ok(mut cats) => {
+                                    preprocess_categories(&mut cats, &cat_favs, am, true, false, &account_name_live);
                                     let _ = t1.send(AsyncAction::CategoriesLoaded(cats)).await;
                                 }
                                 Err(e) => {
-                                    let _ = t1.send(AsyncAction::Error(e.to_string())).await;
+                                    let _ = t1.send(AsyncAction::Error(format!("Live Categories Error: {}", e))).await;
                                 }
                             }
                         });
 
-                        // 1.5. VOD Categories
+                        // 2. VOD Categories
                         let c_vod = client.clone();
                         let t_vod = tx.clone();
+                        let vod_cat_favs = app.config.favorites.vod_categories.clone();
+                        let account_name_vod_c = account_name.clone();
                         tokio::spawn(async move {
                             match c_vod.get_vod_categories().await {
-                                Ok(cats) => {
+                                Ok(mut cats) => {
+                                    preprocess_categories(&mut cats, &vod_cat_favs, am, false, true, &account_name_vod_c);
                                     let _ = t_vod.send(AsyncAction::VodCategoriesLoaded(cats)).await;
                                 }
                                 Err(e) => {
-                                    let _ = t_vod.send(AsyncAction::Error(format!("VOD Error: {}", e))).await;
+                                    let _ = t_vod.send(AsyncAction::Error(format!("VOD Categories Error: {}", e))).await;
                                 }
                             }
                         });
 
-                        // 1.6. Series Categories
-                        let c_series = client.clone();
-                        let t_series = tx.clone();
-                        tokio::spawn(async move {
-                            match c_series.get_series_categories().await {
-                                Ok(cats) => {
-                                    let _ = t_series.send(AsyncAction::SeriesCategoriesLoaded(cats)).await;
-                                }
-                                Err(e) => {
-                                    let _ = t_series.send(AsyncAction::Error(format!("Series Error: {}", e))).await;
-                                }
-                            }
-                        });
-
-                        // 2. Background Counts (Live) - Accurate count
+                        // 3. Background Counts (Live) - This also pre-populates the Global Cache
                         let c2 = client.clone();
                         let t2 = tx.clone();
+                        let stream_favs = app.config.favorites.streams.clone();
+                        let account_name_live_s_c = account_name.clone();
                         tokio::spawn(async move {
-                            if let Ok(streams) = c2.get_live_streams("ALL").await {
-                                let _ = t2
-                                    .send(AsyncAction::TotalChannelsLoaded(streams.len()))
-                                    .await;
+                            match c2.get_live_streams("ALL").await {
+                                Ok(mut streams) => {
+                                    preprocess_streams(&mut streams, &stream_favs, am, true, &account_name_live_s_c);
+                                    let _ = t2.send(AsyncAction::TotalChannelsLoaded(streams)).await;
+                                }
+                                Err(e) => {
+                                    let _ = t2.send(AsyncAction::LoadingMessage(format!("Scan Warning: {}", e))).await;
+                                }
                             }
                         });
 
-                        // 3. Background Counts (VOD) - Accurate count
-                        let c3 = client.clone();
-                        let t3 = tx.clone();
-                        tokio::spawn(async move {
-                            if let Ok(streams) = c3.get_vod_streams_all().await {
-                                let _ =
-                                    t3.send(AsyncAction::TotalMoviesLoaded(streams.len())).await;
-                            }
-                        });
-
-                        // 4. Background Counts (Series) - Accurate count
+                        // 4. VOD Full Scan (Populate Global Cache)
                         let c4 = client.clone();
                         let t4 = tx.clone();
+                        let vod_favs = app.config.favorites.vod_streams.clone();
+                        let account_name_vod_s_c = account_name.clone();
                         tokio::spawn(async move {
-                            if let Ok(series) = c4.get_series_all().await {
-                                let _ = t4.send(AsyncAction::TotalSeriesLoaded(series.len())).await;
+                            match c4.get_vod_streams_all().await {
+                                Ok(mut streams) => {
+                                    preprocess_streams(&mut streams, &vod_favs, am, false, &account_name_vod_s_c);
+                                    let _ = t4.send(AsyncAction::TotalMoviesLoaded(streams)).await;
+                                }
+                                Err(e) => {
+                                    let _ = t4.send(AsyncAction::LoadingMessage(format!("Scan Warning: {}", e))).await;
+                                }
+                            }
+                        });
+
+                        // 5. Series Categories
+                        let c5 = client.clone();
+                        let t5 = tx.clone();
+                        let series_cat_favs = app.config.favorites.categories.clone(); 
+                        let account_name_ser_c = account_name.clone();
+                        tokio::spawn(async move {
+                            match c5.get_series_categories().await {
+                                Ok(mut cats) => {
+                                    preprocess_categories(&mut cats, &series_cat_favs, am, false, false, &account_name_ser_c);
+                                    let _ = t5.send(AsyncAction::SeriesCategoriesLoaded(cats)).await;
+                                }
+                                Err(e) => {
+                                    let _ = t5.send(AsyncAction::Error(format!("Background Series Category Error: {}", e))).await;
+                                }
+                            }
+                        });
+
+                        // 6. Series Full Scan (Populate Global Cache)
+                        let c_series = client.clone();
+                        let t_series = tx.clone();
+                        let series_favs = app.config.favorites.vod_streams.clone(); 
+                        let account_name_ser_s_c = account_name.clone();
+                        tokio::spawn(async move {
+                            match c_series.get_series_all().await {
+                                Ok(mut series) => {
+                                    preprocess_streams(&mut series, &series_favs, am, false, &account_name_ser_s_c);
+                                    let _ = t_series.send(AsyncAction::TotalSeriesLoaded(series)).await;
+                                }
+                                Err(e) => {
+                                    let _ = t_series.send(AsyncAction::LoadingMessage(format!("Scan Warning: {}", e))).await;
+                                }
                             }
                         });
                     }
@@ -260,66 +295,12 @@ async fn run_app<B: ratatui::backend::Backend>(
                     app.login_error = Some(e);
                     app.state_loading = false;
                 }
-                AsyncAction::CategoriesLoaded(mut cats) => {
-                    // Reset search state when fresh categories are loaded
-                    app.search_mode = false;
-                    app.search_query.clear();
-
-                    // Apply American Mode Filtering & Cleaning if enabled
-                    if app.config.american_mode {
-                        cats = cats.into_iter()
-                            .filter(|c| c.category_id == "ALL" || parser::is_american_live(&c.category_name))
-                            .map(|mut c| {
-                                c.category_name = parser::clean_american_name(&c.category_name);
-                                c
-                            })
-                            .collect();
-                    }
-
-                    // Optimization: Populate search_name once
-                    for c in &mut cats {
-                        c.search_name = c.category_name.to_lowercase();
-                    }
-
-                    // Inject "All Channels" category if not already present/filtered
-                    if !cats.iter().any(|c| c.category_id == "ALL") {
-                        cats.insert(
-                            0,
-                            Category {
-                                category_id: "ALL".to_string(),
-                                category_name: "All Channels".to_string(),
-                                parent_id: serde_json::Value::Number(serde_json::Number::from(0)),
-                                search_name: "all channels".to_string(),
-                            },
-                        );
-                    }
-
-                    // Sort categories: favorites first, then alphabetically
-                    cats.sort_by(|a, b| {
-                        let a_fav = app.config.favorites.categories.contains(&a.category_id);
-                        let b_fav = app.config.favorites.categories.contains(&b.category_id);
-                        
-                        // Keep "All Channels" at the top
-                        if a.category_id == "ALL" {
-                            return std::cmp::Ordering::Less;
-                        }
-                        if b.category_id == "ALL" {
-                            return std::cmp::Ordering::Greater;
-                        }
-                        
-                        match (a_fav, b_fav) {
-                            (true, false) => std::cmp::Ordering::Less,  // a is favorite, comes first
-                            (false, true) => std::cmp::Ordering::Greater, // b is favorite, comes first
-                            _ => a.category_name.cmp(&b.category_name), // Both same, sort alphabetically
-                        }
-                    });
-
+                AsyncAction::CategoriesLoaded(cats) => {
                     app.all_categories = cats.clone();
                     app.categories = cats;
                     if !app.categories.is_empty() {
                         app.selected_category_index = 0;
                         app.category_list_state.select(Some(0));
-                        // If we are coming from Login/Home initially, go to Content Type Selection
                         if app.current_screen == CurrentScreen::Home || app.current_screen == CurrentScreen::Login {
                             app.current_screen = CurrentScreen::ContentTypeSelection;
                         }
@@ -327,34 +308,10 @@ async fn run_app<B: ratatui::backend::Backend>(
                     app.state_loading = false;
                 }
 
-                AsyncAction::StreamsLoaded(mut streams) => {
-                    // Optimization: Populate search_name once
-                    for s in &mut streams {
-                        s.search_name = s.name.to_lowercase();
+                AsyncAction::StreamsLoaded(streams, cat_id) => {
+                    if cat_id == "ALL" {
+                        app.global_all_streams = streams.clone();
                     }
-                    // Sort streams: favorites first, then alphabetically
-                    streams.sort_by(|a, b| {
-                        let a_id = match &a.stream_id {
-                            serde_json::Value::Number(n) => n.to_string(),
-                            serde_json::Value::String(s) => s.clone(),
-                            _ => a.stream_id.to_string(),
-                        };
-                        let b_id = match &b.stream_id {
-                            serde_json::Value::Number(n) => n.to_string(),
-                            serde_json::Value::String(s) => s.clone(),
-                            _ => b.stream_id.to_string(),
-                        };
-                        
-                        let a_fav = app.config.favorites.streams.contains(&a_id);
-                        let b_fav = app.config.favorites.streams.contains(&b_id);
-                        
-                        match (a_fav, b_fav) {
-                            (true, false) => std::cmp::Ordering::Less,
-                            (false, true) => std::cmp::Ordering::Greater,
-                            _ => a.name.cmp(&b.name),
-                        }
-                    });
-                    
                     app.all_streams = streams.clone();
                     app.streams = streams;
                     app.current_screen = CurrentScreen::Streams;
@@ -364,85 +321,22 @@ async fn run_app<B: ratatui::backend::Backend>(
                     app.stream_list_state.select(Some(0));
                 }
 
-                AsyncAction::VodCategoriesLoaded(mut cats) => {
-                     // Optimization: Populate search_name once
-                    for c in &mut cats {
-                        c.search_name = c.category_name.to_lowercase();
-                    }
-                    // Reset search state when fresh VOD categories are loaded
-                    app.search_mode = false;
-                    app.search_query.clear();
-                    // Inject "All Movies" category
-                    cats.insert(
-                        0,
-                        Category {
-                            category_id: "ALL".to_string(),
-                            category_name: "All Movies".to_string(),
-                            parent_id: serde_json::Value::Number(serde_json::Number::from(0)),
-                            search_name: "all movies".to_string(),
-                        },
-                    );
-
-                    // Sort categories: favorites first, then alphabetically
-                    cats.sort_by(|a, b| {
-                        let a_fav = app.config.favorites.vod_categories.contains(&a.category_id);
-                        let b_fav = app.config.favorites.vod_categories.contains(&b.category_id);
-                        
-                        // Keep "All Movies" at the top
-                        if a.category_id == "ALL" {
-                            return std::cmp::Ordering::Less;
-                        }
-                        if b.category_id == "ALL" {
-                            return std::cmp::Ordering::Greater;
-                        }
-                        
-                        match (a_fav, b_fav) {
-                            (true, false) => std::cmp::Ordering::Less,
-                            (false, true) => std::cmp::Ordering::Greater,
-                            _ => a.category_name.cmp(&b.category_name),
-                        }
-                    });
-
+                AsyncAction::VodCategoriesLoaded(cats) => {
                     app.all_vod_categories = cats.clone();
                     app.vod_categories = cats;
                     if !app.vod_categories.is_empty() {
                         app.selected_vod_category_index = 0;
                         app.vod_category_list_state.select(Some(0));
-                        // If we are coming from Login/Home initially, go to Content Type Selection
                         if app.current_screen == CurrentScreen::Home || app.current_screen == CurrentScreen::Login {
                              app.current_screen = CurrentScreen::ContentTypeSelection;
                         }
                     }
                     app.state_loading = false;
                 }
-                AsyncAction::VodStreamsLoaded(mut streams) => {
-                    // Optimization: Populate search_name once
-                    for s in &mut streams {
-                        s.search_name = s.name.to_lowercase();
+                AsyncAction::VodStreamsLoaded(streams, cat_id) => {
+                    if cat_id == "ALL" {
+                        app.global_all_vod_streams = streams.clone();
                     }
-                    // Sort streams: favorites first, then alphabetically
-                    streams.sort_by(|a, b| {
-                        let a_id = match &a.stream_id {
-                            serde_json::Value::Number(n) => n.to_string(),
-                            serde_json::Value::String(s) => s.clone(),
-                            _ => a.stream_id.to_string(),
-                        };
-                        let b_id = match &b.stream_id {
-                            serde_json::Value::Number(n) => n.to_string(),
-                            serde_json::Value::String(s) => s.clone(),
-                            _ => b.stream_id.to_string(),
-                        };
-                        
-                        let a_fav = app.config.favorites.vod_streams.contains(&a_id);
-                        let b_fav = app.config.favorites.vod_streams.contains(&b_id);
-                        
-                        match (a_fav, b_fav) {
-                            (true, false) => std::cmp::Ordering::Less,
-                            (false, true) => std::cmp::Ordering::Greater,
-                            _ => a.name.cmp(&b.name),
-                        }
-                    });
-                    
                     app.all_vod_streams = streams.clone();
                     app.vod_streams = streams;
                     app.current_screen = CurrentScreen::VodStreams;
@@ -452,66 +346,22 @@ async fn run_app<B: ratatui::backend::Backend>(
                     app.vod_stream_list_state.select(Some(0));
                 }
 
-                AsyncAction::SeriesCategoriesLoaded(mut cats) => {
-                    // Reset search state when fresh Series categories are loaded
-                    app.search_mode = false;
-                    app.search_query.clear();
-                    // Optimization: Populate search_name once
-                    for c in &mut cats {
-                        c.search_name = c.category_name.to_lowercase();
-                    }
-                    // Sort categories: favorites first, then alphabetically
-                    cats.sort_by(|a, b| {
-                        let a_fav = app.config.favorites.vod_categories.contains(&a.category_id);
-                        let b_fav = app.config.favorites.vod_categories.contains(&b.category_id);
-                        
-                        match (a_fav, b_fav) {
-                            (true, false) => std::cmp::Ordering::Less,
-                            (false, true) => std::cmp::Ordering::Greater,
-                            _ => a.category_name.cmp(&b.category_name),
-                        }
-                    });
-                    
+                AsyncAction::SeriesCategoriesLoaded(cats) => {
                     app.all_series_categories = cats.clone();
                     app.series_categories = cats;
                     if !app.series_categories.is_empty() {
                         app.selected_series_category_index = 0;
                         app.series_category_list_state.select(Some(0));
-                        // If we are coming from Login/Home initially, go to Content Type Selection
                         if app.current_screen == CurrentScreen::Home || app.current_screen == CurrentScreen::Login {
                              app.current_screen = CurrentScreen::ContentTypeSelection;
                         }
                     }
                     app.state_loading = false;
                 }
-                AsyncAction::SeriesStreamsLoaded(mut streams) => {
-                    // Optimization: Populate search_name once
-                    for s in &mut streams {
-                        s.search_name = s.name.to_lowercase();
+                AsyncAction::SeriesStreamsLoaded(streams, cat_id) => {
+                    if cat_id == "ALL" {
+                        app.global_all_series_streams = streams.clone();
                     }
-                    // Sort streams: favorites first, then alphabetically
-                    streams.sort_by(|a, b| {
-                        let a_id = match &a.stream_id {
-                            serde_json::Value::Number(n) => n.to_string(),
-                            serde_json::Value::String(s) => s.clone(),
-                            _ => a.stream_id.to_string(),
-                        };
-                        let b_id = match &b.stream_id {
-                            serde_json::Value::Number(n) => n.to_string(),
-                            serde_json::Value::String(s) => s.clone(),
-                            _ => b.stream_id.to_string(),
-                        };
-                        
-                        let a_fav = app.config.favorites.vod_streams.contains(&a_id);
-                        let b_fav = app.config.favorites.vod_streams.contains(&b_id);
-                        
-                        match (a_fav, b_fav) {
-                            (true, false) => std::cmp::Ordering::Less,
-                            (false, true) => std::cmp::Ordering::Greater,
-                            _ => a.name.cmp(&b.name),
-                        }
-                    });
-                    
                     app.all_series_streams = streams.clone();
                     app.series_streams = streams;
                     app.current_screen = CurrentScreen::SeriesStreams;
@@ -532,22 +382,28 @@ async fn run_app<B: ratatui::backend::Backend>(
                 AsyncAction::LoadingMessage(msg) => {
                     app.loading_message = Some(msg);
                 }
-                AsyncAction::TotalChannelsLoaded(count) => {
+                AsyncAction::TotalChannelsLoaded(streams) => {
+                    let count = streams.len();
                     app.total_channels = count;
+                    app.global_all_streams = streams;
                     if let Some(account) = app.config.accounts.get_mut(app.selected_account_index) {
                         account.total_channels = Some(count);
                         let _ = app.config.save();
                     }
                 }
-                AsyncAction::TotalMoviesLoaded(count) => {
+                AsyncAction::TotalMoviesLoaded(streams) => {
+                    let count = streams.len();
                     app.total_movies = count;
+                    app.global_all_vod_streams = streams;
                     if let Some(account) = app.config.accounts.get_mut(app.selected_account_index) {
                         account.total_movies = Some(count);
                         let _ = app.config.save();
                     }
                 }
-                AsyncAction::TotalSeriesLoaded(count) => {
+                AsyncAction::TotalSeriesLoaded(series) => {
+                    let count = series.len();
                     app.total_series = count;
+                    app.global_all_series_streams = series;
                     if let Some(account) = app.config.accounts.get_mut(app.selected_account_index) {
                         account.total_series = Some(count);
                         let _ = app.config.save();
@@ -602,18 +458,62 @@ async fn run_app<B: ratatui::backend::Backend>(
                     }
                     app.state_loading = false;
                 }
+                AsyncAction::EpgLoaded(stream_id, program_title) => {
+                    // Update cache
+                    app.epg_cache.insert(stream_id.clone(), program_title.clone());
+
+                    // Update the stream's display name and invalidate cache
+                    let update_stream = |s: &mut Stream| {
+                        if get_id_str(&s.stream_id) == stream_id {
+                            s.stream_display_name = Some(program_title.clone());
+                            s.cached_parsed = None; // Force re-parse
+                        }
+                    };
+
+                    app.streams.iter_mut().for_each(update_stream);
+                    app.global_all_streams.iter_mut().for_each(update_stream);
+                    app.all_streams.iter_mut().for_each(update_stream);
+                }
                 AsyncAction::Error(e) => {
-                    // Generic error handling - maybe show a popup? For now, print to stderr essentially (or login error)
-                    // If we are at login, show it there
-                    if app.current_screen == CurrentScreen::Login {
-                        app.login_error = Some(e);
-                    }
+                    // Always capture the error so it can be viewed/logged
+                    app.login_error = Some(e.clone());
+                    
+                    // If we're not on the login screen, maybe we want a specialized error field?
+                    // For now, setting login_error is okay as it's our primary error display.
+                    
                     app.state_loading = false;
                 }
             }
         }
 
         app.loading_tick = app.loading_tick.wrapping_add(1);
+
+        // 1.5 Debounced EPG Fetching
+        if app.current_screen == CurrentScreen::Streams && app.active_pane == Pane::Streams && !app.streams.is_empty() {
+            let focused_id = get_id_str(&app.streams[app.selected_stream_index].stream_id);
+            if app.last_focused_stream_id.as_ref() != Some(&focused_id) {
+                app.last_focused_stream_id = Some(focused_id.clone());
+                app.focus_timestamp = Some(std::time::Instant::now());
+            } else if let Some(ts) = app.focus_timestamp {
+                if ts.elapsed().as_millis() >= 300 {
+                    app.focus_timestamp = None; // Reset so we don't spam
+                    if !app.epg_cache.contains_key(&focused_id) {
+                        if let Some(client) = &app.current_client {
+                            let client = client.clone();
+                            let tx = tx.clone();
+                            let fid = focused_id.clone();
+                            tokio::spawn(async move {
+                                if let Ok(epg) = client.get_short_epg(&fid).await {
+                                    if let Some(now_playing) = epg.epg_listings.get(0) {
+                                        let _ = tx.send(AsyncAction::EpgLoaded(fid, now_playing.title.clone())).await;
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
         
         // FTUE: Handle Matrix rain animation
         if app.show_matrix_rain {
@@ -696,6 +596,14 @@ async fn run_app<B: ratatui::backend::Backend>(
                         continue;
                     }
 
+                    // Priority 5: Global Error Overlay Dismissal
+                    if app.login_error.is_some() && app.current_screen != CurrentScreen::Login {
+                        if key.code == KeyCode::Esc {
+                            app.login_error = None;
+                            continue;
+                        }
+                    }
+
                     // GLOBAL KEYS
                     if app.input_mode == InputMode::Normal {
                         if let KeyCode::Char('q') = key.code {
@@ -754,42 +662,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     }
 
                                     // 2. Refresh counts from UserInfo metadata
-                                    if let Some(info) = &ui {
-                                        let c_count = match &info.total_live_streams {
-                                            Some(serde_json::Value::Number(n)) => {
-                                                n.as_u64().unwrap_or(0) as usize
-                                            }
-                                            Some(serde_json::Value::String(s)) => {
-                                                s.parse::<usize>().unwrap_or(0)
-                                            }
-                                            _ => 0,
-                                        };
-                                        let v_count = match &info.total_vod_streams {
-                                            Some(serde_json::Value::Number(n)) => {
-                                                n.as_u64().unwrap_or(0) as usize
-                                            }
-                                            Some(serde_json::Value::String(s)) => {
-                                                s.parse::<usize>().unwrap_or(0)
-                                            }
-                                            _ => 0,
-                                        };
-                                        let s_count = match &info.total_series_streams {
-                                            Some(serde_json::Value::Number(n)) => {
-                                                n.as_u64().unwrap_or(0) as usize
-                                            }
-                                            Some(serde_json::Value::String(s)) => {
-                                                s.parse::<usize>().unwrap_or(0)
-                                            }
-                                            _ => 0,
-                                        };
-
-                                        let _ = tx
-                                            .send(AsyncAction::TotalChannelsLoaded(c_count))
-                                            .await;
-                                        let _ =
-                                            tx.send(AsyncAction::TotalMoviesLoaded(v_count)).await;
-                                        let _ =
-                                            tx.send(AsyncAction::TotalSeriesLoaded(s_count)).await;
+                                    if let Some(_info) = &ui {
+                                        // Metadata processed, background tasks will be triggered by PlaylistRefreshed
                                     }
 
                                     // 3. Finish
@@ -804,6 +678,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                     }
 
                     // SCREEN SPECIFIC
+                    let account_name = app.config.accounts.get(app.selected_account_index)
+                                        .map(|a| a.name.clone()).unwrap_or_default();
                     match app.current_screen {
                         CurrentScreen::Home => {
                             match key.code {
@@ -895,10 +771,11 @@ async fn run_app<B: ratatui::backend::Backend>(
                                         app.login_error = None;
 
                                         let tx = tx.clone();
+                                        let dns_provider = app.config.dns_provider;
                                         tokio::spawn(async move {
                                             // 1. Authenticate first (crucial for valid token/session if needed, though usually just creds)
                                             match XtreamClient::new_with_doh(
-                                                base_url, username, password,
+                                                base_url, username, password, dns_provider,
                                             )
                                             .await
                                             {
@@ -981,9 +858,10 @@ async fn run_app<B: ratatui::backend::Backend>(
 
                                         app.login_error = None;
                                         let tx = tx.clone();
+                                        let dns_provider = app.config.dns_provider;
                                         tokio::spawn(async move {
                                             match XtreamClient::new_with_doh(
-                                                base_url, username, password,
+                                                base_url, username, password, dns_provider,
                                             )
                                             .await
                                             {
@@ -1522,17 +1400,32 @@ async fn run_app<B: ratatui::backend::Backend>(
                                                     // Auto-focus streams pane happens in StreamsLoaded to prevent lag
                                                     // app.active_pane = Pane::Streams;
 
-                                                    if let Some(client) = &app.current_client {
+                                                    // Cache Check
+                                                    if cat_id == "ALL" && !app.global_all_streams.is_empty() {
+                                                        app.all_streams = app.global_all_streams.clone();
+                                                        app.streams = app.all_streams.clone();
+                                                        app.current_screen = CurrentScreen::Streams;
+                                                        app.active_pane = Pane::Streams;
+                                                        app.selected_stream_index = 0;
+                                                        app.stream_list_state.select(Some(0));
+                                                    } else if let Some(client) = &app.current_client {
                                                         let client = client.clone();
                                                         let tx = tx.clone();
+                                                        let am = app.config.american_mode;
+                                                        let favs = app.config.favorites.streams.clone();
+                                                        let account_name = account_name.clone();
                                                         app.state_loading = true;
+                                                        app.loading_message = Some("Initializing Request...".to_string());
                                                         tokio::spawn(async move {
+                                                            let _ = tx.send(AsyncAction::LoadingMessage("Fetching Live Streams...".to_string())).await;
                                                             match client
                                                                 .get_live_streams(&cat_id)
                                                                 .await
                                                             {
-                                                                Ok(streams) => {
-                                                                    let _ = tx.send(AsyncAction::StreamsLoaded(streams)).await;
+                                                                Ok(mut streams) => {
+                                                                    let _ = tx.send(AsyncAction::LoadingMessage(format!("Processing {} Streams...", streams.len()))).await;
+                                                                    preprocess_streams(&mut streams, &favs, am, true, &account_name);
+                                                                    let _ = tx.send(AsyncAction::StreamsLoaded(streams, cat_id)).await;
                                                                 }
                                                                 Err(e) => {
                                                                     let _ = tx
@@ -1580,7 +1473,9 @@ async fn run_app<B: ratatui::backend::Backend>(
                                                             let _ = tx.send(AsyncAction::LoadingMessage("Connecting to stream server...".to_string())).await;
                                                             match player.play(&stream_url) {
                                                                 Ok(_) => {
-                                                                    let _ = tx.send(AsyncAction::LoadingMessage("Buffering video...".to_string())).await;
+                                                                    let _ = tx.send(AsyncAction::LoadingMessage("Handshaking with player...".to_string())).await;
+                                                                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                                                                    let _ = tx.send(AsyncAction::LoadingMessage("Buffering video stream...".to_string())).await;
 
                                                                     // Wait for MPV to confirm playback (polls process status)
                                                                     match player
@@ -1666,22 +1561,21 @@ async fn run_app<B: ratatui::backend::Backend>(
                                         if let Some(client) = &app.current_client {
                                             let client = client.clone();
                                             let tx = tx.clone();
+                                            let am = app.config.american_mode;
+                                            let cat_favs = app.config.favorites.categories.clone();
+                                            let account_name = app.config.accounts.get(app.selected_account_index)
+                                                                .map(|a| a.name.clone()).unwrap_or_default();
                                             app.state_loading = true;
                                             app.search_mode = false;
                                             app.search_query.clear();
                                             tokio::spawn(async move {
                                                 match client.get_live_categories().await {
-                                                    Ok(cats) => {
-                                                        let _ = tx
-                                                            .send(AsyncAction::CategoriesLoaded(
-                                                                cats,
-                                                            ))
-                                                            .await;
+                                                    Ok(mut cats) => {
+                                                        preprocess_categories(&mut cats, &cat_favs, am, true, false, &account_name);
+                                                        let _ = tx.send(AsyncAction::CategoriesLoaded(cats)).await;
                                                     }
                                                     Err(e) => {
-                                                        let _ = tx
-                                                            .send(AsyncAction::Error(e.to_string()))
-                                                            .await;
+                                                        let _ = tx.send(AsyncAction::Error(e.to_string())).await;
                                                     }
                                                 }
                                             });
@@ -1692,20 +1586,19 @@ async fn run_app<B: ratatui::backend::Backend>(
                                         if let Some(client) = &app.current_client {
                                             let client = client.clone();
                                             let tx = tx.clone();
+                                            let am = app.config.american_mode;
+                                            let cat_favs = app.config.favorites.categories.clone();
+                                            let account_name = app.config.accounts.get(app.selected_account_index)
+                                                                .map(|a| a.name.clone()).unwrap_or_default();
                                             app.state_loading = true;
                                             tokio::spawn(async move {
                                                 match client.get_live_categories().await {
-                                                    Ok(cats) => {
-                                                        let _ = tx
-                                                            .send(AsyncAction::CategoriesLoaded(
-                                                                cats,
-                                                            ))
-                                                            .await;
+                                                    Ok(mut cats) => {
+                                                        preprocess_categories(&mut cats, &cat_favs, am, true, false, &account_name);
+                                                        let _ = tx.send(AsyncAction::CategoriesLoaded(cats)).await;
                                                     }
                                                     Err(e) => {
-                                                        let _ = tx
-                                                            .send(AsyncAction::Error(e.to_string()))
-                                                            .await;
+                                                        let _ = tx.send(AsyncAction::Error(e.to_string())).await;
                                                     }
                                                 }
                                             });
@@ -1748,54 +1641,46 @@ async fn run_app<B: ratatui::backend::Backend>(
                                                 [app.selected_vod_category_index]
                                                 .category_id
                                                 .clone();
-                                            if let Some(client) = &app.current_client {
-                                                let client = client.clone();
-                                                let tx = tx.clone();
-                                                app.state_loading = true;
-                                                tokio::spawn(async move {
-                                                    // Handle "All Movies" category
-                                                    if cat_id == "ALL" {
-                                                        match client.get_vod_streams_all().await {
-                                                            Ok(streams) => {
-                                                                let _ = tx
-                                                                    .send(
-                                                                        AsyncAction::VodStreamsLoaded(
-                                                                            streams,
-                                                                        ),
-                                                                    )
-                                                                    .await;
+                                                // Cache Check
+                                                if cat_id == "ALL" && !app.global_all_vod_streams.is_empty() {
+                                                    app.all_vod_streams = app.global_all_vod_streams.clone();
+                                                    app.vod_streams = app.all_vod_streams.clone();
+                                                    app.current_screen = CurrentScreen::VodStreams;
+                                                    app.active_pane = Pane::Streams;
+                                                    app.selected_vod_stream_index = 0;
+                                                    app.vod_stream_list_state.select(Some(0));
+                                                } else if let Some(client) = &app.current_client {
+                                                    let client = client.clone();
+                                                    let tx = tx.clone();
+                                                    let am = app.config.american_mode;
+                                                    let favs = app.config.favorites.vod_streams.clone();
+                                                    let account_name = account_name.clone();
+                                                    app.state_loading = true;
+                                                    tokio::spawn(async move {
+                                                        // Handle "All Movies" category
+                                                        if cat_id == "ALL" {
+                                                            match client.get_vod_streams_all().await {
+                                                                Ok(mut streams) => {
+                                                                    preprocess_streams(&mut streams, &favs, am, false, &account_name);
+                                                                    let _ = tx.send(AsyncAction::VodStreamsLoaded(streams, cat_id)).await;
+                                                                }
+                                                                Err(e) => {
+                                                                    let _ = tx.send(AsyncAction::Error(e.to_string())).await;
+                                                                }
                                                             }
-                                                            Err(e) => {
-                                                                let _ = tx
-                                                                    .send(AsyncAction::Error(
-                                                                        e.to_string(),
-                                                                    ))
-                                                                    .await;
-                                                            }
-                                                        }
-                                                    } else {
-                                                        match client.get_vod_streams(&cat_id).await
-                                                        {
-                                                            Ok(streams) => {
-                                                                let _ = tx
-                                                                    .send(
-                                                                        AsyncAction::VodStreamsLoaded(
-                                                                            streams,
-                                                                        ),
-                                                                    )
-                                                                    .await;
-                                                            }
-                                                            Err(e) => {
-                                                                let _ = tx
-                                                                    .send(AsyncAction::Error(
-                                                                        e.to_string(),
-                                                                    ))
-                                                                    .await;
+                                                        } else {
+                                                            match client.get_vod_streams(&cat_id).await {
+                                                                Ok(mut streams) => {
+                                                                    preprocess_streams(&mut streams, &favs, am, false, &account_name);
+                                                                    let _ = tx.send(AsyncAction::VodStreamsLoaded(streams, cat_id)).await;
+                                                                }
+                                                                Err(e) => {
+                                                                    let _ = tx.send(AsyncAction::Error(e.to_string())).await;
+                                                                }
                                                             }
                                                         }
-                                                    }
-                                                });
-                                            }
+                                                    });
+                                                }
                                         }
                                     }
                                     _ => {}
@@ -2051,20 +1936,21 @@ async fn run_app<B: ratatui::backend::Backend>(
                                         if let Some(client) = &app.current_client {
                                             let client = client.clone();
                                             let tx = tx.clone();
+                                            let am = app.config.american_mode;
+                                            let cat_favs = app.config.favorites.categories.clone();
+                                            let account_name = app.config.accounts.get(app.selected_account_index)
+                                                                .map(|a| a.name.clone()).unwrap_or_default();
                                             app.state_loading = true;
                                             app.search_mode = false;
                                             app.search_query.clear();
                                             tokio::spawn(async move {
                                                 match client.get_live_categories().await {
-                                                    Ok(cats) => {
-                                                        let _ = tx
-                                                            .send(AsyncAction::CategoriesLoaded(cats))
-                                                            .await;
+                                                    Ok(mut cats) => {
+                                                        preprocess_categories(&mut cats, &cat_favs, am, true, false, &account_name);
+                                                        let _ = tx.send(AsyncAction::CategoriesLoaded(cats)).await;
                                                     }
                                                     Err(e) => {
-                                                        let _ = tx
-                                                            .send(AsyncAction::Error(e.to_string()))
-                                                            .await;
+                                                        let _ = tx.send(AsyncAction::Error(e.to_string())).await;
                                                     }
                                                 }
                                             });
@@ -2108,30 +1994,33 @@ async fn run_app<B: ratatui::backend::Backend>(
                                                 [app.selected_series_category_index]
                                                 .category_id
                                                 .clone();
-                                            if let Some(client) = &app.current_client {
-                                                let client = client.clone();
-                                                let tx = tx.clone();
-                                                app.state_loading = true;
-                                                app.active_pane = Pane::Streams; // Move to streams pane
-                                                tokio::spawn(async move {
-                                                    match client.get_series_streams(&cat_id).await {
-                                                        Ok(streams) => {
-                                                            let _ = tx
-                                                                .send(AsyncAction::SeriesStreamsLoaded(
-                                                                    streams,
-                                                                ))
-                                                                .await;
+                                                // Cache Check
+                                                if cat_id == "ALL" && !app.global_all_series_streams.is_empty() {
+                                                    app.all_series_streams = app.global_all_series_streams.clone();
+                                                    app.series_streams = app.all_series_streams.clone();
+                                                    app.current_screen = CurrentScreen::SeriesStreams;
+                                                    app.active_pane = Pane::Streams;
+                                                    app.selected_series_stream_index = 0;
+                                                    app.series_stream_list_state.select(Some(0));
+                                                } else if let Some(client) = &app.current_client {
+                                                    let client = client.clone();
+                                                    let tx = tx.clone();
+                                                    let am = app.config.american_mode;
+                                                    let favs = app.config.favorites.vod_streams.clone(); // Series use vod_streams favs
+                                                    app.state_loading = true;
+                                                    app.active_pane = Pane::Streams; // Move to streams pane
+                                                    tokio::spawn(async move {
+                                                        match client.get_series_streams(&cat_id).await {
+                                                            Ok(mut streams) => {
+                                                                preprocess_streams(&mut streams, &favs, am, false, &account_name);
+                                                                let _ = tx.send(AsyncAction::SeriesStreamsLoaded(streams, cat_id)).await;
+                                                            }
+                                                            Err(e) => {
+                                                                let _ = tx.send(AsyncAction::Error(e.to_string())).await;
+                                                            }
                                                         }
-                                                        Err(e) => {
-                                                            let _ = tx
-                                                                .send(AsyncAction::Error(
-                                                                    e.to_string(),
-                                                                ))
-                                                                .await;
-                                                        }
-                                                    }
-                                                });
-                                            }
+                                                    });
+                                                }
                                         }
                                     }
                                     KeyCode::Tab => {
@@ -2278,26 +2167,30 @@ async fn run_app<B: ratatui::backend::Backend>(
                                                     [app.selected_series_category_index]
                                                     .category_id
                                                     .clone();
-                                                if let Some(client) = &app.current_client {
+                                                // Cache Check
+                                                if cat_id == "ALL" && !app.global_all_series_streams.is_empty() {
+                                                    app.all_series_streams = app.global_all_series_streams.clone();
+                                                    app.series_streams = app.all_series_streams.clone();
+                                                    app.current_screen = CurrentScreen::SeriesStreams;
+                                                    app.active_pane = Pane::Streams;
+                                                    app.selected_series_stream_index = 0;
+                                                    app.series_stream_list_state.select(Some(0));
+                                                } else if let Some(client) = &app.current_client {
                                                     let client = client.clone();
                                                     let tx = tx.clone();
+                                                    let am = app.config.american_mode;
+                                                    let favs = app.config.favorites.vod_streams.clone(); // Series use vod_streams favs
+                                                    let account_name = account_name.clone();
                                                     app.state_loading = true;
                                                     app.active_pane = Pane::Streams; // Auto-switch to series pane
                                                     tokio::spawn(async move {
                                                         match client.get_series_streams(&cat_id).await {
-                                                            Ok(streams) => {
-                                                                let _ = tx
-                                                                    .send(AsyncAction::SeriesStreamsLoaded(
-                                                                        streams,
-                                                                    ))
-                                                                    .await;
+                                                            Ok(mut streams) => {
+                                                                preprocess_streams(&mut streams, &favs, am, false, &account_name);
+                                                                let _ = tx.send(AsyncAction::SeriesStreamsLoaded(streams, cat_id)).await;
                                                             }
                                                             Err(e) => {
-                                                                let _ = tx
-                                                                    .send(AsyncAction::Error(
-                                                                        e.to_string(),
-                                                                    ))
-                                                                    .await;
+                                                                let _ = tx.send(AsyncAction::Error(e.to_string())).await;
                                                             }
                                                         }
                                                     });
@@ -2467,12 +2360,23 @@ async fn run_app<B: ratatui::backend::Backend>(
                                                          app.update_search();
                                                      }
                                                      3 => {
+                                                         // DNS Provider - cycle through options
+                                                         use matrix_iptv_lib::config::DnsProvider;
+                                                         let providers = DnsProvider::all();
+                                                         let current_idx = providers.iter()
+                                                             .position(|p| *p == app.config.dns_provider)
+                                                             .unwrap_or(0);
+                                                         let next_idx = (current_idx + 1) % providers.len();
+                                                         app.config.set_dns_provider(providers[next_idx]);
+                                                         app.refresh_settings_options();
+                                                     }
+                                                     4 => {
                                                          // Matrix Rain Screensaver
                                                          app.show_matrix_rain = true;
                                                          app.matrix_rain_screensaver_mode = true; // Screensaver mode (no logo)
                                                          app.matrix_rain_start_time = Some(std::time::Instant::now());
                                                      }
-                                                     4 => {
+                                                     5 => {
                                                          // About
                                                          app.settings_state =
                                                              matrix_iptv_lib::app::SettingsState::About;
@@ -2700,4 +2604,136 @@ async fn run_app<B: ratatui::backend::Backend>(
             }
         }
     }
+}
+
+fn get_id_str(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        _ => v.to_string(),
+    }
+}
+
+fn preprocess_categories(
+    cats: &mut Vec<Category>,
+    favorites: &HashSet<String>,
+    american_mode: bool,
+    is_live: bool,
+    is_vod: bool,
+    account_name: &str,
+) {
+    if !cats.iter().any(|c| c.category_id == "ALL") {
+        cats.insert(0, Category {
+            category_id: "ALL".to_string(),
+            category_name: if is_live { "All Channels".to_string() } else if is_vod { "All Movies".to_string() } else { "All Series".to_string() },
+            is_american: true,
+            is_english: true,
+            ..Default::default()
+        });
+    }
+
+    let account_lower = account_name.to_lowercase();
+
+    for c in cats.iter_mut() {
+        if is_live {
+            c.is_american = c.category_id == "ALL" || parser::is_american_live(&c.category_name);
+            c.is_english = false;
+        } else {
+            c.is_american = false;
+            c.is_english = c.category_id == "ALL" || parser::is_english_vod(&c.category_name);
+        }
+
+        // Strong Playlist specific overrides
+        if account_lower.contains("strong") && is_live {
+             let name = c.category_name.to_uppercase();
+             if name.starts_with("AR |") || name.starts_with("AR|") || name.starts_with("AR :") {
+                 c.is_american = false;
+             }
+        }
+
+        c.clean_name = if american_mode {
+            parser::clean_american_name(&c.category_name)
+        } else {
+            c.category_name.clone()
+        };
+        c.search_name = c.clean_name.to_lowercase();
+    }
+
+    // Actually filter the categories if American Mode is active
+    if american_mode {
+        cats.retain(|c| {
+            if is_live { c.is_american } else { c.is_english }
+        });
+    }
+
+    cats.sort_by(|a, b| {
+        if a.category_id == "ALL" { return std::cmp::Ordering::Less; }
+        if b.category_id == "ALL" { return std::cmp::Ordering::Greater; }
+        let a_fav = favorites.contains(&a.category_id);
+        let b_fav = favorites.contains(&b.category_id);
+        match (a_fav, b_fav) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.category_name.cmp(&b.category_name),
+        }
+    });
+}
+
+fn preprocess_streams(
+    streams: &mut Vec<Stream>,
+    favorites: &HashSet<String>,
+    american_mode: bool,
+    is_live: bool,
+    _account_name: &str,
+) {
+    for s in streams.iter_mut() {
+        if is_live {
+            s.is_american = parser::is_american_live(&s.name);
+            s.is_english = false;
+        } else {
+            s.is_american = false;
+            s.is_english = parser::is_english_vod(&s.name);
+        }
+
+        s.clean_name = if american_mode {
+            parser::clean_american_name(&s.name)
+        } else {
+            s.name.clone()
+        };
+        s.stream_display_name = Some(s.clean_name.clone());
+        s.search_name = s.clean_name.to_lowercase();
+    }
+
+    // Actually filter the streams if American Mode is active
+    if american_mode {
+        streams.retain(|s| {
+            if is_live { s.is_american } else { s.is_english }
+        });
+    }
+
+    streams.sort_by(|a, b| {
+        let a_id = match &a.stream_id {
+            serde_json::Value::Number(n) => n.to_string(),
+            serde_json::Value::String(s) => s.clone(),
+            _ => a.stream_id.to_string(),
+        };
+        let b_id = match &b.stream_id {
+            serde_json::Value::Number(n) => n.to_string(),
+            serde_json::Value::String(s) => s.clone(),
+            _ => b.stream_id.to_string(),
+        };
+
+        let a_fav = favorites.contains(&a_id);
+        let b_fav = favorites.contains(&b_id);
+
+        match (a_fav, b_fav) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => {
+                let a_num = a.num.as_ref().and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
+                let b_num = b.num.as_ref().and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
+                a_num.cmp(&b_num)
+            }
+        }
+    });
 }

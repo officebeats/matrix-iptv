@@ -1,6 +1,6 @@
 use crate::api::{Category, ServerInfo, Stream, UserInfo, XtreamClient};
 use crate::config::AppConfig;
-use crate::parser::{is_american_live, is_english_vod, clean_american_name, parse_stream};
+// Parser imports removed as processing moved to background tasks in main.rs
 use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
 use tui_input::Input;
@@ -10,19 +10,20 @@ pub enum AsyncAction {
     LoginSuccess(XtreamClient, Option<UserInfo>, Option<ServerInfo>),
     LoginFailed(String),
     CategoriesLoaded(Vec<Category>),
-    StreamsLoaded(Vec<Stream>),
+    StreamsLoaded(Vec<Stream>, String),
     VodCategoriesLoaded(Vec<Category>),
-    VodStreamsLoaded(Vec<Stream>),
+    VodStreamsLoaded(Vec<Stream>, String),
     SeriesCategoriesLoaded(Vec<Category>),
-    SeriesStreamsLoaded(Vec<Stream>),
+    SeriesStreamsLoaded(Vec<Stream>, String),
     SeriesInfoLoaded(crate::api::SeriesInfo),
     PlayerStarted,
     PlayerFailed(String),
     LoadingMessage(String),
-    TotalChannelsLoaded(usize),
-    TotalMoviesLoaded(usize),
-    TotalSeriesLoaded(usize),
+    TotalChannelsLoaded(Vec<Stream>),
+    TotalMoviesLoaded(Vec<Stream>),
+    TotalSeriesLoaded(Vec<Stream>),
     PlaylistRefreshed(Option<UserInfo>, Option<ServerInfo>),
+    EpgLoaded(String, String), // stream_id, program_title
     Error(String),
 }
 
@@ -136,6 +137,11 @@ pub struct App {
     pub selected_series_episode_index: usize,
     pub series_episode_list_state: ListState,
     pub current_series_info: Option<crate::api::SeriesInfo>,
+    
+    // Global caches for "ALL" categories
+    pub global_all_streams: Vec<Stream>,
+    pub global_all_vod_streams: Vec<Stream>,
+    pub global_all_series_streams: Vec<Stream>,
 
     // Settings
     pub settings_options: Vec<String>,
@@ -193,6 +199,11 @@ pub struct App {
     pub matrix_rain_screensaver_mode: bool, // true = screensaver (no logo), false = startup (with logo)
     pub show_welcome_popup: bool,
     pub matrix_rain_columns: Vec<MatrixColumn>,
+
+    // EPG Enrichment
+    pub epg_cache: std::collections::HashMap<String, String>,
+    pub last_focused_stream_id: Option<String>,
+    pub focus_timestamp: Option<std::time::Instant>,
 }
 
 #[derive(Clone)]
@@ -234,6 +245,10 @@ impl App {
             input_mode: InputMode::Normal,
             should_quit: false,
             state_loading: false,
+
+            epg_cache: std::collections::HashMap::new(),
+            last_focused_stream_id: None,
+            focus_timestamp: None,
 
             editing_account_index: None,
 
@@ -286,6 +301,11 @@ impl App {
             selected_series_episode_index: 0,
             series_episode_list_state: ListState::default(),
             current_series_info: None,
+            
+            // Global Caches
+            global_all_streams: vec![],
+            global_all_vod_streams: vec![],
+            global_all_series_streams: vec![],
 
             settings_options: vec![],
             selected_settings_index: 0,
@@ -355,12 +375,16 @@ impl App {
                 self.config.get_user_timezone()
             ),
             format!(
-                "American Playlist Mode: {}",
+                "[USA] American Playlist Mode: {}",
                 if self.config.american_mode {
-                    "ON 🇺🇸"
+                    "ON"
                 } else {
                     "OFF"
                 }
+            ),
+            format!(
+                "DNS Provider: {}",
+                self.config.dns_provider.display_name()
             ),
             "Matrix Rain Screensaver".to_string(),
             "About".to_string(),
@@ -598,21 +622,14 @@ impl App {
                             .all_categories
                             .iter()
                             .filter(|c| {
-                                let matches_query = c.search_name.contains(&query);
-                                if !american_mode {
-                                    return matches_query;
-                                }
-                                // American Mode: USA channels & All Channels
-                                matches_query && (c.category_id == "ALL" || is_american_live(&c.category_name))
+                                c.search_name.contains(&query) && (!american_mode || c.is_american)
                             })
                             .map(|c| {
+                                let mut c_mod = c.clone();
                                 if american_mode {
-                                    let mut cleaned = c.clone();
-                                    cleaned.category_name = clean_american_name(&cleaned.category_name);
-                                    cleaned
-                                } else {
-                                    c.clone()
+                                    c_mod.category_name = c_mod.clean_name.clone();
                                 }
+                                c_mod
                             })
                             .collect();
                         // Reset selection
@@ -624,31 +641,17 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        let provider_tz = self
-                            .config
-                            .accounts
-                            .get(self.selected_account_index)
-                            .and_then(|a| a.server_timezone.clone());
-
                         self.streams = self
                             .all_streams
                             .iter()
                             .filter(|s| {
-                                let matches_query = s.search_name.contains(&query);
-                                if !american_mode {
-                                    return matches_query;
-                                }
-                                // American Mode: USA streams
-                                matches_query && is_american_live(&s.name)
+                                s.search_name.contains(&query) && (!american_mode || s.is_american)
                             })
                             .map(|s| {
                                 let mut s_mod = s.clone();
                                 if american_mode {
-                                    s_mod.name = clean_american_name(&s_mod.name);
+                                    s_mod.name = s_mod.clean_name.clone();
                                 }
-                                
-                                // Optimization: Do NOT eager parse here. UI will parse visible items.
-                                // Reducing work from O(N) to O(Visible_Window) prevents navigation lag.
                                 s_mod
                             })
                             .collect();
@@ -673,21 +676,14 @@ impl App {
                             .all_vod_categories
                             .iter()
                             .filter(|c| {
-                                let matches_query = c.search_name.contains(&query);
-                                if !american_mode {
-                                    return matches_query;
-                                }
-                                // American Mode: English VOD categories
-                                matches_query && is_english_vod(&c.category_name)
+                                c.search_name.contains(&query) && (!american_mode || c.is_english)
                             })
                             .map(|c| {
+                                let mut c_mod = c.clone();
                                 if american_mode {
-                                    let mut cleaned = c.clone();
-                                    cleaned.category_name = clean_american_name(&cleaned.category_name);
-                                    cleaned
-                                } else {
-                                    c.clone()
+                                    c_mod.category_name = c_mod.clean_name.clone();
                                 }
+                                c_mod
                             })
                             .collect();
                         // Reset selection
@@ -703,21 +699,14 @@ impl App {
                             .all_vod_streams
                             .iter()
                             .filter(|s| {
-                                let matches_query = s.search_name.contains(&query);
-                                if !american_mode {
-                                    return matches_query;
-                                }
-                                // American Mode: English VOD streams
-                                matches_query && is_english_vod(&s.name)
+                                s.search_name.contains(&query) && (!american_mode || s.is_english)
                             })
                             .map(|s| {
+                                let mut s_mod = s.clone();
                                 if american_mode {
-                                    let mut cleaned = s.clone();
-                                    cleaned.name = clean_american_name(&cleaned.name);
-                                    cleaned
-                                } else {
-                                    s.clone()
+                                    s_mod.name = s_mod.clean_name.clone();
                                 }
+                                s_mod
                             })
                             .collect();
                         // Reset selection
@@ -741,21 +730,14 @@ impl App {
                             .all_series_categories
                             .iter()
                             .filter(|c| {
-                                let matches_query = c.search_name.contains(&query);
-                                if !american_mode {
-                                    return matches_query;
-                                }
-                                // American Mode: English Series categories
-                                matches_query && is_english_vod(&c.category_name)
+                                c.search_name.contains(&query) && (!american_mode || c.is_english)
                             })
                             .map(|c| {
+                                let mut c_mod = c.clone();
                                 if american_mode {
-                                    let mut cleaned = c.clone();
-                                    cleaned.category_name = clean_american_name(&cleaned.category_name);
-                                    cleaned
-                                } else {
-                                    c.clone()
+                                    c_mod.category_name = c_mod.clean_name.clone();
                                 }
+                                c_mod
                             })
                             .collect();
                         self.selected_series_category_index = 0;
@@ -770,21 +752,14 @@ impl App {
                             .all_series_streams
                             .iter()
                             .filter(|s| {
-                                let matches_query = s.name.to_lowercase().contains(&query);
-                                if !american_mode {
-                                    return matches_query;
-                                }
-                                // American Mode: English Series streams
-                                matches_query && is_english_vod(&s.name)
+                                s.search_name.contains(&query) && (!american_mode || s.is_english)
                             })
                             .map(|s| {
+                                let mut s_mod = s.clone();
                                 if american_mode {
-                                    let mut cleaned = s.clone();
-                                    cleaned.name = clean_american_name(&cleaned.name);
-                                    cleaned
-                                } else {
-                                    s.clone()
+                                    s_mod.name = s_mod.clean_name.clone();
                                 }
+                                s_mod
                             })
                             .collect();
                         self.selected_series_stream_index = 0;
@@ -1129,11 +1104,13 @@ mod tests {
                 category_id: "1".into(),
                 category_name: "Action".into(),
                 parent_id: serde_json::Value::Null,
+                ..Default::default()
             },
             Category {
                 category_id: "2".into(),
                 category_name: "Comedy".into(),
                 parent_id: serde_json::Value::Null,
+                ..Default::default()
             },
         ];
         // In real app, the AsyncAction handler sets this to 0

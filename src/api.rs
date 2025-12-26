@@ -7,19 +7,26 @@ pub struct Category {
     pub parent_id: ::serde_json::Value, // frequent null or 0
     #[serde(skip)]
     pub search_name: String,
+    #[serde(skip)]
+    pub is_american: bool,
+    #[serde(skip)]
+    pub is_english: bool,
+    #[serde(skip)]
+    pub clean_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Stream {
-    pub num: Option<serde_json::Value>, // Sometimes int, sometimes string, sometimes missing
+    pub num: Option<serde_json::Value>,
+    #[serde(default)]
     pub name: String,
     pub stream_display_name: Option<String>,
 
     #[serde(default)]
-    pub stream_type: String, // Live/Movie usually have this. Series might not.
+    pub stream_type: String,
 
-    #[serde(alias = "series_id")]
-    pub stream_id: serde_json::Value, // Can be int or string
+    #[serde(alias = "series_id", default)]
+    pub stream_id: serde_json::Value,
 
     #[serde(alias = "cover")]
     pub stream_icon: Option<String>,
@@ -27,15 +34,20 @@ pub struct Stream {
     pub epg_channel_id: Option<String>,
     pub added: Option<String>,
     pub category_id: Option<String>,
-    pub container_extension: Option<String>, // Series might not have this
+    pub container_extension: Option<String>,
     pub rating: Option<serde_json::Value>,
     pub rating_5: Option<serde_json::Value>,
     
     #[serde(skip)]
     pub cached_parsed: Option<Box<crate::parser::ParsedStream>>,
-
     #[serde(skip)]
     pub search_name: String,
+    #[serde(skip)]
+    pub is_american: bool,
+    #[serde(skip)]
+    pub is_english: bool,
+    #[serde(skip)]
+    pub clean_name: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -75,6 +87,23 @@ pub struct SeriesInfo {
     pub episodes: serde_json::Value,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EpgListing {
+    pub id: Option<String>,
+    pub epg_id: Option<String>,
+    pub title: String,
+    pub start: String,
+    pub end: String,
+    pub description: Option<String>,
+    pub start_timestamp: Option<serde_json::Value>,
+    pub stop_timestamp: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct EpgResponse {
+    pub epg_listings: Vec<EpgListing>,
+}
+
 #[derive(Debug, Clone)]
 pub struct XtreamClient {
     pub base_url: String,
@@ -91,9 +120,11 @@ impl XtreamClient {
             base_url
         };
 
-        // Build client with User-Agent (DoH resolver is applied per-request if needed)
+        // Build client with User-Agent and timeouts
         let client = reqwest::Client::builder()
             .user_agent("IPTV Smarters Pro")
+            .timeout(std::time::Duration::from_secs(60))
+            .connect_timeout(std::time::Duration::from_secs(10))
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
@@ -111,9 +142,13 @@ impl XtreamClient {
         base_url: String,
         username: String,
         password: String,
+        dns_provider: crate::config::DnsProvider,
     ) -> Result<Self, anyhow::Error> {
-        use reqwest_hickory_resolver::HickoryResolver;
+        use hickory_resolver::AsyncResolver;
+        use hickory_resolver::config::{ResolverConfig, ResolverOpts, NameServerConfig, Protocol};
         use std::sync::Arc;
+        use std::net::SocketAddr;
+        use crate::config::DnsProvider;
 
         let base_url = if base_url.ends_with('/') {
             base_url[..base_url.len() - 1].to_string()
@@ -121,12 +156,82 @@ impl XtreamClient {
             base_url
         };
 
-        // Create DNS resolver using HickoryResolver (uses system DNS by default)
-        let resolver = HickoryResolver::default();
+        // If System DNS, skip custom resolver
+        if dns_provider == DnsProvider::System {
+            let client = reqwest::Client::builder()
+                .user_agent("IPTV Smarters Pro")
+                .timeout(std::time::Duration::from_secs(60))
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .build()?;
+
+            return Ok(Self {
+                base_url,
+                username,
+                password,
+                client,
+            });
+        }
+
+        // Configure DNS-over-HTTPS based on provider
+        let mut config = ResolverConfig::new();
+        
+        let (ips, tls_name) = match dns_provider {
+            DnsProvider::Quad9 => (
+                vec![([9, 9, 9, 11], 443), ([149, 112, 112, 11], 443)],
+                "dns11.quad9.net",
+            ),
+            DnsProvider::AdGuard => (
+                vec![([94, 140, 14, 14], 443), ([94, 140, 15, 15], 443)],
+                "dns.adguard-dns.com",
+            ),
+            DnsProvider::Cloudflare => (
+                vec![([1, 1, 1, 1], 443), ([1, 0, 0, 1], 443)],
+                "cloudflare-dns.com",
+            ),
+            DnsProvider::Google => (
+                vec![([8, 8, 8, 8], 443), ([8, 8, 4, 4], 443)],
+                "dns.google",
+            ),
+            DnsProvider::System => unreachable!(), // Handled above
+        };
+
+        for (ip, port) in ips {
+            let mut ns = NameServerConfig::new(
+                SocketAddr::from((ip, port)),
+                Protocol::Https,
+            );
+            ns.tls_dns_name = Some(tls_name.to_string());
+            config.add_name_server(ns);
+        }
+
+        let async_resolver = AsyncResolver::tokio(config, ResolverOpts::default());
+
+        // Custom Bridge to implement reqwest's Resolve trait using hickory-resolver
+        #[derive(Clone)]
+        struct DohResolver(hickory_resolver::TokioAsyncResolver);
+        impl reqwest::dns::Resolve for DohResolver {
+            fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+                let resolver = self.0.clone();
+                let name = name.as_str().to_string();
+                Box::pin(async move {
+                    match resolver.lookup_ip(name).await {
+                        Ok(lookup) => {
+                            let addrs: Vec<SocketAddr> = lookup.iter()
+                                .map(|ip| SocketAddr::new(ip, 0))
+                                .collect();
+                            Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
+                        }
+                        Err(e) => Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>),
+                    }
+                })
+            }
+        }
 
         let client = reqwest::Client::builder()
             .user_agent("IPTV Smarters Pro")
-            .dns_resolver(Arc::new(resolver))
+            .dns_resolver(Arc::new(DohResolver(async_resolver)))
+            .timeout(std::time::Duration::from_secs(60))
+            .connect_timeout(std::time::Duration::from_secs(10))
             .build()?;
 
         Ok(Self {
@@ -144,7 +249,12 @@ impl XtreamClient {
             "{}/player_api.php?username={}&password={}",
             self.base_url, self.username, self.password
         );
-        let resp = self.client.get(&url).send().await?;
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Network request failed: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(anyhow::anyhow!("Server returned error status: {}", resp.status()));
+        }
 
         #[derive(Deserialize)]
         struct AuthResponse {
@@ -152,12 +262,25 @@ impl XtreamClient {
             server_info: Option<ServerInfo>,
         }
 
-        if let Ok(json) = resp.json::<AuthResponse>().await {
-            if let Some(info) = json.user_info {
-                return Ok((info.auth == 1, Some(info), json.server_info));
+        let body = resp.text().await
+            .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
+
+        match serde_json::from_str::<AuthResponse>(&body) {
+            Ok(json) => {
+                if let Some(info) = json.user_info {
+                    return Ok((info.auth == 1, Some(info), json.server_info));
+                }
+                Ok((false, None, None))
+            }
+            Err(e) => {
+                // Check for common error strings in the body (sometimes providers return plain text errors)
+                let lower_body = body.to_lowercase();
+                if lower_body.contains("invalid") || lower_body.contains("expired") || lower_body.contains("disabled") {
+                    return Ok((false, None, None));
+                }
+                Err(anyhow::anyhow!("Failed to parse server response: {}. Body: {}", e, body.chars().take(100).collect::<String>()))
             }
         }
-        Ok((false, None, None))
     }
 
     pub async fn get_live_categories(&self) -> Result<Vec<Category>, anyhow::Error> {
@@ -165,8 +288,10 @@ impl XtreamClient {
             "{}/player_api.php?username={}&password={}&action=get_live_categories",
             self.base_url, self.username, self.password
         );
-        let resp = self.client.get(&url).send().await?;
-        let categories: Vec<Category> = resp.json().await?;
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch live categories: {}", e))?;
+        let categories: Vec<Category> = resp.json().await
+            .map_err(|e| anyhow::anyhow!("Failed to parse live categories JSON: {}", e))?;
         Ok(categories)
     }
 
@@ -183,9 +308,44 @@ impl XtreamClient {
                 self.base_url, self.username, self.password, category_id
             )
         };
-        let resp = self.client.get(&url).send().await?;
-        let streams: Vec<Stream> = resp.json().await?;
-        Ok(streams)
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch live streams (category {}): {}", category_id, e))?;
+        let streams: Vec<Stream> = resp.json().await
+            .map_err(|e| anyhow::anyhow!("Failed to parse live streams JSON (category {}): {}", category_id, e))?;
+        
+        // Deduplicate streams based on ID AND name
+        // Optimized for performance: avoided unnecessary lowercasing and optimized pre-allocation
+        use std::collections::HashSet;
+        let mut seen_ids = HashSet::with_capacity(streams.len());
+        let mut seen_names = HashSet::with_capacity(streams.len());
+        
+        let unique_streams: Vec<Stream> = streams
+            .into_iter()
+            .filter(|s| {
+                // Efficient ID conversion
+                let id_str = match &s.stream_id {
+                    serde_json::Value::String(val) => val.clone(),
+                    serde_json::Value::Number(val) => val.to_string(),
+                    _ => s.stream_id.to_string(),
+                };
+
+                // Check ID first (fastest)
+                if seen_ids.contains(&id_str) {
+                    return false;
+                }
+                
+                // Then check Name (Exact match is usually sufficient and much faster)
+                if seen_names.contains(&s.name) {
+                    return false;
+                }
+
+                seen_ids.insert(id_str);
+                seen_names.insert(s.name.clone());
+                true
+            })
+            .collect();
+
+        Ok(unique_streams)
     }
 
     pub async fn get_vod_categories(&self) -> Result<Vec<Category>, anyhow::Error> {
@@ -193,8 +353,10 @@ impl XtreamClient {
             "{}/player_api.php?username={}&password={}&action=get_vod_categories",
             self.base_url, self.username, self.password
         );
-        let resp = self.client.get(&url).send().await?;
-        let categories: Vec<Category> = resp.json().await?;
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch VOD categories: {}", e))?;
+        let categories: Vec<Category> = resp.json().await
+            .map_err(|e| anyhow::anyhow!("Failed to parse VOD categories JSON: {}", e))?;
         Ok(categories)
     }
 
@@ -203,8 +365,10 @@ impl XtreamClient {
             "{}/player_api.php?username={}&password={}&action=get_vod_streams&category_id={}",
             self.base_url, self.username, self.password, category_id
         );
-        let resp = self.client.get(&url).send().await?;
-        let streams: Vec<Stream> = resp.json().await?;
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch VOD streams (category {}): {}", category_id, e))?;
+        let streams: Vec<Stream> = resp.json().await
+            .map_err(|e| anyhow::anyhow!("Failed to parse VOD streams JSON (category {}): {}", category_id, e))?;
         Ok(streams)
     }
 
@@ -213,8 +377,10 @@ impl XtreamClient {
             "{}/player_api.php?username={}&password={}&action=get_vod_streams",
             self.base_url, self.username, self.password
         );
-        let resp = self.client.get(&url).send().await?;
-        let streams: Vec<Stream> = resp.json().await?;
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch all VOD streams: {}", e))?;
+        let streams: Vec<Stream> = resp.json().await
+            .map_err(|e| anyhow::anyhow!("Failed to parse all VOD streams JSON: {}", e))?;
         Ok(streams)
     }
 
@@ -223,18 +389,30 @@ impl XtreamClient {
             "{}/player_api.php?username={}&password={}&action=get_series_categories",
             self.base_url, self.username, self.password
         );
-        let resp = self.client.get(&url).send().await?;
-        let categories: Vec<Category> = resp.json().await?;
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch series categories: {}", e))?;
+        let categories: Vec<Category> = resp.json().await
+            .map_err(|e| anyhow::anyhow!("Failed to parse series categories JSON: {}", e))?;
         Ok(categories)
     }
 
-    pub async fn get_series_all(&self) -> Result<Vec<serde_json::Value>, anyhow::Error> {
+    pub async fn get_series_all(&self) -> Result<Vec<Stream>, anyhow::Error> {
         let url = format!(
             "{}/player_api.php?username={}&password={}&action=get_series",
             self.base_url, self.username, self.password
         );
-        let resp = self.client.get(&url).send().await?;
-        let series: Vec<serde_json::Value> = resp.json().await?;
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch all series: {}", e))?;
+        let text = resp.text().await
+            .map_err(|e| anyhow::anyhow!("Failed to get all series text: {}", e))?;
+        
+        // Providers sometimes return {} when there are no series instead of []
+        if text.trim() == "{}" || text.trim() == "null" {
+            return Ok(Vec::new());
+        }
+
+        let series: Vec<Stream> = serde_json::from_str(&text)
+            .map_err(|e| anyhow::anyhow!("Failed to parse all series JSON: {}", e))?;
         Ok(series)
     }
 
@@ -246,12 +424,10 @@ impl XtreamClient {
             "{}/player_api.php?username={}&password={}&action=get_series&category_id={}",
             self.base_url, self.username, self.password, category_id
         );
-        let resp = self.client.get(&url).send().await?;
-        // Series response often mimics Stream structure, or slightly different.
-        // Using Stream struct for now as best-effort compatibility.
-        // If it fails, we might need a dedicated Series struct.
-        // However, standard Xtream often returns series objects.
-        let streams: Vec<Stream> = resp.json().await?;
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch series streams (category {}): {}", category_id, e))?;
+        let streams: Vec<Stream> = resp.json().await
+            .map_err(|e| anyhow::anyhow!("Failed to parse series streams JSON (category {}): {}", category_id, e))?;
         Ok(streams)
     }
 
@@ -260,8 +436,10 @@ impl XtreamClient {
             "{}/player_api.php?username={}&password={}&action=get_series_info&series_id={}",
             self.base_url, self.username, self.password, series_id
         );
-        let resp = self.client.get(&url).send().await?;
-        let info: SeriesInfo = resp.json().await?;
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch series info (series {}): {}", series_id, e))?;
+        let info: SeriesInfo = resp.json().await
+            .map_err(|e| anyhow::anyhow!("Failed to parse series info JSON (series {}): {}", series_id, e))?;
         Ok(info)
     }
 
@@ -284,5 +462,17 @@ impl XtreamClient {
             "{}/series/{}/{}/{}.{}",
             self.base_url, self.username, self.password, stream_id, extension
         )
+    }
+
+    pub async fn get_short_epg(&self, stream_id: &str) -> Result<EpgResponse, anyhow::Error> {
+        let url = format!(
+            "{}/player_api.php?username={}&password={}&action=get_short_epg&stream_id={}",
+            self.base_url, self.username, self.password, stream_id
+        );
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch short EPG (stream {}): {}", stream_id, e))?;
+        let epg: EpgResponse = resp.json().await
+            .map_err(|e| anyhow::anyhow!("Failed to parse EPG JSON (stream {}): {}", stream_id, e))?;
+        Ok(epg)
     }
 }

@@ -1,0 +1,3 @@
+@echo off
+echo Launching latest Matrix IPTV build...
+target\release\matrix-iptv.exe

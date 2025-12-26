@@ -47,21 +47,33 @@ impl Player {
 
         let child = Command::new("mpv")
             .arg(url)
-            .arg("--fs") // Start in fullscreen
-            .arg("--force-window")
+            .arg("--fs")        // Start in Fullscreen
+            .arg("--no-border") // Headless (no window decorations)
+            .arg("--osc=no")    // Disable On Screen Controller for clean look
+            .arg("--video-sync=display-resample") // Smooth motion sync (required for interpolation)
+            .arg("--interpolation=yes") // Pseudo-frame generation / motion smoothing
+            .arg("--tscale=oversample") // Sharpest, high-quality upscaling/interpolation (temporal AA)
             .arg("--cache=yes")
-            .arg("--demuxer-max-bytes=128MiB")
-            .arg("--demuxer-max-back-bytes=32MiB")
+            .arg("--demuxer-max-bytes=256MiB") // Increased Cache
+            .arg("--demuxer-max-back-bytes=64MiB")
+            .arg("--demuxer-readahead-secs=20") // Buffer stability
+            .arg("--d3d11-flip=yes")            // Modern Windows presentation (faster)
+            .arg("--framedrop=vo")              // Drop frames gracefully if GPU lags
+            .arg("--vd-lavc-fast")      // Enable fast decoding optimizations
+            .arg("--vd-lavc-skiploopfilter=all") // Major CPU saver for low-end machines
+            .arg("--vd-lavc-threads=0") // Maximize thread usage for decoding
+            .arg("--sharpen=0.6")        // Lowered to let scales do the work
+            .arg("--scale=spline36")     // Better anti-aliasing (edges)
+            .arg("--cscale=mitchell")    // Clean chroma scaling
+            .arg("--scale-antiring=0.7") // Reduce haloing
+            .arg("--cscale-antiring=0.7")
             .arg("--msg-level=all=no")
             .arg("--term-status-msg=no")
-            .arg("--hwdec=auto")
-            .arg("--hwdec=auto")
+            .arg("--hwdec=auto-safe") // Balanced Hardware Decoding
             // Add User-Agent to masquerade as a browser (crucial for some IPTV providers)
             .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
             // Keep window open if playback fails to see error (optional, maybe off for prod)
             .arg("--keep-open=no")
-            // Standard options
-            .arg("--keep-open=no") // Close on finish
             // IPC for status monitoring
             .arg(format!("--input-ipc-server={}", pipe_name))
             .spawn();
