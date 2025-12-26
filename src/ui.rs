@@ -1707,7 +1707,7 @@ fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             let list = List::new(items)
                 .block(
                     Block::default()
-                        .title(" // AUTHORIZED_NODES ")
+                        .title(" // AUTHORIZED_NODES [v3.0.2] ")
                         .borders(Borders::ALL)
                         .border_type(BorderType::Double)
                         .border_style(Style::default().fg(MATRIX_GREEN)),
