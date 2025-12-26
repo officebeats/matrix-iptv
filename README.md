@@ -139,7 +139,7 @@ The installation scripts will attempt to install these for you:
 
 ## ⚡ Community & Support
 
-Optimized with ❤️ by **Ernesto "Beats"**
+Built and optimized with ❤️ by **Ernesto "Beats"** with the help of google antigravity and vibe coding during his PTO vacation time.
 
 [![Twitter](https://img.shields.io/badge/Twitter-1DA1F2?style=for-the-badge&logo=twitter&logoColor=white)](https://x.com/officebeats)
 [![Discord](https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.com/users/317887730703138826)
