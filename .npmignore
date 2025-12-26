@@ -1,0 +1,34 @@
+# Source and Build Artifacts
+src/
+target/
+tests/
+assets/
+pkg/
+
+# Rust Configuration
+Cargo.lock
+Cargo.toml
+
+# Binaries (Let the postinstall script handle these!)
+bin/*.exe
+bin/matrix-iptv
+!bin/cli.js
+
+# Agent & Git Metadata
+.agent/
+.github/
+.git/
+.gitignore
+
+# Scripts & Logs
+*.ps1
+*.sh
+*.bat
+*.log
+*.txt
+
+# Documentation (Keep README only)
+*.md
+!README.md
+!CHANGES.md
+!about.md

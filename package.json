@@ -1,10 +1,10 @@
 {
   "name": "@officebeats/matrix-iptv-cli",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "The premium Terminal IPTV Decoder",
   "main": "index.js",
   "bin": {
-    "matrix-iptv": "./bin/cli.js"
+    "matrix-iptv": "bin/cli.js"
   },
   "scripts": {
     "postinstall": "node scripts/install-binary.js"
