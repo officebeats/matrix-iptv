@@ -76,6 +76,8 @@ matrix-iptv
 
 ## 🏎️ Optimized Providers
 
+> **⚠️ Disclaimer:** This is an experimental feature strictly targeting the top 3 most widely available playlists on platforms like **z2u** and **g2g**. Please do not request support or additions for other playlists at this time.
+
 Matrix IPTV CLI is refined for high-density, high-quality playlists, including:
 
 - **Strong 8K**: Custom filtering logic to remove international clutter (AR|, etc.) and maximize US sports visibility.
