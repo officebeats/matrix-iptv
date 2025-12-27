@@ -139,10 +139,12 @@ We leverage advanced **MPV** flags to ensure professional-level video quality ev
 | :---------------------- | :--------------------------------------------------------- |
 | **`Enter`**             | **Play Channel / Select Category**                         |
 | **`Esc` / `Backspace`** | **Go Back**                                                |
-| **`f`**                 | **Favorite** (Add/Remove current item from Favorites)      |
 | **`/`**                 | **Search** (Filters results instantly)                     |
 | **`j` / `↓`**           | Move Down                                                  |
 | **`k` / `↑`**           | Move Up                                                    |
+| **`1`**                 | **Live TV** (Switch to Live Channels)                      |
+| **`2`**                 | **Movies** (Switch to VOD)                                 |
+| **`3`**                 | **Series** (Switch to Series)                              |
 | **`x`**                 | **Settings** (Update your playlist or turn on Screensaver) |
 | **`q`**                 | **Quit**                                                   |
 
