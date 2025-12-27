@@ -192,7 +192,34 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 .constraints([Constraint::Min(10), Constraint::Length(4)])
                 .split(area);
 
-            let items: Vec<ListItem> = app.settings_options.iter().map(|s| ListItem::new(format!("  {}", s))).collect();
+            // Create styled list items with color differentiation
+            let items: Vec<ListItem> = app.settings_options.iter().map(|s| {
+                // Parse settings that have values (e.g., "Label: Value" or "Label (Value)")
+                if let Some(colon_pos) = s.find(':') {
+                    // Format: "Label: Value"
+                    let label = &s[..colon_pos + 1];
+                    let value = &s[colon_pos + 1..];
+                    ListItem::new(Line::from(vec![
+                        Span::styled(format!("  {}", label), Style::default().fg(Color::DarkGray)),
+                        Span::styled(value.to_string(), Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)),
+                    ]))
+                } else if s.contains(" (") && s.ends_with(")") {
+                    // Format: "Label (Value)"
+                    if let Some(paren_pos) = s.find(" (") {
+                        let label = &s[..paren_pos];
+                        let value = &s[paren_pos..];
+                        ListItem::new(Line::from(vec![
+                            Span::styled(format!("  {}", label), Style::default().fg(Color::DarkGray)),
+                            Span::styled(value.to_string(), Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)),
+                        ]))
+                    } else {
+                        ListItem::new(Line::from(Span::styled(format!("  {}", s), Style::default().fg(Color::White))))
+                    }
+                } else {
+                    // Plain label without value
+                    ListItem::new(Line::from(Span::styled(format!("  {}", s), Style::default().fg(Color::White))))
+                }
+            }).collect();
             let list = List::new(items)
                 .block(Block::default().title(" // AUTHORIZED_NODES [v3.0.2] ").borders(Borders::ALL).border_type(BorderType::Double).border_style(Style::default().fg(MATRIX_GREEN)))
                 .highlight_style(Style::default().bg(MATRIX_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD))
@@ -218,8 +245,8 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
 
             let accounts: Vec<ListItem> = app.config.accounts.iter().map(|acc| {
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!("  {} ", acc.name), Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
-                    Span::styled(format!("({})", acc.base_url), Style::default().fg(Color::LightBlue)),
+                    Span::styled(format!("  {} ", acc.name), Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("({})", acc.base_url), Style::default().fg(Color::DarkGray)),
                 ]))
             }).collect();
             let list = List::new(accounts)
@@ -230,9 +257,11 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
 
             // Navigation hints
             let hints = Line::from(vec![
+                Span::styled(" a ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled("Add  ", Style::default().fg(Color::White)),
                 Span::styled(" Enter ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::styled("Edit  ", Style::default().fg(Color::White)),
-                Span::styled(" d ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" d ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                 Span::styled("Delete  ", Style::default().fg(Color::White)),
                 Span::styled(" Esc ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::styled("Back", Style::default().fg(Color::White)),
@@ -350,17 +379,22 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 .constraints([Constraint::Length(8), Constraint::Min(3), Constraint::Length(3)])
                 .split(area);
 
-            // Playlist mode options
-            let modes = crate::config::PlaylistMode::all();
-            let items: Vec<ListItem> = modes.iter().map(|m| {
-                let is_current = *m == app.config.playlist_mode;
-                let prefix = if is_current { "✓ " } else { "  " };
-                ListItem::new(format!("{}{}", prefix, m.display_name()))
+            // Processing mode options (Multi-select)
+            let modes = crate::config::ProcessingMode::all();
+            let mut items: Vec<ListItem> = modes.iter().map(|m| {
+                let is_selected = app.config.processing_modes.contains(m);
+                let checkbox = if is_selected { "[x] " } else { "[ ] " };
+                ListItem::new(format!("{}{}", checkbox, m.display_name()))
             }).collect();
+            
+            // Add Done button
+            items.push(ListItem::new(Line::from(vec![
+                Span::styled("   [ APPLY & SAVE ]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
+            ])));
             
             let list = List::new(items)
                 .block(Block::default()
-                    .title(" SELECT PLAYLIST MODE ")
+                    .title(" PLAYLIST FILTRATION (Space to Toggle) ")
                     .borders(Borders::ALL)
                     .border_type(BorderType::Double)
                     .border_style(Style::default().fg(Color::Cyan)))
@@ -371,11 +405,10 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             // Show description for selected mode
             let desc = if let Some(idx) = app.playlist_mode_list_state.selected() {
                 match idx {
-                    0 => "Default: Shows all content exactly as provided by the server without extra filtering.",
-                    1 => "'merica: US-optimized display. Shows flags for American channels and prioritizes sports parsing.",
-                    2 => "Sports: Filters for sports content only, across all regions.",
-                    3 => "All English: Combined view of US, UK, and Canada English content.",
-                    4 => "Sports + 'merica: The ultimate US sports fan experience. Only American sports channels and events.",
+                    0 => "'merica: Intelligent geo-blocking buffer. Removes international channels (AR, FR, DE, etc) from optimized playlists.",
+                    1 => "Sports: Prioritizes sports categories and adds league icons (NBA, NFL, MLB, NHL) for rapid recognition.",
+                    2 => "All English: Broadest filter. Retains all content tagged as English (US, UK, CA, AU).",
+                    3 => "Save configuration and refresh playlist with selected filters.",
                     _ => ""
                 }
             } else {
@@ -391,10 +424,10 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             let hints = Line::from(vec![
                 Span::styled(" ↑↓ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
                 Span::styled("Navigate  ", Style::default().fg(Color::White)),
+                Span::styled(" Space ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("Toggle  ", Style::default().fg(Color::White)),
                 Span::styled(" Enter ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                Span::styled("Select  ", Style::default().fg(Color::White)),
-                Span::styled(" Esc ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-                Span::styled("Cancel", Style::default().fg(Color::White)),
+                Span::styled("Done  ", Style::default().fg(Color::White)),
             ]);
             let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
             f.render_widget(hints_para, chunks[2]);

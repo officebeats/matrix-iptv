@@ -60,7 +60,7 @@ pub async fn handle_async_action(
             if let Some(client) = &app.current_client {
                 let client = client.clone();
                 let tx = tx.clone();
-                let pm = app.config.playlist_mode;
+                let pms = app.config.processing_modes.clone();
                 let account_name = app.config.accounts.get(app.selected_account_index)
                                     .map(|a| a.name.clone()).unwrap_or_default();
 
@@ -69,10 +69,11 @@ pub async fn handle_async_action(
                 let t1 = tx.clone();
                 let cat_favs = app.config.favorites.categories.clone();
                 let account_name_live = account_name.clone();
+                let pms1 = pms.clone();
                 tokio::spawn(async move {
                     match c1.get_live_categories().await {
                         Ok(mut cats) => {
-                            preprocessing::preprocess_categories(&mut cats, &cat_favs, pm, true, false, &account_name_live);
+                            preprocessing::preprocess_categories(&mut cats, &cat_favs, &pms1, true, false, &account_name_live);
                             let _ = t1.send(AsyncAction::CategoriesLoaded(cats)).await;
                         }
                         Err(e) => {
@@ -86,10 +87,11 @@ pub async fn handle_async_action(
                 let t_vod = tx.clone();
                 let vod_cat_favs = app.config.favorites.vod_categories.clone();
                 let account_name_vod_c = account_name.clone();
+                let pms_v = pms.clone();
                 tokio::spawn(async move {
                     match c_vod.get_vod_categories().await {
                         Ok(mut cats) => {
-                            preprocessing::preprocess_categories(&mut cats, &vod_cat_favs, pm, false, true, &account_name_vod_c);
+                            preprocessing::preprocess_categories(&mut cats, &vod_cat_favs, &pms_v, false, true, &account_name_vod_c);
                             let _ = t_vod.send(AsyncAction::VodCategoriesLoaded(cats)).await;
                         }
                         Err(e) => {
@@ -103,11 +105,12 @@ pub async fn handle_async_action(
                 let t2 = tx.clone();
                 let stream_favs = app.config.favorites.streams.clone();
                 let account_name_live_s_c = account_name.clone();
+                let pms2 = pms.clone();
                 tokio::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     match c2.get_live_streams("ALL").await {
                         Ok(mut streams) => {
-                            preprocessing::preprocess_streams(&mut streams, &stream_favs, pm, true, &account_name_live_s_c);
+                            preprocessing::preprocess_streams(&mut streams, &stream_favs, &pms2, true, &account_name_live_s_c);
                             let _ = t2.send(AsyncAction::TotalChannelsLoaded(streams)).await;
                         }
                         Err(e) => {
@@ -121,11 +124,12 @@ pub async fn handle_async_action(
                 let t4 = tx.clone();
                 let vod_favs = app.config.favorites.vod_streams.clone();
                 let account_name_vod_s_c = account_name.clone();
+                let pms4 = pms.clone();
                 tokio::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                     match c4.get_vod_streams_all().await {
                         Ok(mut streams) => {
-                            preprocessing::preprocess_streams(&mut streams, &vod_favs, pm, false, &account_name_vod_s_c);
+                            preprocessing::preprocess_streams(&mut streams, &vod_favs, &pms4, false, &account_name_vod_s_c);
                             let _ = t4.send(AsyncAction::TotalMoviesLoaded(streams)).await;
                         }
                         Err(e) => {
@@ -139,10 +143,11 @@ pub async fn handle_async_action(
                 let t5 = tx.clone();
                 let series_cat_favs = app.config.favorites.categories.clone(); 
                 let account_name_ser_c = account_name.clone();
+                let pms5 = pms.clone();
                 tokio::spawn(async move {
                     match c5.get_series_categories().await {
                         Ok(mut cats) => {
-                            preprocessing::preprocess_categories(&mut cats, &series_cat_favs, pm, false, false, &account_name_ser_c);
+                            preprocessing::preprocess_categories(&mut cats, &series_cat_favs, &pms5, false, false, &account_name_ser_c);
                             let _ = t5.send(AsyncAction::SeriesCategoriesLoaded(cats)).await;
                         }
                         Err(e) => {
@@ -156,11 +161,12 @@ pub async fn handle_async_action(
                 let t_series = tx.clone();
                 let series_favs = app.config.favorites.vod_streams.clone(); 
                 let account_name_ser_s_c = account_name.clone();
+                let pms_ser = pms.clone();
                 tokio::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
                     match c_series.get_series_all().await {
                         Ok(mut series) => {
-                            preprocessing::preprocess_streams(&mut series, &series_favs, pm, false, &account_name_ser_s_c);
+                            preprocessing::preprocess_streams(&mut series, &series_favs, &pms_ser, false, &account_name_ser_s_c);
                             let _ = t_series.send(AsyncAction::TotalSeriesLoaded(series)).await;
                         }
                         Err(e) => {
@@ -308,7 +314,7 @@ pub async fn handle_async_action(
             if let Some(client) = &app.current_client {
                 let client = client.clone();
                 let tx = tx.clone();
-                let pm = app.config.playlist_mode;
+                let pms = app.config.processing_modes.clone();
                 let account_name = app.config.accounts.get(app.selected_account_index)
                                     .map(|a| a.name.clone()).unwrap_or_default();
 
@@ -317,10 +323,11 @@ pub async fn handle_async_action(
                 let t1 = tx.clone();
                 let cat_favs = app.config.favorites.categories.clone();
                 let account_name_live = account_name.clone();
+                let pms1 = pms.clone();
                 tokio::spawn(async move {
                     match c1.get_live_categories().await {
                         Ok(mut cats) => {
-                            preprocessing::preprocess_categories(&mut cats, &cat_favs, pm, true, false, &account_name_live);
+                            preprocessing::preprocess_categories(&mut cats, &cat_favs, &pms1, true, false, &account_name_live);
                             let _ = t1.send(AsyncAction::CategoriesLoaded(cats)).await;
                         }
                         Err(e) => { let _ = t1.send(AsyncAction::Error(format!("Live Categories Error: {}", e))).await; }
@@ -332,10 +339,11 @@ pub async fn handle_async_action(
                 let t_vod = tx.clone();
                 let vod_cat_favs = app.config.favorites.vod_categories.clone();
                 let account_name_vod_c = account_name.clone();
+                let pms_v = pms.clone();
                 tokio::spawn(async move {
                     match c_vod.get_vod_categories().await {
                         Ok(mut cats) => {
-                            preprocessing::preprocess_categories(&mut cats, &vod_cat_favs, pm, false, true, &account_name_vod_c);
+                            preprocessing::preprocess_categories(&mut cats, &vod_cat_favs, &pms_v, false, true, &account_name_vod_c);
                             let _ = t_vod.send(AsyncAction::VodCategoriesLoaded(cats)).await;
                         }
                         Err(e) => { let _ = t_vod.send(AsyncAction::Error(format!("VOD Categories Error: {}", e))).await; }
@@ -347,10 +355,11 @@ pub async fn handle_async_action(
                 let t5 = tx.clone();
                 let series_cat_favs = app.config.favorites.categories.clone(); 
                 let account_name_ser_c = account_name.clone();
+                let pms5 = pms.clone();
                 tokio::spawn(async move {
                     match c5.get_series_categories().await {
                         Ok(mut cats) => {
-                            preprocessing::preprocess_categories(&mut cats, &series_cat_favs, pm, false, false, &account_name_ser_c);
+                            preprocessing::preprocess_categories(&mut cats, &series_cat_favs, &pms5, false, false, &account_name_ser_c);
                             let _ = t5.send(AsyncAction::SeriesCategoriesLoaded(cats)).await;
                         }
                         Err(e) => { let _ = t5.send(AsyncAction::Error(format!("Series Category Error: {}", e))).await; }
@@ -362,10 +371,11 @@ pub async fn handle_async_action(
                 let t2 = tx.clone();
                 let stream_favs = app.config.favorites.streams.clone();
                 let account_name_live_s_c = account_name.clone();
+                let pms2 = pms.clone();
                 tokio::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     if let Ok(mut streams) = c2.get_live_streams("ALL").await {
-                        preprocessing::preprocess_streams(&mut streams, &stream_favs, pm, true, &account_name_live_s_c);
+                        preprocessing::preprocess_streams(&mut streams, &stream_favs, &pms2, true, &account_name_live_s_c);
                         let _ = t2.send(AsyncAction::TotalChannelsLoaded(streams)).await;
                     }
                 });
@@ -374,10 +384,11 @@ pub async fn handle_async_action(
                 let t4 = tx.clone();
                 let vod_favs = app.config.favorites.vod_streams.clone();
                 let account_name_vod_s_c = account_name.clone();
+                let pms4 = pms.clone();
                 tokio::spawn(async move {
                     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                     if let Ok(mut streams) = c4.get_vod_streams_all().await {
-                        preprocessing::preprocess_streams(&mut streams, &vod_favs, pm, false, &account_name_vod_s_c);
+                        preprocessing::preprocess_streams(&mut streams, &vod_favs, &pms4, false, &account_name_vod_s_c);
                         let _ = t4.send(AsyncAction::TotalMoviesLoaded(streams)).await;
                     }
                 });

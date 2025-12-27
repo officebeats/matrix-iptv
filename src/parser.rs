@@ -550,10 +550,17 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         // Remove "u " prefix and hidden characters
         display_name = CLEAN_U_PREFIX.replace(&display_name, "").to_string();
         
-        // Remove "MNF", "TNF", "SNF", "NBA", etc.
-        let re_mnf = Regex::new(r"(?i)^(MNF|TNF|SNF|NBA|NFL|NHL|MLB|UFC|MLS|SLING|S)(?:\s*[:|-]\s*|\s+)").unwrap();
+        // Remove "MNF", "TNF", "SNF" game day labels AND league prefixes ONLY when followed by separator or number
+        // We want to keep "NBA TV" intact but strip "NBA | Game" or "NBA 01: Something"
+        let re_mnf = Regex::new(r"(?i)^(MNF|TNF|SNF|SLING|S)(?:\s*[:|-]\s*|\s+)").unwrap();
         if re_mnf.is_match(&display_name) {
              display_name = re_mnf.replace(&display_name, "").to_string();
+             clean_loop = true;
+        }
+        // Strip league prefix ONLY if followed by separator (:|) or number, NOT regular words like "TV"
+        let re_league_prefix = Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[:|-]\s*|\s+\d)").unwrap();
+        if re_league_prefix.is_match(&display_name) {
+             display_name = re_league_prefix.replace(&display_name, "").to_string();
              clean_loop = true;
         }
 
@@ -589,19 +596,34 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     }
 
     // Detect and strip country/region prefix patterns (Aggressive Generic)
+    // BUT: Preserve league names like "NBA TV" - only strip if followed by separator or number
     let mut clean_loop = true;
     while clean_loop {
         clean_loop = false;
         let re_prefix = Regex::new(r"(?i)^([A-Z0-9]{1,5})(?:\s*[|:-]\s*|\s+)").unwrap();
         if let Some(caps) = re_prefix.captures(&display_name) {
             let code = caps.get(1).unwrap().as_str().to_uppercase();
-            let allowed = ["S", "US", "USA", "AM", "UK", "GB", "CA", "EN", "EU", "FR", "DE", "ES", "IT", "VIP", "NBA", "NFL", "MLB", "NHL", "UFC", "PPV"];
-            if allowed.contains(&code.as_str()) {
+            // Country codes that should always be stripped
+            let country_codes = ["S", "US", "USA", "AM", "UK", "GB", "CA", "EN", "EU", "FR", "DE", "ES", "IT", "VIP", "PPV"];
+            // League codes that should only be stripped if followed by separator/number
+            let league_codes = ["NBA", "NFL", "MLB", "NHL", "UFC", "MLS"];
+            
+            if country_codes.contains(&code.as_str()) {
                  if country.is_none() && code != "S" && code != "EN" {
                     country = Some(code);
                  }
                  display_name = re_prefix.replace(&display_name, "").to_string();
                  clean_loop = true;
+            } else if league_codes.contains(&code.as_str()) {
+                 // For leagues, only strip if followed by separator (: | -) or number, NOT regular words
+                 let re_league = Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[|:-]\s*|\s+\d)").unwrap();
+                 if re_league.is_match(&display_name) {
+                      if country.is_none() {
+                         country = Some(code);
+                      }
+                      display_name = re_league.replace(&display_name, "").to_string();
+                      clean_loop = true;
+                 }
             }
         }
     }

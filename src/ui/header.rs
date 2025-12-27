@@ -57,8 +57,38 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD),
     )];
     
-    if app.config.playlist_mode.is_merica_variant() {
-        spans.push(Span::styled(" [MODE: 'MERICA] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+    // Color-coded MODE display based on processing_modes
+    if !app.config.processing_modes.is_empty() {
+        spans.push(Span::styled(" [", Style::default().fg(DARK_GREEN)));
+        
+        let mut first = true;
+        for mode in &app.config.processing_modes {
+            if !first {
+                spans.push(Span::styled("+", Style::default().fg(Color::DarkGray)));
+            }
+            first = false;
+            
+            match mode {
+                crate::config::ProcessingMode::Merica => {
+                    // Red, White, Blue styling for 'merica
+                    spans.push(Span::styled("'", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled("m", Style::default().fg(Color::Rgb(255, 50, 50)).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled("e", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled("r", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled("i", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled("c", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                    spans.push(Span::styled("a", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                }
+                crate::config::ProcessingMode::Sports => {
+                    spans.push(Span::styled("SPORTS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                }
+                crate::config::ProcessingMode::AllEnglish => {
+                    spans.push(Span::styled("EN", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)));
+                }
+            }
+        }
+        
+        spans.push(Span::styled("] ", Style::default().fg(DARK_GREEN)));
     }
 
     spans.push(separator.clone());

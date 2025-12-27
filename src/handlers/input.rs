@@ -55,7 +55,7 @@ pub async fn handle_key_event(
                  );
                  app.current_client = Some(client.clone());
                  let tx = tx.clone();
-                 let pm = app.config.playlist_mode;
+                 let pms = app.config.processing_modes.clone();
                  let stream_favs = app.config.favorites.streams.clone();
                  let vod_favs = app.config.favorites.vod_streams.clone();
                  let acc_name = acc.name.clone();
@@ -64,12 +64,12 @@ pub async fn handle_key_event(
                      if let Ok((true, _, _)) = client.authenticate().await {
                          // Load Live
                          if let Ok(mut streams) = client.get_live_streams("ALL").await {
-                             crate::preprocessing::preprocess_streams(&mut streams, &stream_favs, pm, true, &acc_name);
+                             crate::preprocessing::preprocess_streams(&mut streams, &stream_favs, &pms, true, &acc_name);
                              let _ = tx.send(AsyncAction::TotalChannelsLoaded(streams)).await;
                          }
                          // Load VOD
                          if let Ok(mut streams) = client.get_vod_streams_all().await {
-                             crate::preprocessing::preprocess_streams(&mut streams, &vod_favs, pm, false, &acc_name);
+                             crate::preprocessing::preprocess_streams(&mut streams, &vod_favs, &pms, false, &acc_name);
                              let _ = tx.send(AsyncAction::TotalMoviesLoaded(streams)).await;
                          }
                      }
@@ -546,12 +546,46 @@ pub async fn handle_key_event(
                                 }
                             }
                             _ => {
-                                match app.login_field_focus {
-                                    LoginField::Name => { app.input_name.handle_event(&Event::Key(key)); }
-                                    LoginField::Url => { app.input_url.handle_event(&Event::Key(key)); }
-                                    LoginField::Username => { app.input_username.handle_event(&Event::Key(key)); }
-                                    LoginField::Password => { app.input_password.handle_event(&Event::Key(key)); }
-                                    LoginField::EpgUrl => { app.input_epg_url.handle_event(&Event::Key(key)); }
+                                // Handle Ctrl+V paste
+                                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('v') {
+                                    #[cfg(not(target_arch = "wasm32"))]
+                                    {
+                                        if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                                            if let Ok(text) = clipboard.get_text() {
+                                                // Paste into the currently focused field
+                                                match app.login_field_focus {
+                                                    LoginField::Name => {
+                                                        let current = app.input_name.value().to_string();
+                                                        app.input_name = tui_input::Input::new(current + &text);
+                                                    }
+                                                    LoginField::Url => {
+                                                        let current = app.input_url.value().to_string();
+                                                        app.input_url = tui_input::Input::new(current + &text);
+                                                    }
+                                                    LoginField::Username => {
+                                                        let current = app.input_username.value().to_string();
+                                                        app.input_username = tui_input::Input::new(current + &text);
+                                                    }
+                                                    LoginField::Password => {
+                                                        let current = app.input_password.value().to_string();
+                                                        app.input_password = tui_input::Input::new(current + &text);
+                                                    }
+                                                    LoginField::EpgUrl => {
+                                                        let current = app.input_epg_url.value().to_string();
+                                                        app.input_epg_url = tui_input::Input::new(current + &text);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    match app.login_field_focus {
+                                        LoginField::Name => { app.input_name.handle_event(&Event::Key(key)); }
+                                        LoginField::Url => { app.input_url.handle_event(&Event::Key(key)); }
+                                        LoginField::Username => { app.input_username.handle_event(&Event::Key(key)); }
+                                        LoginField::Password => { app.input_password.handle_event(&Event::Key(key)); }
+                                        LoginField::EpgUrl => { app.input_epg_url.handle_event(&Event::Key(key)); }
+                                    }
                                 }
                             }
                         }
@@ -682,7 +716,7 @@ pub async fn handle_key_event(
                                     } else if let Some(client) = &app.current_client {
                                         let client = client.clone();
                                         let tx = tx.clone();
-                                        let pm = app.config.playlist_mode;
+                                        let pms = app.config.processing_modes.clone();
                                         let favs = app.config.favorites.streams.clone();
                                         let account_name = account_name.clone();
                                         app.state_loading = true;
@@ -692,7 +726,7 @@ pub async fn handle_key_event(
                                             match client.get_live_streams(&cat_id).await {
                                                 Ok(mut streams) => {
                                                     let _ = tx.send(AsyncAction::LoadingMessage(format!("Processing {} Streams...", streams.len()))).await;
-                                                    preprocessing::preprocess_streams(&mut streams, &favs, pm, true, &account_name);
+                                                    preprocessing::preprocess_streams(&mut streams, &favs, &pms, true, &account_name);
                                                     let _ = tx.send(AsyncAction::StreamsLoaded(streams, cat_id)).await;
                                                 }
                                                 Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -788,7 +822,7 @@ pub async fn handle_key_event(
                             } else if let Some(client) = &app.current_client {
                                 let client = client.clone();
                                 let tx = tx.clone();
-                                let pm = app.config.playlist_mode;
+                                let pms = app.config.processing_modes.clone();
                                 let favs = app.config.favorites.vod_streams.clone();
                                 let account_name = account_name.clone();
                                 app.state_loading = true;
@@ -796,7 +830,7 @@ pub async fn handle_key_event(
                                     if cat_id == "ALL" {
                                         match client.get_vod_streams_all().await {
                                             Ok(mut streams) => {
-                                                preprocessing::preprocess_streams(&mut streams, &favs, pm, false, &account_name);
+                                                preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &account_name);
                                                 let _ = tx.send(AsyncAction::VodStreamsLoaded(streams, cat_id)).await;
                                             }
                                             Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -804,7 +838,7 @@ pub async fn handle_key_event(
                                     } else {
                                         match client.get_vod_streams(&cat_id).await {
                                             Ok(mut streams) => {
-                                                preprocessing::preprocess_streams(&mut streams, &favs, pm, false, &account_name);
+                                                preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &account_name);
                                                 let _ = tx.send(AsyncAction::VodStreamsLoaded(streams, cat_id)).await;
                                             }
                                             Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -919,14 +953,15 @@ pub async fn handle_key_event(
                             } else if let Some(client) = &app.current_client {
                                 let client = client.clone();
                                 let tx = tx.clone();
-                                let pm = app.config.playlist_mode;
+                                let pms = app.config.processing_modes.clone();
                                 let favs = app.config.favorites.vod_streams.clone();
                                 app.state_loading = true;
                                 app.active_pane = Pane::Streams;
+                                let acc_name_cloned = account_name.clone();
                                 tokio::spawn(async move {
                                     match client.get_series_streams(&cat_id).await {
                                         Ok(mut streams) => {
-                                            preprocessing::preprocess_streams(&mut streams, &favs, pm, false, &account_name);
+                                            preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &acc_name_cloned);
                                             let _ = tx.send(AsyncAction::SeriesStreamsLoaded(streams, cat_id)).await;
                                         }
                                         Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -981,14 +1016,15 @@ pub async fn handle_key_event(
                                 } else if let Some(client) = &app.current_client {
                                     let client = client.clone();
                                     let tx = tx.clone();
-                                    let pm = app.config.playlist_mode;
+                                    let pms = app.config.processing_modes.clone();
                                     let favs = app.config.favorites.vod_streams.clone();
                                     app.state_loading = true;
                                     app.active_pane = Pane::Streams;
+                                    let acc_name_cloned = account_name.clone();
                                     tokio::spawn(async move {
                                         match client.get_series_streams(&cat_id).await {
                                             Ok(mut streams) => {
-                                                preprocessing::preprocess_streams(&mut streams, &favs, pm, false, &account_name);
+                                                preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &acc_name_cloned);
                                                 let _ = tx.send(AsyncAction::SeriesStreamsLoaded(streams, cat_id)).await;
                                             }
                                             Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -1169,6 +1205,21 @@ pub async fn handle_key_event(
                     KeyCode::Esc | KeyCode::Backspace => { app.settings_state = SettingsState::Main; }
                     KeyCode::Char('j') | KeyCode::Down => app.next_account(),
                     KeyCode::Char('k') | KeyCode::Up => app.previous_account(),
+                    KeyCode::Char('a') => {
+                        // Add new playlist - clear form and open Login screen
+                        app.input_name = tui_input::Input::default();
+                        app.input_url = tui_input::Input::default();
+                        app.input_username = tui_input::Input::default();
+                        app.input_password = tui_input::Input::default();
+                        app.input_epg_url = tui_input::Input::default();
+                        app.input_server_timezone = tui_input::Input::default();
+                        app.editing_account_index = None; // None = adding new
+                        app.previous_screen = Some(CurrentScreen::Settings);
+                        app.current_screen = CurrentScreen::Login;
+                        app.login_field_focus = LoginField::Name;
+                        app.input_mode = InputMode::Normal; // Start in navigation mode
+                        app.login_error = None;
+                    }
                     KeyCode::Enter => {
                         // Open edit form for selected playlist
                         if !app.config.accounts.is_empty() && app.selected_account_index < app.config.accounts.len() {
@@ -1260,48 +1311,59 @@ pub async fn handle_key_event(
                 SettingsState::PlaylistModeSelection => match key.code {
                     KeyCode::Esc | KeyCode::Backspace => { app.settings_state = SettingsState::Main; }
                     KeyCode::Up | KeyCode::Char('k') => {
-                        let modes = crate::config::PlaylistMode::all();
+                        let modes = crate::config::ProcessingMode::all();
+                        // modes.len() items + 1 Done button = modes.len() + 1 total items
+                        let total_items = modes.len() + 1;
                         if let Some(idx) = app.playlist_mode_list_state.selected() {
-                            let new_idx = if idx == 0 { modes.len() - 1 } else { idx - 1 };
+                            let new_idx = if idx == 0 { total_items - 1 } else { idx - 1 };
                             app.playlist_mode_list_state.select(Some(new_idx));
                         }
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        let modes = crate::config::PlaylistMode::all();
+                        let modes = crate::config::ProcessingMode::all();
+                        let total_items = modes.len() + 1;
                         if let Some(idx) = app.playlist_mode_list_state.selected() {
-                            let new_idx = if idx >= modes.len() - 1 { 0 } else { idx + 1 };
+                            let new_idx = if idx >= total_items - 1 { 0 } else { idx + 1 };
                             app.playlist_mode_list_state.select(Some(new_idx));
                         }
                     }
-                    KeyCode::Enter => {
-                        let modes = crate::config::PlaylistMode::all();
-                        let old_mode = app.config.playlist_mode;
+                    KeyCode::Char(' ') | KeyCode::Enter => {
+                        let modes = crate::config::ProcessingMode::all();
                         if let Some(idx) = app.playlist_mode_list_state.selected() {
                             if idx < modes.len() {
-                                app.config.playlist_mode = modes[idx];
-                                let _ = app.config.save();
-                            }
-                        }
-
-                        // Exit settings back to wherever we were
-                        let return_screen = app.previous_screen.take().unwrap_or(CurrentScreen::Home);
-                        app.current_screen = return_screen.clone();
-                        app.settings_state = SettingsState::Main;
-                        app.refresh_settings_options();
-
-                        // If mode changed and we have an active client, trigger a refresh
-                        if old_mode != app.config.playlist_mode && app.current_client.is_some() {
-                            if let Some(client) = app.current_client.clone() {
-                                let tx = tx.clone();
-                                app.state_loading = true;
-                                app.loading_message = Some(format!("Adapting to {} mode...", app.config.playlist_mode.display_name()));
-                                
-                                // Re-authenticate and reload to trigger the full preprocessing chain
-                                tokio::spawn(async move {
-                                    if let Ok((true, ui, si)) = client.authenticate().await {
-                                        let _ = tx.send(AsyncAction::PlaylistRefreshed(ui, si)).await;
+                                // Toggle Selection
+                                if let Some(mode) = modes.get(idx) {
+                                    if app.config.processing_modes.contains(mode) {
+                                        app.config.processing_modes.retain(|m| m != mode);
+                                    } else {
+                                        app.config.processing_modes.push(*mode);
                                     }
-                                });
+                                    let _ = app.config.save(); // Optional: Auto-save on toggle?
+                                }
+                            } else {
+                                // Clicked "APPLY & SAVE"
+                                let _ = app.config.save();
+
+                                // Exit settings back to wherever we were
+                                let return_screen = app.previous_screen.take().unwrap_or(CurrentScreen::Home);
+                                app.current_screen = return_screen.clone();
+                                app.settings_state = SettingsState::Main;
+                                app.refresh_settings_options();
+
+                                // Trigger Refresh
+                                if app.current_client.is_some() {
+                                    if let Some(client) = app.current_client.clone() {
+                                        let tx = tx.clone();
+                                        app.state_loading = true;
+                                        app.loading_message = Some("Applying filter matrix...".to_string());
+                                        
+                                        tokio::spawn(async move {
+                                            if let Ok((true, ui, si)) = client.authenticate().await {
+                                                let _ = tx.send(AsyncAction::PlaylistRefreshed(ui, si)).await;
+                                            }
+                                        });
+                                    }
+                                }
                             }
                         }
                     }

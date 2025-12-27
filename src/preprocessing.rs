@@ -4,7 +4,7 @@ use std::collections::HashSet;
 pub fn preprocess_categories(
     cats: &mut Vec<Category>,
     favorites: &HashSet<String>,
-    playlist_mode: crate::config::PlaylistMode,
+    modes: &[crate::config::ProcessingMode],
     is_live: bool,
     is_vod: bool,
     account_name: &str,
@@ -20,97 +20,77 @@ pub fn preprocess_categories(
     }
 
     let account_lower = account_name.to_lowercase();
+    let use_merica = modes.contains(&crate::config::ProcessingMode::Merica);
+    let use_sports = modes.contains(&crate::config::ProcessingMode::Sports);
+    let use_all_english = modes.contains(&crate::config::ProcessingMode::AllEnglish);
 
-    // 1. Categorize and Filter
-    match playlist_mode {
-        crate::config::PlaylistMode::Merica => {
-            cats.retain_mut(|c| {
-                if is_live {
-                    c.is_american = c.category_id == "ALL" || crate::parser::is_american_live(&c.category_name);
-                    // Strong Playlist specific overrides
-                    if account_lower.contains("strong") && is_live && c.category_id != "ALL" {
-                         let name = c.category_name.to_uppercase();
-                         if name.starts_with("AR |") || name.starts_with("AR|") || name.starts_with("AR :") {
-                             c.is_american = false;
-                         }
-                         if name.contains("NBA PASS") || name.contains("NBA REAL") || name.contains("NHL REAL") {
-                             c.is_american = false;
-                         }
-                    }
-                    // Trex Playlist specific overrides
-                    if account_lower.contains("trex") && is_live && c.category_id != "ALL" {
-                         let name = c.category_name.to_uppercase();
-                         if name.contains("NBA NETWORK") || name.contains("NBA LEAGUE PASS") {
-                             c.is_american = false;
-                         }
-                    }
-                    c.is_american
-                } else {
-                    c.is_english = c.category_id == "ALL" || crate::parser::is_english_vod(&c.category_name);
-                    c.is_english
+    // 1. Filter
+    cats.retain_mut(|c| {
+        // Keep ALL category always
+        if c.category_id == "ALL" { return true; }
+
+        let mut keep = true;
+
+        if is_live {
+            // Merica Mode Logic
+            if use_merica {
+                c.is_american = crate::parser::is_american_live(&c.category_name);
+                
+                // Strong Playlist overrides
+                if account_lower.contains("strong") {
+                     let name = c.category_name.to_uppercase();
+                     if name.starts_with("AR |") || name.starts_with("AR|") || name.starts_with("AR :") {
+                         c.is_american = false;
+                     }
+                     if name.contains("NBA PASS") || name.contains("NBA REAL") || name.contains("NHL REAL") {
+                         c.is_american = false;
+                     }
                 }
-            });
-        }
-        crate::config::PlaylistMode::Sports => {
-            cats.retain(|c| c.category_id == "ALL" || crate::parser::is_sports_content(&c.category_name));
-        }
-        crate::config::PlaylistMode::AllEnglish => {
-            cats.retain_mut(|c| {
-                if is_live {
-                    c.is_english = c.category_id == "ALL" || crate::parser::is_english_live(&c.category_name);
-                    c.is_english
-                } else {
-                    c.is_english = c.category_id == "ALL" || crate::parser::is_english_vod(&c.category_name);
-                    c.is_english
+                // Trex Playlist overrides
+                if account_lower.contains("trex") {
+                     let name = c.category_name.to_uppercase();
+                     if name.contains("NBA NETWORK") || name.contains("NBA LEAGUE PASS") {
+                         c.is_american = false;
+                     }
                 }
-            });
-        }
-        crate::config::PlaylistMode::SportsMerica => {
-            cats.retain_mut(|c| {
-                if is_live {
-                    c.is_american = c.category_id == "ALL" || crate::parser::is_american_live(&c.category_name);
-                    // Overrides
-                    if account_lower.contains("strong") && c.category_id != "ALL" {
-                         let name = c.category_name.to_uppercase();
-                         if name.starts_with("AR |") || name.starts_with("AR|") || name.starts_with("AR :") {
-                             c.is_american = false;
-                         }
-                         if name.contains("NBA PASS") || name.contains("NBA REAL") || name.contains("NHL REAL") {
-                             c.is_american = false;
-                         }
-                    }
-                    if account_lower.contains("trex") && c.category_id != "ALL" {
-                         let name = c.category_name.to_uppercase();
-                         if name.contains("NBA NETWORK") || name.contains("NBA LEAGUE PASS") {
-                             c.is_american = false;
-                         }
-                    }
-                    c.is_american && (c.category_id == "ALL" || crate::parser::is_sports_content(&c.category_name))
-                } else {
-                    c.is_english = c.category_id == "ALL" || crate::parser::is_english_vod(&c.category_name);
-                    c.is_english && (c.category_id == "ALL" || crate::parser::is_sports_content(&c.category_name))
+                
+                if !c.is_american { keep = false; }
+            }
+
+            // All English Logic (if Merica not active, or additive?)
+            // If AllEnglish is ON, we only keep English. 
+            // If Merica is ALSO on, Merica is stricter, so it implicitly satisfies AllEnglish mostly.
+            // But let's treat them as additive filters (AND).
+            if use_all_english {
+                c.is_english = crate::parser::is_english_live(&c.category_name);
+                if !c.is_english { keep = false; }
+            }
+
+            // Sports Mode Logic - If ONLY Sports is on, we filter for sports.
+            // If Sports AND Merica are on, we filter for American Sports.
+            if use_sports {
+                if !crate::parser::is_sports_content(&c.category_name) {
+                    keep = false;
                 }
-            });
-        }
-        crate::config::PlaylistMode::Default => {
-            for c in cats.iter_mut() {
-                if is_live {
-                    c.is_american = c.category_id == "ALL" || crate::parser::is_american_live(&c.category_name);
-                    if account_lower.contains("strong") && is_live && c.category_id != "ALL" {
-                         let name = c.category_name.to_uppercase();
-                         if name.starts_with("AR |") || name.starts_with("AR|") || name.starts_with("AR :") {
-                             c.is_american = false;
-                         }
-                    }
-                } else {
-                    c.is_english = c.category_id == "ALL" || crate::parser::is_english_vod(&c.category_name);
+            }
+        } else {
+            // VOD/Series
+            if use_merica || use_all_english {
+                c.is_english = crate::parser::is_english_vod(&c.category_name);
+                if !c.is_english { keep = false; }
+            }
+            if use_sports {
+                if !crate::parser::is_sports_content(&c.category_name) {
+                    keep = false;
                 }
             }
         }
-    }
+
+        keep
+    });
 
     // 2. Clean names
-    let should_clean = playlist_mode != crate::config::PlaylistMode::Default;
+    let should_clean = use_merica; // Only clean names if in 'Merica mode
     for c in cats.iter_mut() {
         c.clean_name = if should_clean {
             crate::parser::clean_american_name(&c.category_name)
@@ -120,11 +100,21 @@ pub fn preprocess_categories(
         c.search_name = c.clean_name.to_lowercase();
     }
 
+    // 3. Sort
     cats.sort_by(|a, b| {
         if a.category_id == "ALL" { return std::cmp::Ordering::Less; }
         if b.category_id == "ALL" { return std::cmp::Ordering::Greater; }
         let a_fav = favorites.contains(&a.category_id);
         let b_fav = favorites.contains(&b.category_id);
+        
+        // Sports Mode Hoisting
+        if use_sports {
+            let a_sport = crate::parser::is_sports_content(&a.category_name);
+            let b_sport = crate::parser::is_sports_content(&b.category_name);
+            if a_sport && !b_sport { return std::cmp::Ordering::Less; }
+            if !a_sport && b_sport { return std::cmp::Ordering::Greater; }
+        }
+
         match (a_fav, b_fav) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
@@ -136,76 +126,70 @@ pub fn preprocess_categories(
 pub fn preprocess_streams(
     streams: &mut Vec<Stream>,
     favorites: &HashSet<String>,
-    playlist_mode: crate::config::PlaylistMode,
+    modes: &[crate::config::ProcessingMode],
     is_live: bool,
     _account_name: &str,
 ) {
     use crate::api::get_id_str;
 
-    // 1. Initial categorization and filtering
-    match playlist_mode {
-        crate::config::PlaylistMode::Merica => {
-            streams.retain_mut(|s| {
-                if is_live {
-                    s.is_american = crate::parser::is_american_live(&s.name);
-                    s.is_american
-                } else {
-                    s.is_english = crate::parser::is_english_vod(&s.name);
-                    s.is_english
-                }
-            });
-        }
-        crate::config::PlaylistMode::Sports => {
-            streams.retain(|s| crate::parser::is_sports_content(&s.name));
-        }
-        crate::config::PlaylistMode::AllEnglish => {
-            streams.retain_mut(|s| {
-                if is_live {
-                    s.is_english = crate::parser::is_english_live(&s.name);
-                    s.is_english
-                } else {
-                    s.is_english = crate::parser::is_english_vod(&s.name);
-                    s.is_english
-                }
-            });
-        }
-        crate::config::PlaylistMode::SportsMerica => {
-            streams.retain_mut(|s| {
-                if is_live {
-                    s.is_american = crate::parser::is_american_live(&s.name);
-                    s.is_american && crate::parser::is_sports_content(&s.name)
-                } else {
-                    s.is_english = crate::parser::is_english_vod(&s.name);
-                    s.is_english && crate::parser::is_sports_content(&s.name)
-                }
-            });
-        }
-        crate::config::PlaylistMode::Default => {
-            for s in streams.iter_mut() {
-                if is_live {
-                    s.is_american = crate::parser::is_american_live(&s.name);
-                } else {
-                    s.is_english = crate::parser::is_english_vod(&s.name);
-                }
+    let use_merica = modes.contains(&crate::config::ProcessingMode::Merica);
+    let use_sports = modes.contains(&crate::config::ProcessingMode::Sports);
+    let use_all_english = modes.contains(&crate::config::ProcessingMode::AllEnglish);
+
+    // 1. Filter
+    streams.retain_mut(|s| {
+        let mut keep = true;
+
+        if is_live {
+            if use_merica {
+                s.is_american = crate::parser::is_american_live(&s.name);
+                if !s.is_american { keep = false; }
+            }
+            if use_all_english {
+                s.is_english = crate::parser::is_english_live(&s.name);
+                if !s.is_english { keep = false; }
+            }
+            if use_sports {
+                 if !crate::parser::is_sports_content(&s.name) { keep = false; }
+            }
+        } else {
+            if use_merica || use_all_english {
+                s.is_english = crate::parser::is_english_vod(&s.name);
+                if !s.is_english { keep = false; }
+            }
+            if use_sports {
+                 if !crate::parser::is_sports_content(&s.name) { keep = false; }
             }
         }
-    }
+        keep
+    });
 
-    // 2. Process remaining streams (Clean names and prepare search metadata)
-    let should_clean = playlist_mode != crate::config::PlaylistMode::Default;
+    // 2. Process (Clean names & Metadata)
+    let should_clean = use_merica;
     for s in streams.iter_mut() {
         s.clean_name = if should_clean {
             crate::parser::clean_american_name(&s.name)
         } else {
             s.name.clone()
         };
+        
+        // Sports Mode Icon Prefixing
+        if use_sports && is_live {
+            if let Some(league) = s.epg_channel_id.as_ref().or(Some(&s.name)) {
+                let lower = league.to_lowercase();
+                if lower.contains("nba") { s.clean_name = format!("🏀 {}", s.clean_name); }
+                else if lower.contains("nfl") { s.clean_name = format!("🏈 {}", s.clean_name); }
+                else if lower.contains("mlb") { s.clean_name = format!("⚾ {}", s.clean_name); }
+                else if lower.contains("nhl") { s.clean_name = format!("🏒 {}", s.clean_name); }
+            }
+        }
+
         s.stream_display_name = Some(s.clean_name.clone());
         s.search_name = s.clean_name.to_lowercase();
         s.account_name = Some(_account_name.to_string());
     }
 
-    // 3. Sort streams efficiently
-    // We pre-extract sort keys to avoid repetitive work in the comparator
+    // 3. Sort
     let mut sort_data: Vec<_> = streams
         .drain(..)
         .map(|s| {

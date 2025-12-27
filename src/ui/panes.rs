@@ -442,6 +442,6 @@ fn latency_to_bars(latency: Option<u64>) -> ratatui::text::Span<'static> {
         Some(l) if l < 200 => ratatui::text::Span::styled(" [📶📶📶]", Style::default().fg(Color::Green)),
         Some(l) if l < 600 => ratatui::text::Span::styled(" [📶📶  ]", Style::default().fg(Color::Yellow)),
         Some(_) => ratatui::text::Span::styled(" [📶    ]", Style::default().fg(Color::Red)),
-        None => ratatui::text::Span::styled(" [      ]", Style::default().fg(Color::DarkGray)),
+        None => ratatui::text::Span::raw(""), // No latency data - hide indicator
     }
 }

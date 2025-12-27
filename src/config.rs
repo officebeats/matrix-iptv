@@ -38,7 +38,7 @@ impl DnsProvider {
     }
 }
 
-/// Playlist processing mode options
+/// Playlist processing mode options (Legacy - specific combinations)
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
 pub enum PlaylistMode {
     #[default]
@@ -75,6 +75,32 @@ impl PlaylistMode {
     }
 }
 
+/// Composable processing modes for multi-select
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ProcessingMode {
+    Merica,
+    Sports,
+    AllEnglish,
+}
+
+impl ProcessingMode {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            ProcessingMode::Merica => "'merica (Geo-Filter & Cleanup)",
+            ProcessingMode::Sports => "Sports (Icons & Sorting)",
+            ProcessingMode::AllEnglish => "All English (US/UK/CA Only)",
+        }
+    }
+
+    pub fn all() -> &'static [ProcessingMode] {
+        &[
+            ProcessingMode::Merica,
+            ProcessingMode::Sports,
+            ProcessingMode::AllEnglish,
+        ]
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Account {
     pub name: String,
@@ -105,8 +131,14 @@ pub struct AppConfig {
     pub favorites: Favorites,
     #[serde(default)]
     pub timezone: Option<String>,
+    
+    // Legacy support
+    #[serde(default)] // Don't skip serializing yet if we want external tools to see it, but prefer migration
+    pub playlist_mode: PlaylistMode, 
+
     #[serde(default)]
-    pub playlist_mode: PlaylistMode,
+    pub processing_modes: Vec<ProcessingMode>,
+
     #[serde(default)]
     pub dns_provider: DnsProvider,
     #[serde(default)]
@@ -123,7 +155,22 @@ impl AppConfig {
             let config_path = proj_dirs.config_dir().join("config.json");
             if config_path.exists() {
                 let content = fs::read_to_string(config_path)?;
-                let config: AppConfig = serde_json::from_str(&content)?;
+                let mut config: AppConfig = serde_json::from_str(&content)?;
+                
+                // MIGRATION: V3.0.4 - Convert legacy playlist_mode to processing_modes
+                if config.processing_modes.is_empty() && config.playlist_mode != PlaylistMode::Default {
+                    match config.playlist_mode {
+                        PlaylistMode::Merica => config.processing_modes.push(ProcessingMode::Merica),
+                        PlaylistMode::Sports => config.processing_modes.push(ProcessingMode::Sports),
+                        PlaylistMode::AllEnglish => config.processing_modes.push(ProcessingMode::AllEnglish),
+                        PlaylistMode::SportsMerica => {
+                            config.processing_modes.push(ProcessingMode::Merica);
+                            config.processing_modes.push(ProcessingMode::Sports);
+                        }
+                        _ => {}
+                    }
+                }
+                
                 return Ok(config);
             }
 
