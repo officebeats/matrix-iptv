@@ -25,7 +25,7 @@ static CLEAN_U_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^[\W_]*u[\s\u
 
 static CLEAN_PREFIX_COMBINED: Lazy<Regex> = Lazy::new(|| {
     // Order matters: Longest matches first to avoid partial replacements (e.g. USA vs US)
-    Regex::new(r"(?i)^(?:UNITED\s+STATES|UNITED\s+KINGDOM|ENGLISH|AMERICA|USA|US|UK|CA|EN|NBA|NFL|MLB|UFC|NHL|MLS|SPORTS)(?:\s*[-|:]\s*)").unwrap()
+    Regex::new(r"(?i)^(?:UNITED\s+STATES|UNITED\s+KINGDOM|ENGLISH|AMERICA|USA|US|UK|CA|EN/CAM|EN)(?:\s*[-|:/]\s*)").unwrap()
 });
 
 static CLEAN_BRACKETS_COMBINED: Lazy<Regex> = Lazy::new(|| {
@@ -335,22 +335,14 @@ pub fn clean_american_name(name: &str) -> String {
 pub fn is_english_vod(name: &str) -> bool {
     let upper = name.to_uppercase();
     
-    if FOREIGN_VOD_KEYWORDS_REGEX.is_match(&upper) {
+    // If it explicitly matches foreign patterns, it's not English
+    if FOREIGN_VOD_KEYWORDS_REGEX.is_match(&upper) || FOREIGN_PATTERNS_REGEX.is_match(&upper) {
         return false;
     }
     
-    // Keywords for English
-    upper.contains("ENGLISH") || 
-    upper.contains("|EN|") || 
-    upper.contains("| EN |") ||
-    upper.contains("EN |") ||
-    upper.starts_with("EN ") ||
-    upper.starts_with("EN-") ||
-    upper.starts_with("EN|") ||
-    upper.contains("-EN-") ||
-    upper.contains(" EN ") ||
-    upper.ends_with(" EN") ||
-    upper.ends_with("|EN")
+    // For VOD, we assume it is English unless proven otherwise by foreign markers,
+    // as movie titles rarely contain "EN" prefixes unlike Live TV channels.
+    true
 }
 
 /// Check if a name/category is UK live content
@@ -399,7 +391,7 @@ pub fn parse_category(name: &str) -> ParsedCategory {
     let re_prefix = Regex::new(r"(?i)^([A-Z0-9]{1,5})(?:\s*[|:-]\s*|\s+)").unwrap();
     if let Some(caps) = re_prefix.captures(&display_name.to_uppercase()) {
         let code = caps.get(1).unwrap().as_str();
-        let allowed = ["S", "US", "USA", "AM", "UK", "GB", "CA", "EU", "FR", "DE", "ES", "IT", "VIP", "NBA", "NFL", "MLB", "NHL", "UFC", "PPV"];
+        let allowed = ["S", "US", "USA", "AM", "UK", "GB", "CA", "EU", "FR", "DE", "ES", "IT", "VIP", "NBA", "NFL", "MLB", "NHL", "UFC", "PPV", "EN"];
         if allowed.contains(&code) {
              // If it's just a single char category marker like 'S |', we just strip it and don't set country
              if code != "S" {
@@ -600,19 +592,20 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     let mut clean_loop = true;
     while clean_loop {
         clean_loop = false;
-        let re_prefix = Regex::new(r"(?i)^([A-Z0-9]{1,5})(?:\s*[|:-]\s*|\s+)").unwrap();
+        let re_prefix = Regex::new(r"(?i)^([A-Z0-9/]{1,7})(?:\s*[|:-]\s*|\s+)").unwrap();
         if let Some(caps) = re_prefix.captures(&display_name) {
             let code = caps.get(1).unwrap().as_str().to_uppercase();
             // Country codes that should always be stripped
-            let country_codes = ["S", "US", "USA", "AM", "UK", "GB", "CA", "EN", "EU", "FR", "DE", "ES", "IT", "VIP", "PPV"];
-            // League codes that should only be stripped if followed by separator/number
+            let country_codes = ["S", "US", "USA", "AM", "UK", "GB", "CA", "EN", "EN/CAM", "EU", "FR", "DE", "ES", "IT", "VIP", "PPV"];
             let league_codes = ["NBA", "NFL", "MLB", "NHL", "UFC", "MLS"];
             
-            if country_codes.contains(&code.as_str()) {
-                 if country.is_none() && code != "S" && code != "EN" {
-                    country = Some(code);
-                 }
+            // Normalize special characters like dashes into standard ones before prefix check
+            let check_name = display_name.replace(" - ", " ").replace("-", " ").to_uppercase();
+            
+            if country_codes.iter().any(|&c| check_name.starts_with(c)) {
                  display_name = re_prefix.replace(&display_name, "").to_string();
+                 // Extra trim to remove following dashes if any
+                 display_name = display_name.trim_start_matches(|c: char| c == '-' || c == '|' || c == ':' || c == ' ').to_string();
                  clean_loop = true;
             } else if league_codes.contains(&code.as_str()) {
                  // For leagues, only strip if followed by separator (: | -) or number, NOT regular words

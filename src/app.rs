@@ -42,7 +42,7 @@ pub enum CurrentScreen {
     TimezoneSettings, // Edit Timezone
     Play,             // (Optional) Info screen before playing
     ContentTypeSelection, // New intermediate screen
-    GlobalSearch,         // Ctrl+P Global Search across all content
+    GlobalSearch,         // Ctrl+Space Global Search across all content
 }
 
 #[derive(PartialEq, Debug)]
@@ -648,10 +648,10 @@ impl App {
 
     pub fn update_search(&mut self) {
         let query = self.search_query.to_lowercase();
+        let is_merica = self.config.playlist_mode.is_merica_variant();
 
         match self.current_screen {
             CurrentScreen::Categories | CurrentScreen::Streams => {
-                let is_merica = self.config.playlist_mode.is_merica_variant();
                 match self.active_pane {
                     Pane::Categories => {
                         self.categories = self
@@ -661,14 +661,12 @@ impl App {
                                 c.search_name.contains(&query) && (!is_merica || c.is_american)
                             })
                             .map(|c| {
+                                if !is_merica { return c.clone(); }
                                 let mut c_mod = c.clone();
-                                if is_merica {
-                                    c_mod.category_name = c_mod.clean_name.clone();
-                                }
+                                c_mod.category_name = c_mod.clean_name.clone();
                                 c_mod
                             })
                             .collect();
-                        // Reset selection
                         self.selected_category_index = 0;
                         if !self.categories.is_empty() {
                             self.category_list_state.select(Some(0));
@@ -677,21 +675,22 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        self.streams = self
+                        use rayon::prelude::*;
+                        let mut filtered: Vec<Stream> = self
                             .all_streams
-                            .iter()
+                            .par_iter()
                             .filter(|s| {
                                 s.search_name.contains(&query) && (!is_merica || s.is_american)
                             })
                             .map(|s| {
+                                if !is_merica { return s.clone(); }
                                 let mut s_mod = s.clone();
-                                if is_merica {
-                                    s_mod.name = s_mod.clean_name.clone();
-                                }
+                                s_mod.name = s_mod.clean_name.clone();
                                 s_mod
                             })
                             .collect();
-                        // Reset selection
+                        filtered.truncate(1000);
+                        self.streams = filtered;
                         self.selected_stream_index = 0;
                         if !self.streams.is_empty() {
                             self.stream_list_state.select(Some(0));
@@ -699,13 +698,10 @@ impl App {
                             self.stream_list_state.select(None);
                         }
                     }
-                    Pane::Episodes => {
-                        // Episodes don't support search in this context
-                    }
+                    Pane::Episodes => {}
                 }
             }
             CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
-                let is_merica = self.config.playlist_mode.is_merica_variant();
                 match self.active_pane {
                     Pane::Categories => {
                         self.vod_categories = self
@@ -715,14 +711,12 @@ impl App {
                                 c.search_name.contains(&query) && (!is_merica || c.is_english)
                             })
                             .map(|c| {
+                                if !is_merica { return c.clone(); }
                                 let mut c_mod = c.clone();
-                                if is_merica {
-                                    c_mod.category_name = c_mod.clean_name.clone();
-                                }
+                                c_mod.category_name = c_mod.clean_name.clone();
                                 c_mod
                             })
                             .collect();
-                        // Reset selection
                         self.selected_vod_category_index = 0;
                         if !self.vod_categories.is_empty() {
                             self.vod_category_list_state.select(Some(0));
@@ -731,21 +725,22 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        self.vod_streams = self
+                        use rayon::prelude::*;
+                        let mut filtered: Vec<Stream> = self
                             .all_vod_streams
-                            .iter()
+                            .par_iter()
                             .filter(|s| {
                                 s.search_name.contains(&query) && (!is_merica || s.is_english)
                             })
                             .map(|s| {
+                                if !is_merica { return s.clone(); }
                                 let mut s_mod = s.clone();
-                                if is_merica {
-                                    s_mod.name = s_mod.clean_name.clone();
-                                }
+                                s_mod.name = s_mod.clean_name.clone();
                                 s_mod
                             })
                             .collect();
-                        // Reset selection
+                        filtered.truncate(1000);
+                        self.vod_streams = filtered;
                         self.selected_vod_stream_index = 0;
                         if !self.vod_streams.is_empty() {
                             self.vod_stream_list_state.select(Some(0));
@@ -753,13 +748,10 @@ impl App {
                             self.vod_stream_list_state.select(None);
                         }
                     }
-                    Pane::Episodes => {
-                        // Episodes don't support search in VOD context
-                    }
+                    Pane::Episodes => {}
                 }
             }
             CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
-                let is_merica = self.config.playlist_mode.is_merica_variant();
                 match self.active_pane {
                     Pane::Categories => {
                         self.series_categories = self
@@ -769,10 +761,9 @@ impl App {
                                 c.search_name.contains(&query) && (!is_merica || c.is_english)
                             })
                             .map(|c| {
+                                if !is_merica { return c.clone(); }
                                 let mut c_mod = c.clone();
-                                if is_merica {
-                                    c_mod.category_name = c_mod.clean_name.clone();
-                                }
+                                c_mod.category_name = c_mod.clean_name.clone();
                                 c_mod
                             })
                             .collect();
@@ -784,20 +775,22 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        self.series_streams = self
+                        use rayon::prelude::*;
+                        let mut filtered: Vec<Stream> = self
                             .all_series_streams
-                            .iter()
+                            .par_iter()
                             .filter(|s| {
                                 s.search_name.contains(&query) && (!is_merica || s.is_english)
                             })
                             .map(|s| {
+                                if !is_merica { return s.clone(); }
                                 let mut s_mod = s.clone();
-                                if is_merica {
-                                    s_mod.name = s_mod.clean_name.clone();
-                                }
+                                s_mod.name = s_mod.clean_name.clone();
                                 s_mod
                             })
                             .collect();
+                        filtered.truncate(1000);
+                        self.series_streams = filtered;
                         self.selected_series_stream_index = 0;
                         if !self.series_streams.is_empty() {
                             self.series_stream_list_state.select(Some(0));
@@ -805,46 +798,52 @@ impl App {
                             self.series_stream_list_state.select(None);
                         }
                     }
-                    Pane::Episodes => {
-                        // Filter episodes by title
-                        // Note: We don't have all_series_episodes, so search is limited
-                    }
+                    Pane::Episodes => {}
                 }
             }
             CurrentScreen::GlobalSearch => {
-                let is_merica = self.config.playlist_mode.is_merica_variant();
-                let mut results = Vec::new();
-
-                // Search through global caches
-                for s in &self.global_all_streams {
-                    if s.search_name.to_lowercase().contains(&query) {
+                use rayon::prelude::*;
+                // Search through global caches in parallel
+                let mut results: Vec<_> = self.global_all_streams
+                    .par_iter()
+                    .filter(|s| s.search_name.contains(&query))
+                    .map(|s| {
+                        if !is_merica { return s.clone(); }
                         let mut s_mod = s.clone();
-                        if is_merica { s_mod.name = s_mod.clean_name.clone(); }
-                        results.push(s_mod);
-                    }
-                    if results.len() >= 100 { break; }
+                        s_mod.name = s_mod.clean_name.clone();
+                        s_mod
+                    })
+                    .collect();
+                results.truncate(100);
+
+                if results.len() < 100 {
+                    let mut movie_results: Vec<_> = self.global_all_vod_streams
+                        .par_iter()
+                        .filter(|s| s.search_name.contains(&query))
+                        .map(|s| {
+                            if !is_merica { return s.clone(); }
+                            let mut s_mod = s.clone();
+                            s_mod.name = s_mod.clean_name.clone();
+                            s_mod
+                        })
+                        .collect();
+                    movie_results.truncate(100 - results.len());
+                    results.extend(movie_results);
                 }
 
                 if results.len() < 100 {
-                    for s in &self.global_all_vod_streams {
-                        if s.search_name.to_lowercase().contains(&query) {
+                    let mut series_results: Vec<_> = self.global_all_series_streams
+                        .par_iter()
+                        .filter(|s| s.search_name.contains(&query))
+                        .map(|s| {
+                            if !is_merica { return s.clone(); }
                             let mut s_mod = s.clone();
-                            if is_merica { s_mod.name = s_mod.clean_name.clone(); }
-                            results.push(s_mod);
-                        }
-                        if results.len() >= 100 { break; }
-                    }
-                }
-
-                if results.len() < 100 {
-                    for s in &self.global_all_series_streams {
-                        if s.search_name.to_lowercase().contains(&query) {
-                            let mut s_mod = s.clone();
-                            if is_merica { s_mod.name = s_mod.clean_name.clone(); }
-                            results.push(s_mod);
-                        }
-                        if results.len() >= 100 { break; }
-                    }
+                            s_mod.name = s_mod.clean_name.clone();
+                            s_mod
+                        })
+                        .collect();
+                    series_results.truncate(100 - results.len());
+                    results.extend(series_results);
                 }
 
                 self.global_search_results = results;

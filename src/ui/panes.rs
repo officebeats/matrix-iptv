@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, List, ListItem},
     Frame,
 };
-use crate::app::App;
+use crate::app::{App, CurrentScreen};
 use crate::parser::{parse_category, country_flag, country_color, parse_stream};
 use crate::ui::colors::MATRIX_GREEN;
 use crate::ui::common::stylize_channel_name; 
@@ -56,7 +56,7 @@ pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
             let mut spans = vec![];
 
             if app.config.favorites.categories.contains(&c.category_id) {
-                spans.push(ratatui::text::Span::styled("★ ", Style::default().fg(Color::Yellow)));
+                spans.push(ratatui::text::Span::styled("★ ", Style::default().fg(MATRIX_GREEN)));
             }
 
             // Icon logic: ONLY show for sports/VIP/Exact Matches
@@ -106,9 +106,9 @@ pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
             }
 
             if let Some(ref country) = parsed.country {
-                // In American Mode, don't show the US flag (redundant)
-                let is_us = country == "US" || country == "USA" || country == "AM";
-                if !(app.config.playlist_mode.is_merica_variant() && is_us) {
+                // In American Mode, don't show the US or EN flag (redundant)
+                let is_us_en = country == "US" || country == "USA" || country == "AM" || country == "EN";
+                if !(app.config.playlist_mode.is_merica_variant() && is_us_en) {
                     let flag = country_flag(country);
                     if !flag.is_empty() {
                         spans.push(ratatui::text::Span::raw(format!("{} ", flag)));
@@ -120,9 +120,19 @@ pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
             let name_color = if is_league {
                 parsed.country.as_ref().map(|cc| country_color(cc)).unwrap_or(Color::White)
             } else {
-                Color::White
+                MATRIX_GREEN
             };
             
+            // Icon & Name Style
+            let (icon, icon_color) = if app.current_screen == CurrentScreen::VodCategories || app.current_screen == CurrentScreen::VodStreams {
+                ("🎬", MATRIX_GREEN)
+            } else if app.current_screen == CurrentScreen::SeriesCategories || app.current_screen == CurrentScreen::SeriesStreams {
+                ("📺", MATRIX_GREEN)
+            } else {
+                ("📁", Color::White)
+            };
+            spans.insert(0, ratatui::text::Span::styled(format!("{} ", icon), Style::default().fg(icon_color)));
+
             let (styled_name, _) = stylize_channel_name(
                 &parsed.display_name,
                 parsed.is_vip,
@@ -249,14 +259,14 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             // 3. Favorite indicator
             let s_id = crate::api::get_id_str(&s.stream_id);
             if app.config.favorites.streams.contains(&s_id) {
-                spans.push(ratatui::text::Span::styled("★ ", Style::default().fg(Color::Yellow)));
+                spans.push(ratatui::text::Span::styled("★ ", Style::default().fg(MATRIX_GREEN)));
             }
 
             // 3. Country Flag
             if let Some(ref country) = parsed.country {
-                // In American Mode, don't show the US flag (redundant)
-                let is_us = country == "US" || country == "USA" || country == "AM";
-                if !(app.config.playlist_mode.is_merica_variant() && is_us) {
+                // In American Mode, don't show the US or EN flag (redundant)
+                let is_us_en = country == "US" || country == "USA" || country == "AM" || country == "EN";
+                if !(app.config.playlist_mode.is_merica_variant() && is_us_en) {
                     let flag = country_flag(country);
                     if !flag.is_empty() {
                         spans.push(ratatui::text::Span::raw(format!("{} ", flag)));
@@ -265,7 +275,19 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             }
 
             // 4. Name / Matchup
-            let name_color = parsed.country.as_ref().map(|cc| country_color(cc)).unwrap_or(Color::White);
+            let is_league = parsed.country.as_ref().map(|cc| ["NBA", "NFL", "MLB", "NHL", "UFC", "SPORTS", "PPV"].contains(&cc.as_str())).unwrap_or(false);
+            let name_color = if is_league {
+                parsed.country.as_ref().map(|cc| country_color(cc)).unwrap_or(Color::White)
+            } else {
+                MATRIX_GREEN
+            };
+            
+            // Icon for VOD/Series Results
+            if app.current_screen == CurrentScreen::VodStreams || app.current_screen == CurrentScreen::SeriesStreams {
+                let icon = if app.current_screen == CurrentScreen::VodStreams { "🎬 " } else { "📺 " };
+                spans.insert(0, ratatui::text::Span::styled(icon, Style::default().fg(MATRIX_GREEN)));
+            }
+            
             let (styled_name, _) = stylize_channel_name(
                 &parsed.display_name,
                 false,
@@ -367,18 +389,13 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
             let parsed = parse_stream(&s.name, app.provider_timezone.as_deref());
             let mut spans = vec![];
             
-            // Type indicator (Live/VOD/Series)
-            let type_str = match s.stream_type.as_str() {
-                "movie" => " [VOD] ",
-                "series" => " [SERIES] ",
-                _ => " [LIVE] ",
+            // Icon & Name Style
+            let (icon, icon_color) = match s.stream_type.as_str() {
+                "movie" => ("🎬 ", MATRIX_GREEN),
+                "series" => ("📺 ", MATRIX_GREEN),
+                _ => ("📻 ", MATRIX_GREEN),
             };
-            let type_color = match s.stream_type.as_str() {
-                "movie" => Color::LightMagenta,
-                "series" => Color::LightCyan,
-                _ => Color::LightGreen,
-            };
-            spans.push(ratatui::text::Span::styled(type_str, Style::default().fg(type_color).add_modifier(Modifier::BOLD)));
+            spans.push(ratatui::text::Span::styled(icon, Style::default().fg(icon_color)));
 
             // Name
             let (styled_name, _) = stylize_channel_name(
@@ -388,7 +405,7 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
                 parsed.quality,
                 None,
                 parsed.sports_event.as_ref(),
-                Style::default().fg(Color::White),
+                Style::default().fg(MATRIX_GREEN),
             );
             spans.extend(styled_name);
 

@@ -26,15 +26,12 @@ pub async fn handle_key_event(
 
     // Global Search Triggers - Checked at the absolute start for maximum reliability
     // Supports: Ctrl+Space, Alt+Space, Ctrl+F, Ctrl+P, F3
-    let is_ctrl = key.modifiers.intersects(KeyModifiers::CONTROL);
-    let is_alt = key.modifiers.intersects(KeyModifiers::ALT);
-    
-    let is_space = key.code == KeyCode::Char(' ') || key.code == KeyCode::Char('\0') || key.code == KeyCode::Null;
-    let is_f_key = key.code == KeyCode::Char('f') || key.code == KeyCode::Char('F') || key.code == KeyCode::Char('\x06');
-    let is_p_key = key.code == KeyCode::Char('p') || key.code == KeyCode::Char('P') || key.code == KeyCode::Char('\x10');
+    let is_ctrl_space = (key.code == KeyCode::Char(' ') || key.code == KeyCode::Char('\0') || key.code == KeyCode::Null) && key.modifiers.contains(KeyModifiers::CONTROL);
+    let is_ctrl_f = key.code == KeyCode::Char('f') || key.code == KeyCode::Char('F') || key.code == KeyCode::Char('\x06');
+    let is_ctrl_p = key.code == KeyCode::Char('p') || key.code == KeyCode::Char('P') || key.code == KeyCode::Char('\x10');
     let is_f3 = key.code == KeyCode::F(3);
 
-    if (is_space && (is_ctrl || is_alt)) || (is_ctrl && (is_f_key || is_p_key)) || is_f3 {
+    if is_ctrl_space || (key.modifiers.contains(KeyModifiers::CONTROL) && (is_ctrl_f || is_ctrl_p)) || is_f3 {
         let on_home = app.current_screen == CurrentScreen::Home;
         app.previous_screen = Some(app.current_screen.clone());
         app.current_screen = CurrentScreen::GlobalSearch;
@@ -136,11 +133,6 @@ pub async fn handle_key_event(
             app.should_quit = true;
             return Ok(InputResult::Quit);
         }
-        if key.code == KeyCode::Char('?') {
-            app.show_help = !app.show_help;
-            return Ok(InputResult::Continue);
-        }
-
         // Refresh Playlist
         if matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R')) {
             if let Some(client) = app.current_client.clone() {
@@ -616,7 +608,7 @@ pub async fn handle_key_event(
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') => {
+                    KeyCode::Char('/') | KeyCode::Char('f') => {
                         app.search_mode = true;
                         app.search_query.clear();
                         app.update_search();
@@ -661,7 +653,7 @@ pub async fn handle_key_event(
                         Pane::Streams => app.previous_stream(),
                         _ => {}
                     },
-                    KeyCode::Char('f') => match app.active_pane {
+                    KeyCode::Char('v') => match app.active_pane {
                         Pane::Categories => {
                             if !app.categories.is_empty() {
                                 let id = app.categories[app.selected_category_index].category_id.clone();
@@ -790,7 +782,7 @@ pub async fn handle_key_event(
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') => {
+                    KeyCode::Char('/') | KeyCode::Char('f') => {
                         app.search_mode = true;
                         app.active_pane = Pane::Categories;
                         app.search_query.clear();
@@ -814,7 +806,9 @@ pub async fn handle_key_event(
                             let cat_id = app.vod_categories[app.selected_vod_category_index].category_id.clone();
                             if cat_id == "ALL" && !app.global_all_vod_streams.is_empty() {
                                 app.all_vod_streams = app.global_all_vod_streams.clone();
-                                app.vod_streams = app.all_vod_streams.clone();
+                                let mut display_streams = app.all_vod_streams.clone();
+                                display_streams.truncate(1000);
+                                app.vod_streams = display_streams;
                                 app.current_screen = CurrentScreen::VodStreams;
                                 app.active_pane = Pane::Streams;
                                 app.selected_vod_stream_index = 0;
@@ -863,7 +857,7 @@ pub async fn handle_key_event(
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') => { app.search_mode = true; app.active_pane = Pane::Streams; app.search_query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.active_pane = Pane::Streams; app.search_query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace => {
                         app.vod_streams.clear();
                         app.all_vod_streams.clear();
@@ -926,7 +920,7 @@ pub async fn handle_key_event(
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') => { app.search_mode = true; app.search_query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace => {
                         app.series_streams.clear();
                         app.all_series_streams.clear();
@@ -945,7 +939,9 @@ pub async fn handle_key_event(
                             let cat_id = app.series_categories[app.selected_series_category_index].category_id.clone();
                             if cat_id == "ALL" && !app.global_all_series_streams.is_empty() {
                                 app.all_series_streams = app.global_all_series_streams.clone();
-                                app.series_streams = app.all_series_streams.clone();
+                                let mut display_streams = app.all_series_streams.clone();
+                                display_streams.truncate(1000);
+                                app.series_streams = display_streams;
                                 app.current_screen = CurrentScreen::SeriesStreams;
                                 app.active_pane = Pane::Streams;
                                 app.selected_series_stream_index = 0;
@@ -985,7 +981,7 @@ pub async fn handle_key_event(
                 }
             } else {
                  match key.code {
-                    KeyCode::Char('/') => { app.search_mode = true; app.search_query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace | KeyCode::Left => {
                         match app.active_pane {
                             Pane::Episodes => { app.series_episodes.clear(); app.selected_series_episode_index = 0; app.series_episode_list_state.select(None); app.active_pane = Pane::Streams; app.search_mode = false; app.search_query.clear(); }
@@ -1100,7 +1096,7 @@ pub async fn handle_key_event(
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') => { app.search_mode = true; app.search_query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace => {
                         app.search_mode = false;
                         app.search_query.clear();

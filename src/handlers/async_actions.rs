@@ -107,7 +107,7 @@ pub async fn handle_async_action(
                 let account_name_live_s_c = account_name.clone();
                 let pms2 = pms.clone();
                 tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                     match c2.get_live_streams("ALL").await {
                         Ok(mut streams) => {
                             preprocessing::preprocess_streams(&mut streams, &stream_favs, &pms2, true, &account_name_live_s_c);
@@ -126,7 +126,7 @@ pub async fn handle_async_action(
                 let account_name_vod_s_c = account_name.clone();
                 let pms4 = pms.clone();
                 tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
                     match c4.get_vod_streams_all().await {
                         Ok(mut streams) => {
                             preprocessing::preprocess_streams(&mut streams, &vod_favs, &pms4, false, &account_name_vod_s_c);
@@ -163,7 +163,7 @@ pub async fn handle_async_action(
                 let account_name_ser_s_c = account_name.clone();
                 let pms_ser = pms.clone();
                 tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
+                    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
                     match c_series.get_series_all().await {
                         Ok(mut series) => {
                             preprocessing::preprocess_streams(&mut series, &series_favs, &pms_ser, false, &account_name_ser_s_c);

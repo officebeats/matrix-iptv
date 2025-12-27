@@ -77,45 +77,37 @@ matrix-iptv
 
 ## ✨ Features
 
-- **🛡️ Playlist Modes**:
-  - **'Merica Mode**: Filters for US/UK/Canada content, removes international clutter from **Strong 8K**, **Mega OTT**, & **TRex**. Renames "Football" to "Soccer".
-  - **Sports Mode**: Prioritizes live sports events and adds league icons (NBA, NFL, MLB, NHL) for rapid identification.
+- **🛡️ Multi-Select Playlist Modes**: Combine optimizations like **'Merica**, **Sports**, and **All-English** in real-time.
 - **⚡ Instant Response**: Built in Rust for maximum performance. Navigate tens of thousands of channels with zero lag.
 - **📡 Xtream API Native**: Strictly optimized for **Xtream API** providers (support for M3U is not planned at this time).
-- **🔎 Global Search**: Press **`Alt`+`Space`** (or `/`) to search across Live TV, Movies, and Series content instantly.
+- **🔎 Global Search**: Press **`Ctrl`+`Space`** (displayed as `🔎🌐 Ctrl+Space`) to search across Live TV, Movies, and Series content instantly.
 - **📁 Unified Navigation**: "All" views for Channels, Movies, and Series allow for rapid browsing without digging into categories.
-- **🎬 Full Series Support**: dedicated browsing for TV Shows with Season/Episode hierarchy and tracking.
+- **🎨 Color-Coded UX**: Rebuilt footer with screen-aware hints and color coding.
+- **🚥 Mode Indicators**: Colorful header indicators (Red/White/Blue for 'Merica, Yellow for Sports, Blue for All-English).
+- **📋 Paste Support**: Support for `Ctrl+V` in login fields for quick credentials setup.
+- **🎬 Full Series Support**: Dedicated browsing for TV Shows with Season/Episode hierarchy and tracking.
 - **🎞️ VOD Experience**: Browse movies with rich metadata and instant playback.
 - **📟 Matrix Rain Screensaver**: A high-performance, authentic digital rain screensaver that activates when idle.
 - **🔒 Secure**: Uses Private DNS-over-HTTPS (DoH) for secure provider connection.
 - **👁️ Headless Playback**: Integrated borderless fullscreen mode for a cinematic experience.
 
----
-
 ## 🛡️ Playlist Modes
 
 Matrix IPTV CLI features advanced preprocessing engines called **Playlist Modes**. These filters run _before_ content reaches your screen to optimize the experience.
 
-#### **'Merica Mode 🇺🇸**
+#### **Multi-Selectable Modes**
 
-Strictly optimized for **Strong 8K**, **Mega OTT**, and **TRex IPTV** playlists.
+You can now toggle multiple modes simultaneously!
 
-- **Geo-Filtering**: Hides international categories (AR, FR, DE, etc.) to focus on English-speaking content.
-- **Name Cleaning**: Intelligent renaming (e.g., removes `US |`, `USA |`, `FHD`) for cleaner lists.
-- **Sports Renaming**: Renames "American Football" to "Football" and "Football" to "Soccer".
-
-#### **Sports Mode 🏟️**
-
-Designed for the game day power user.
-
-- **League Icons**: Automatically detects and prefixes league names with icons (🏀 NBA, 🏈 NFL, ⚾ MLB, 🏒 NHL).
-- **Category Sorting**: Hoists sports categories to the top of the list for quick access.
+- **'Merica Mode 🇺🇸**: Geo-filters for English content and renames "American Football" to "Football".
+- **Sports Mode 🏟️**: Hoists sports categories and adds icons (🏀 NBA, 🏈 NFL, etc.).
+- **All-English 🇬🇧**: strictly filters for English, UK, and CA content, hiding all international categories.
 
 To change modes:
 
-1. Press **`m`** (or Go to Settings > Playlist Mode).
-2. Select your desired mode.
-3. Press **`Enter`**. The app will reload your playlist with the new optimizations.
+1. Press **`m`** (Universal Mode Toggle).
+2. Use **`Space`** or **`Enter`** to toggle checkboxes for each mode.
+3. Select **`APPLY & SAVE`** to rebuild your playlist matrix.
 
 ---
 
@@ -133,18 +125,22 @@ We leverage advanced **MPV** flags to ensure professional-level video quality ev
 
 ## ⌨️ Common Controls
 
-| Key                     | Action                                |
-| :---------------------- | :------------------------------------ |
-| **`Enter`**             | **Play Channel / Select / Confirm**   |
-| **`Esc` / `Backspace`** | **Go Back / Cancel**                  |
-| **`/`**                 | **Search** (Filters current view)     |
-| **`Alt` + `Space`**     | **Global Search** (Search everything) |
-| **`j` / `↓`**           | Move Down                             |
-| **`k` / `↑`**           | Move Up                               |
-| **`m`**                 | **Playlist Mode** (Quick Switch)      |
-| **`x`**                 | **Settings**                          |
-| **`r`**                 | **Refresh Playlist**                  |
-| **`q`**                 | **Quit**                              |
+| Key                     | Action                                  |
+| :---------------------- | :-------------------------------------- |
+| **`Enter`**             | **Play Channel / Select / Confirm**     |
+| **`Esc` / `Backspace`** | **Go Back / Cancel**                    |
+| **`Ctrl` + `Space`**    | **Global Search** (Search everything)   |
+| **`f`** or **`/`**      | **Local Search** (Filter current view)  |
+| **`v`**                 | **Toggle Favorite**                     |
+| **`j` / `↓`**           | Move Down                               |
+| **`k` / `↑`**           | Move Up                                 |
+| **`m`**                 | **Playlist Mode** (Quick Toggle/Switch) |
+| **`x`**                 | **Settings**                            |
+| **`n`**                 | **New Playlist** (Home Screen)          |
+| **`e`**                 | **Edit Playlist** (Home Screen)         |
+| **`d`**                 | **Delete Playlist** (Home Screen)       |
+| **`r`**                 | **Refresh Playlist** (Global)           |
+| **`q`**                 | **Quit**                                |
 
 ---
 

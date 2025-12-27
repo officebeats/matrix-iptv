@@ -23,8 +23,8 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(38), // Tabs
-            Constraint::Min(0),     // Stats
+            Constraint::Min(0),      // Tabs and Mode
+            Constraint::Length(60),  // Stats (Dynamic space for time/exp)
         ])
         .split(area);
 
@@ -52,58 +52,54 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
     let style_active = Style::default().bg(MATRIX_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD);
     let separator = Span::styled(" / ", Style::default().fg(Color::LightBlue));
 
-    let mut spans = vec![Span::styled(
+    let mut left_spans = vec![Span::styled(
         " // SYSTEM_NETWORK",
         Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD),
     )];
     
-    // Color-coded MODE display based on processing_modes
+    // Color-coded MODE indicator
     if !app.config.processing_modes.is_empty() {
-        spans.push(Span::styled(" [", Style::default().fg(DARK_GREEN)));
+        left_spans.push(Span::styled(" [", Style::default().fg(DARK_GREEN)));
         
         let mut first = true;
         for mode in &app.config.processing_modes {
             if !first {
-                spans.push(Span::styled("+", Style::default().fg(Color::DarkGray)));
+                left_spans.push(Span::styled("+", Style::default().fg(Color::DarkGray)));
             }
             first = false;
             
             match mode {
                 crate::config::ProcessingMode::Merica => {
-                    // Red, White, Blue styling for 'merica
-                    spans.push(Span::styled("'", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
-                    spans.push(Span::styled("m", Style::default().fg(Color::Rgb(255, 50, 50)).add_modifier(Modifier::BOLD)));
-                    spans.push(Span::styled("e", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)));
-                    spans.push(Span::styled("r", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)));
-                    spans.push(Span::styled("i", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
-                    spans.push(Span::styled("c", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
-                    spans.push(Span::styled("a", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("'", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("m", Style::default().fg(Color::Rgb(255, 50, 50)).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("e", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("r", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("i", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("c", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("a", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
                 }
                 crate::config::ProcessingMode::Sports => {
-                    spans.push(Span::styled("SPORTS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("SPORTS", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
                 }
                 crate::config::ProcessingMode::AllEnglish => {
-                    spans.push(Span::styled("EN", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("EN", Style::default().fg(Color::LightBlue).add_modifier(Modifier::BOLD)));
                 }
             }
         }
         
-        spans.push(Span::styled("] ", Style::default().fg(DARK_GREEN)));
+        left_spans.push(Span::styled("] ", Style::default().fg(DARK_GREEN)));
     }
 
-    spans.push(separator.clone());
-    spans.push(if current_tab == 0 { Span::styled(" [LIVE_UPLINK] ", style_active) } else { Span::styled(" LIVE_UPLINK ", Style::default().fg(MATRIX_GREEN)) });
+    left_spans.push(separator.clone());
+    left_spans.push(if current_tab == 0 { Span::styled(" [LIVE] ", style_active) } else { Span::styled(" LIVE ", Style::default().fg(MATRIX_GREEN)) });
+    left_spans.push(separator.clone());
+    left_spans.push(if current_tab == 1 { Span::styled(" [VOD] ", style_active) } else { Span::styled(" VOD ", Style::default().fg(MATRIX_GREEN)) });
+    left_spans.push(separator.clone());
+    left_spans.push(if current_tab == 3 { Span::styled(" [SERIES] ", style_active) } else { Span::styled(" SERIES ", Style::default().fg(MATRIX_GREEN)) });
+    left_spans.push(separator.clone());
+    left_spans.push(if current_tab == 2 { Span::styled(" [CONFIG] ", style_active) } else { Span::styled(" CONFIG ", Style::default().fg(MATRIX_GREEN)) });
 
-    spans.push(separator.clone());
-    spans.push(if current_tab == 1 { Span::styled(" [MOVIE_ACCESS] ", style_active) } else { Span::styled(" MOVIE_ACCESS ", Style::default().fg(MATRIX_GREEN)) });
-
-    spans.push(separator.clone());
-    spans.push(if current_tab == 3 { Span::styled(" [SERIAL_LOGS] ", style_active) } else { Span::styled(" SERIAL_LOGS ", Style::default().fg(MATRIX_GREEN)) });
-
-    spans.push(separator.clone());
-    spans.push(if current_tab == 2 { Span::styled(" [CORE_CONFIG] ", style_active) } else { Span::styled(" CORE_CONFIG ", Style::default().fg(MATRIX_GREEN)) });
-
-    let tabs = Paragraph::new(Line::from(spans)).block(
+    let tabs = Paragraph::new(Line::from(left_spans)).block(
         Block::default()
             .borders(Borders::BOTTOM)
             .border_style(Style::default().fg(DARK_GREEN)),
@@ -115,7 +111,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         let tz_str = app.config.get_user_timezone();
         let user_tz: Tz = Tz::from_str(&tz_str).unwrap_or(chrono_tz::Europe::London);
         let now = Utc::now().with_timezone(&user_tz);
-        let time = now.format("%I:%M:%S %p %Z").to_string();
+        let time = now.format("%I:%M%p").to_string(); // More compact time
         
         let (active, total, exp) = if let Some(info) = &app.account_info {
             let a = info.active_cons.as_ref().map(clean_val).unwrap_or_else(|| "0".to_string());
@@ -127,15 +123,23 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         };
 
         let exp_formatted = if let Ok(ts) = exp.parse::<i64>() {
-             Utc.timestamp_opt(ts, 0).single().map(|dt| dt.format("%b %d, %Y").to_string()).unwrap_or(exp)
+             Utc.timestamp_opt(ts, 0).single().map(|dt| dt.format("%b %d").to_string()).unwrap_or(exp) // Compacter exp date
         } else {
             exp
         };
 
-        let stats_text = format!("{} | {} | Exp: {} | \u{1f464} {}/{}", name, time, exp_formatted, active, total);
-        let stats = Paragraph::new(stats_text)
+        let mut right_spans = Vec::new();
+        right_spans.push(Span::styled(name, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)));
+        right_spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        right_spans.push(Span::styled(time, Style::default().fg(Color::White)));
+        right_spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        right_spans.push(Span::styled(format!("Exp: {}", exp_formatted), Style::default().fg(Color::Yellow)));
+        right_spans.push(Span::styled(" │ ", Style::default().fg(Color::DarkGray)));
+        right_spans.push(Span::styled("\u{1f464} ", Style::default().fg(Color::White)));
+        right_spans.push(Span::styled(format!("{}/{}", active, total), Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)));
+
+        let stats = Paragraph::new(Line::from(right_spans))
             .alignment(Alignment::Right)
-            .style(Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD))
             .block(Block::default().borders(Borders::BOTTOM).border_style(Style::default().fg(DARK_GREEN)));
         f.render_widget(stats, chunks[1]);
     }

@@ -103,24 +103,31 @@ pub fn stylize_channel_name(
                         spans.push(Span::styled(format!("({})", val.to_lowercase()), base_style.fg(fps_color).add_modifier(Modifier::BOLD)));
                     }
                     _ => {
-                        if detected_sport_icon.is_empty() {
-                             detected_sport_icon = match check_word {
-                                 "NBA" => "🏀",
-                                 "NFL" => "🏈",
-                                 "MLB" => "⚾",
-                                 "NHL" => "🏒",
-                                 "UFC" | "MMA" => "🥊",
-                                 "F1" | "NASCAR" | "RACING" => "🏎️",
-                                 "GOLF" | "PGA" => "⛳",
-                                 "TENNIS" | "ATP" | "WTA" => "🎾",
-                                 "SOCCER" | "FOOTBALL" | "LEAGUE" | "BUNDESLIGA" | "LALIGA" | "PREMIER" | "UEFA" | "FIFA" => "⚽",
-                                 "CRICKET" => "🏏",
-                                 "RUGBY" => "🏉",
-                                 _ => "",
-                             };
-                        }
+                        // Check if this sub-part is a year in parentheses (YYYY)
+                        let is_year = sub.starts_with('(') && sub.ends_with(')') && sub.len() == 6 && sub[1..5].chars().all(|c| c.is_digit(10));
                         
-                        spans.push(Span::styled(format!("{}", sub), base_style));
+                        if is_year {
+                            spans.push(Span::styled(format!("{}", sub), Style::default().fg(Color::White)));
+                        } else {
+                            if detected_sport_icon.is_empty() {
+                                detected_sport_icon = match check_word {
+                                    "NBA" => "🏀",
+                                    "NFL" => "🏈",
+                                    "MLB" => "⚾",
+                                    "NHL" => "🏒",
+                                    "UFC" | "MMA" => "🥊",
+                                    "F1" | "NASCAR" | "RACING" => "🏎️",
+                                    "GOLF" | "PGA" => "⛳",
+                                    "TENNIS" | "ATP" | "WTA" => "🎾",
+                                    "SOCCER" | "FOOTBALL" | "LEAGUE" | "BUNDESLIGA" | "LALIGA" | "PREMIER" | "UEFA" | "FIFA" => "⚽",
+                                    "CRICKET" => "🏏",
+                                    "RUGBY" => "🏉",
+                                    _ => "",
+                                };
+                            }
+                            
+                            spans.push(Span::styled(format!("{}", sub), base_style));
+                        }
                     }
                 }
             }

@@ -57,9 +57,6 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         loading::render_loading(f, app, area);
     }
 
-    if app.show_help {
-        popups::render_help_popup(f, area);
-    }
 
     // Matrix Rain Overlay (Draws on top of everything except Help/Guide/Error if they need focus, but effectively screensaver covers all)
     // Actually screensaver should be on top of everything.

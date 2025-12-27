@@ -130,6 +130,7 @@ pub fn preprocess_streams(
     is_live: bool,
     _account_name: &str,
 ) {
+    use rayon::prelude::*;
     use crate::api::get_id_str;
 
     let use_merica = modes.contains(&crate::config::ProcessingMode::Merica);
@@ -164,9 +165,9 @@ pub fn preprocess_streams(
         keep
     });
 
-    // 2. Process (Clean names & Metadata)
+    // 2. Process (Clean names & Metadata) - Parallelized
     let should_clean = use_merica;
-    for s in streams.iter_mut() {
+    streams.par_iter_mut().for_each(|s| {
         s.clean_name = if should_clean {
             crate::parser::clean_american_name(&s.name)
         } else {
@@ -187,28 +188,23 @@ pub fn preprocess_streams(
         s.stream_display_name = Some(s.clean_name.clone());
         s.search_name = s.clean_name.to_lowercase();
         s.account_name = Some(_account_name.to_string());
-    }
+    });
 
-    // 3. Sort
-    let mut sort_data: Vec<_> = streams
-        .drain(..)
-        .map(|s| {
-            let id = get_id_str(&s.stream_id);
-            let is_fav = favorites.contains(&id);
-            let num = s.num.as_ref().and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
-            (s, is_fav, num)
-        })
-        .collect();
-
-    sort_data.sort_by(|(_, a_fav, a_num), (_, b_fav, b_num)| {
+    // 3. Sort - Parallelized
+    streams.par_sort_by(|a, b| {
+        let a_id = get_id_str(&a.stream_id);
+        let b_id = get_id_str(&b.stream_id);
+        let a_fav = favorites.contains(&a_id);
+        let b_fav = favorites.contains(&b_id);
+        
         match (a_fav, b_fav) {
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
-            _ => a_num.cmp(b_num),
+            _ => {
+                let a_num = a.num.as_ref().and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
+                let b_num = b.num.as_ref().and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
+                a_num.cmp(&b_num)
+            }
         }
     });
-
-    for (s, _, _) in sort_data {
-        streams.push(s);
-    }
 }
