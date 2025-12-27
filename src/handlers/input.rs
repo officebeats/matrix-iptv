@@ -1,9 +1,9 @@
 use crate::app::{App, AsyncAction, CurrentScreen, Pane, InputMode, LoginField, Guide, SettingsState};
 use crate::api::{XtreamClient, get_id_str};
 use crate::{preprocessing, player};
-use crate::config::{DnsProvider, Account};
+use crate::config::Account;
 use tokio::sync::mpsc;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, Event};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, Event, KeyModifiers};
 use tui_input::backend::crossterm::EventHandler;
 use std::io;
 
@@ -21,6 +21,62 @@ pub async fn handle_key_event(
 ) -> io::Result<InputResult> {
     // Only process key press events, not release (Windows sends both)
     if key.kind != KeyEventKind::Press {
+        return Ok(InputResult::Continue);
+    }
+
+    // Global Search Triggers - Checked at the absolute start for maximum reliability
+    // Supports: Ctrl+Space, Alt+Space, Ctrl+F, Ctrl+P, F3
+    let is_ctrl = key.modifiers.intersects(KeyModifiers::CONTROL);
+    let is_alt = key.modifiers.intersects(KeyModifiers::ALT);
+    
+    let is_space = key.code == KeyCode::Char(' ') || key.code == KeyCode::Char('\0') || key.code == KeyCode::Null;
+    let is_f_key = key.code == KeyCode::Char('f') || key.code == KeyCode::Char('F') || key.code == KeyCode::Char('\x06');
+    let is_p_key = key.code == KeyCode::Char('p') || key.code == KeyCode::Char('P') || key.code == KeyCode::Char('\x10');
+    let is_f3 = key.code == KeyCode::F(3);
+
+    if (is_space && (is_ctrl || is_alt)) || (is_ctrl && (is_f_key || is_p_key)) || is_f3 {
+        let on_home = app.current_screen == CurrentScreen::Home;
+        app.previous_screen = Some(app.current_screen.clone());
+        app.current_screen = CurrentScreen::GlobalSearch;
+        app.search_mode = true;
+        app.search_query.clear();
+        app.update_search();
+        // Force screensaver off
+        app.show_matrix_rain = false;
+        app.matrix_rain_screensaver_mode = false;
+
+        // "Value Prop": If searching from home screen and no data is loaded, boot-up the highlighted account
+        if on_home && app.global_all_streams.is_empty() {
+             if let Some(acc) = app.config.accounts.get(app.selected_account_index) {
+                 let client = crate::api::XtreamClient::new(
+                     acc.base_url.clone(),
+                     acc.username.clone(),
+                     acc.password.clone(),
+                 );
+                 app.current_client = Some(client.clone());
+                 let tx = tx.clone();
+                 let pm = app.config.playlist_mode;
+                 let stream_favs = app.config.favorites.streams.clone();
+                 let vod_favs = app.config.favorites.vod_streams.clone();
+                 let acc_name = acc.name.clone();
+                 
+                 tokio::spawn(async move {
+                     if let Ok((true, _, _)) = client.authenticate().await {
+                         // Load Live
+                         if let Ok(mut streams) = client.get_live_streams("ALL").await {
+                             crate::preprocessing::preprocess_streams(&mut streams, &stream_favs, pm, true, &acc_name);
+                             let _ = tx.send(AsyncAction::TotalChannelsLoaded(streams)).await;
+                         }
+                         // Load VOD
+                         if let Ok(mut streams) = client.get_vod_streams_all().await {
+                             crate::preprocessing::preprocess_streams(&mut streams, &vod_favs, pm, false, &acc_name);
+                             let _ = tx.send(AsyncAction::TotalMoviesLoaded(streams)).await;
+                         }
+                     }
+                 });
+             }
+        }
+
         return Ok(InputResult::Continue);
     }
 
@@ -75,8 +131,8 @@ pub async fn handle_key_event(
     }
 
     // GLOBAL KEYS
-    if app.input_mode == InputMode::Normal {
-        if let KeyCode::Char('q') = key.code {
+    if app.input_mode == InputMode::Normal && !app.search_mode {
+        if let KeyCode::Char('q') | KeyCode::Char('Q') = key.code {
             app.should_quit = true;
             return Ok(InputResult::Quit);
         }
@@ -86,7 +142,7 @@ pub async fn handle_key_event(
         }
 
         // Refresh Playlist
-        if key.code == KeyCode::Char('r') {
+        if matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R')) {
             if let Some(client) = app.current_client.clone() {
                 let tx = tx.clone();
                 app.state_loading = true;
@@ -119,6 +175,23 @@ pub async fn handle_key_event(
 
                     let _ = tx.send(AsyncAction::PlaylistRefreshed(ui, si)).await;
                 });
+            }
+        }
+
+        // Quick Mode Switch
+        if matches!(key.code, KeyCode::Char('m') | KeyCode::Char('M')) {
+            if app.current_screen != CurrentScreen::Settings || app.settings_state != SettingsState::PlaylistModeSelection {
+                if app.current_screen != CurrentScreen::Settings {
+                    app.previous_screen = Some(app.current_screen.clone());
+                }
+                app.current_screen = CurrentScreen::Settings;
+                app.settings_state = SettingsState::PlaylistModeSelection;
+                
+                // Pre-select current mode
+                let modes = crate::config::PlaylistMode::all();
+                let idx = modes.iter().position(|m| *m == app.config.playlist_mode).unwrap_or(0);
+                app.playlist_mode_list_state.select(Some(idx));
+                return Ok(InputResult::Continue);
             }
         }
     }
@@ -186,55 +259,6 @@ pub async fn handle_key_event(
                 KeyCode::Char('3') => {
                     app.show_guide = Some(Guide::WhatIsIptv);
                     app.guide_scroll = 0;
-                }
-                KeyCode::Char('s') => {
-                    if !app.config.accounts.is_empty() {
-                        let acc = &app.config.accounts[app.selected_account_index];
-                        let base_url = acc.base_url.clone();
-                        let username = acc.username.clone();
-                        let password = acc.password.clone();
-                        let now = chrono::Utc::now().timestamp();
-                        let needs_refresh = acc.last_refreshed.map(|last| now - last > (5 * 3600)).unwrap_or(true);
-
-                        app.state_loading = true;
-                        if needs_refresh {
-                            app.loading_message = Some("Refreshing playlist (Data > 5h old)...".to_string());
-                        } else {
-                            app.loading_message = Some("Loading Series...".to_string());
-                        }
-                        app.login_error = None;
-
-                        let tx = tx.clone();
-                        let dns_provider = app.config.dns_provider;
-                        tokio::spawn(async move {
-                            match XtreamClient::new_with_doh(base_url, username, password, dns_provider).await {
-                                Ok(client) => {
-                                    match client.authenticate().await {
-                                        Ok((true, ui, si)) => {
-                                            let _ = tx.send(AsyncAction::LoginSuccess(client.clone(), ui, si)).await;
-                                            match client.get_series_categories().await {
-                                                Ok(cats) => {
-                                                    let _ = tx.send(AsyncAction::SeriesCategoriesLoaded(cats)).await;
-                                                }
-                                                Err(e) => {
-                                                    let _ = tx.send(AsyncAction::Error(format!("Series Fetch Error: {}", e))).await;
-                                                }
-                                            }
-                                        }
-                                        Ok((false, _, _)) => {
-                                            let _ = tx.send(AsyncAction::LoginFailed("Authentication failed".to_string())).await;
-                                        }
-                                        Err(e) => {
-                                            let _ = tx.send(AsyncAction::LoginFailed(e.to_string())).await;
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    let _ = tx.send(AsyncAction::LoginFailed(format!("Connection error: {}", e))).await;
-                                }
-                            }
-                        });
-                    }
                 }
                 KeyCode::Enter => {
                     if !app.config.accounts.is_empty() {
@@ -591,21 +615,6 @@ pub async fn handle_key_event(
                             _ => {}
                         }
                     }
-                    KeyCode::Char('v') | KeyCode::Char('m') => {
-                        if let Some(client) = &app.current_client {
-                            let client = client.clone();
-                            let tx = tx.clone();
-                            app.state_loading = true;
-                            app.search_mode = false;
-                            app.search_query.clear();
-                            tokio::spawn(async move {
-                                match client.get_vod_categories().await {
-                                    Ok(cats) => { let _ = tx.send(AsyncAction::VodCategoriesLoaded(cats)).await; }
-                                    Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
-                                }
-                            });
-                        }
-                    }
                     KeyCode::Left | KeyCode::Char('c') => { app.active_pane = Pane::Categories; }
                     KeyCode::Right | KeyCode::Char('s') => { if !app.streams.is_empty() { app.active_pane = Pane::Streams; } }
                     KeyCode::Char('j') | KeyCode::Down => match app.active_pane {
@@ -673,7 +682,7 @@ pub async fn handle_key_event(
                                     } else if let Some(client) = &app.current_client {
                                         let client = client.clone();
                                         let tx = tx.clone();
-                                        let am = app.config.american_mode;
+                                        let pm = app.config.playlist_mode;
                                         let favs = app.config.favorites.streams.clone();
                                         let account_name = account_name.clone();
                                         app.state_loading = true;
@@ -683,7 +692,7 @@ pub async fn handle_key_event(
                                             match client.get_live_streams(&cat_id).await {
                                                 Ok(mut streams) => {
                                                     let _ = tx.send(AsyncAction::LoadingMessage(format!("Processing {} Streams...", streams.len()))).await;
-                                                    preprocessing::preprocess_streams(&mut streams, &favs, am, true, &account_name);
+                                                    preprocessing::preprocess_streams(&mut streams, &favs, pm, true, &account_name);
                                                     let _ = tx.send(AsyncAction::StreamsLoaded(streams, cat_id)).await;
                                                 }
                                                 Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -764,26 +773,6 @@ pub async fn handle_key_event(
                         app.search_query.clear();
                         app.current_screen = CurrentScreen::ContentTypeSelection;
                     }
-                    KeyCode::Char('l') => {
-                        if let Some(client) = &app.current_client {
-                            let client = client.clone();
-                            let tx = tx.clone();
-                            let am = app.config.american_mode;
-                            let cat_favs = app.config.favorites.categories.clone();
-                            app.state_loading = true;
-                            app.search_mode = false;
-                            app.search_query.clear();
-                            tokio::spawn(async move {
-                                match client.get_live_categories().await {
-                                    Ok(mut cats) => {
-                                        preprocessing::preprocess_categories(&mut cats, &cat_favs, am, true, false, &account_name);
-                                        let _ = tx.send(AsyncAction::CategoriesLoaded(cats)).await;
-                                    }
-                                    Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
-                                }
-                            });
-                        }
-                    }
                     KeyCode::Char('j') | KeyCode::Down => app.next_vod_category(),
                     KeyCode::Char('k') | KeyCode::Up => app.previous_vod_category(),
                     KeyCode::Enter => {
@@ -799,7 +788,7 @@ pub async fn handle_key_event(
                             } else if let Some(client) = &app.current_client {
                                 let client = client.clone();
                                 let tx = tx.clone();
-                                let am = app.config.american_mode;
+                                let pm = app.config.playlist_mode;
                                 let favs = app.config.favorites.vod_streams.clone();
                                 let account_name = account_name.clone();
                                 app.state_loading = true;
@@ -807,7 +796,7 @@ pub async fn handle_key_event(
                                     if cat_id == "ALL" {
                                         match client.get_vod_streams_all().await {
                                             Ok(mut streams) => {
-                                                preprocessing::preprocess_streams(&mut streams, &favs, am, false, &account_name);
+                                                preprocessing::preprocess_streams(&mut streams, &favs, pm, false, &account_name);
                                                 let _ = tx.send(AsyncAction::VodStreamsLoaded(streams, cat_id)).await;
                                             }
                                             Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -815,7 +804,7 @@ pub async fn handle_key_event(
                                     } else {
                                         match client.get_vod_streams(&cat_id).await {
                                             Ok(mut streams) => {
-                                                preprocessing::preprocess_streams(&mut streams, &favs, am, false, &account_name);
+                                                preprocessing::preprocess_streams(&mut streams, &favs, pm, false, &account_name);
                                                 let _ = tx.send(AsyncAction::VodStreamsLoaded(streams, cat_id)).await;
                                             }
                                             Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -930,14 +919,14 @@ pub async fn handle_key_event(
                             } else if let Some(client) = &app.current_client {
                                 let client = client.clone();
                                 let tx = tx.clone();
-                                let am = app.config.american_mode;
+                                let pm = app.config.playlist_mode;
                                 let favs = app.config.favorites.vod_streams.clone();
                                 app.state_loading = true;
                                 app.active_pane = Pane::Streams;
                                 tokio::spawn(async move {
                                     match client.get_series_streams(&cat_id).await {
                                         Ok(mut streams) => {
-                                            preprocessing::preprocess_streams(&mut streams, &favs, am, false, &account_name);
+                                            preprocessing::preprocess_streams(&mut streams, &favs, pm, false, &account_name);
                                             let _ = tx.send(AsyncAction::SeriesStreamsLoaded(streams, cat_id)).await;
                                         }
                                         Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -992,14 +981,14 @@ pub async fn handle_key_event(
                                 } else if let Some(client) = &app.current_client {
                                     let client = client.clone();
                                     let tx = tx.clone();
-                                    let am = app.config.american_mode;
+                                    let pm = app.config.playlist_mode;
                                     let favs = app.config.favorites.vod_streams.clone();
                                     app.state_loading = true;
                                     app.active_pane = Pane::Streams;
                                     tokio::spawn(async move {
                                         match client.get_series_streams(&cat_id).await {
                                             Ok(mut streams) => {
-                                                preprocessing::preprocess_streams(&mut streams, &favs, am, false, &account_name);
+                                                preprocessing::preprocess_streams(&mut streams, &favs, pm, false, &account_name);
                                                 let _ = tx.send(AsyncAction::SeriesStreamsLoaded(streams, cat_id)).await;
                                             }
                                             Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -1059,6 +1048,64 @@ pub async fn handle_key_event(
                 }
             }
         }
+        CurrentScreen::GlobalSearch => {
+            if app.search_mode {
+                match key.code {
+                    KeyCode::Esc => { 
+                        app.search_mode = false; 
+                        app.search_query.clear(); 
+                        app.global_search_results.clear(); 
+                        app.current_screen = app.previous_screen.clone().unwrap_or(CurrentScreen::Home);
+                    }
+                    KeyCode::Enter => { app.search_mode = false; }
+                    KeyCode::Backspace => { app.search_query.pop(); app.update_search(); }
+                    KeyCode::Char(c) => { app.search_query.push(c); app.update_search(); }
+                    _ => {}
+                }
+            } else {
+                match key.code {
+                    KeyCode::Char('/') => { app.search_mode = true; app.search_query.clear(); app.update_search(); }
+                    KeyCode::Esc | KeyCode::Backspace => {
+                        app.search_mode = false;
+                        app.search_query.clear();
+                        app.global_search_results.clear();
+                        app.current_screen = app.previous_screen.clone().unwrap_or(CurrentScreen::Home);
+                    }
+                    KeyCode::Char('j') | KeyCode::Down => app.next_global_search_result(),
+                    KeyCode::Char('k') | KeyCode::Up => app.previous_global_search_result(),
+                    KeyCode::Enter => {
+                        if !app.global_search_results.is_empty() {
+                            let stream = &app.global_search_results[app.selected_stream_index];
+                            if let Some(client) = &app.current_client {
+                                let id = get_id_str(&stream.stream_id);
+                                let extension = stream.container_extension.as_deref().unwrap_or("ts");
+                                
+                                let url = match stream.stream_type.as_str() {
+                                    "movie" => client.get_vod_url(&id, extension),
+                                    "series" => client.get_series_url(&id, extension),
+                                    _ => client.get_stream_url(&id, extension),
+                                };
+
+                                app.state_loading = true;
+                                app.player_error = None;
+                                app.loading_message = Some(format!("Preparing: {}...", stream.name));
+                                let tx = tx.clone();
+                                let player = player.clone();
+                                let stream_url = url.clone();
+                                let use_default = app.config.use_default_mpv;
+                                tokio::spawn(async move {
+                                    match player.play(&stream_url, use_default) {
+                                        Ok(_) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
+                                        Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(e.to_string())).await; }
+                                    }
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
         CurrentScreen::Settings => {
             match app.settings_state {
                 SettingsState::Main => match key.code {
@@ -1082,7 +1129,14 @@ pub async fn handle_key_event(
                                 let idx = app.timezone_list.iter().position(|t| t == &current_tz).unwrap_or(0);
                                 app.timezone_list_state.select(Some(idx));
                             }
-                            2 => { app.config.american_mode = !app.config.american_mode; let _ = app.config.save(); app.refresh_settings_options(); }
+                            2 => { 
+                                // Open Playlist Mode Selection dropdown
+                                app.settings_state = SettingsState::PlaylistModeSelection;
+                                // Pre-select current mode
+                                let modes = crate::config::PlaylistMode::all();
+                                let idx = modes.iter().position(|m| *m == app.config.playlist_mode).unwrap_or(0);
+                                app.playlist_mode_list_state.select(Some(idx));
+                            }
                             3 => { 
                                 // Open DNS selection dropdown
                                 app.settings_state = SettingsState::DnsSelection;
@@ -1200,6 +1254,56 @@ pub async fn handle_key_event(
                         }
                         app.settings_state = SettingsState::Main;
                         app.refresh_settings_options();
+                    }
+                    _ => {}
+                }
+                SettingsState::PlaylistModeSelection => match key.code {
+                    KeyCode::Esc | KeyCode::Backspace => { app.settings_state = SettingsState::Main; }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        let modes = crate::config::PlaylistMode::all();
+                        if let Some(idx) = app.playlist_mode_list_state.selected() {
+                            let new_idx = if idx == 0 { modes.len() - 1 } else { idx - 1 };
+                            app.playlist_mode_list_state.select(Some(new_idx));
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        let modes = crate::config::PlaylistMode::all();
+                        if let Some(idx) = app.playlist_mode_list_state.selected() {
+                            let new_idx = if idx >= modes.len() - 1 { 0 } else { idx + 1 };
+                            app.playlist_mode_list_state.select(Some(new_idx));
+                        }
+                    }
+                    KeyCode::Enter => {
+                        let modes = crate::config::PlaylistMode::all();
+                        let old_mode = app.config.playlist_mode;
+                        if let Some(idx) = app.playlist_mode_list_state.selected() {
+                            if idx < modes.len() {
+                                app.config.playlist_mode = modes[idx];
+                                let _ = app.config.save();
+                            }
+                        }
+
+                        // Exit settings back to wherever we were
+                        let return_screen = app.previous_screen.take().unwrap_or(CurrentScreen::Home);
+                        app.current_screen = return_screen.clone();
+                        app.settings_state = SettingsState::Main;
+                        app.refresh_settings_options();
+
+                        // If mode changed and we have an active client, trigger a refresh
+                        if old_mode != app.config.playlist_mode && app.current_client.is_some() {
+                            if let Some(client) = app.current_client.clone() {
+                                let tx = tx.clone();
+                                app.state_loading = true;
+                                app.loading_message = Some(format!("Adapting to {} mode...", app.config.playlist_mode.display_name()));
+                                
+                                // Re-authenticate and reload to trigger the full preprocessing chain
+                                tokio::spawn(async move {
+                                    if let Ok((true, ui, si)) = client.authenticate().await {
+                                        let _ = tx.send(AsyncAction::PlaylistRefreshed(ui, si)).await;
+                                    }
+                                });
+                            }
+                        }
                     }
                     _ => {}
                 }

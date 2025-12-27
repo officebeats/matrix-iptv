@@ -25,19 +25,19 @@ static CLEAN_U_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^[\W_]*u[\s\u
 
 static CLEAN_PREFIX_COMBINED: Lazy<Regex> = Lazy::new(|| {
     // Order matters: Longest matches first to avoid partial replacements (e.g. USA vs US)
-    Regex::new(r"(?i)^(?:UNITED\s+STATES|ENGLISH|AMERICA|USA|US|EN|NBA|NFL|MLB|UFC|NHL|MLS)(?:\s*[-|:]\s*)").unwrap()
+    Regex::new(r"(?i)^(?:UNITED\s+STATES|UNITED\s+KINGDOM|ENGLISH|AMERICA|USA|US|UK|CA|EN|NBA|NFL|MLB|UFC|NHL|MLS|SPORTS)(?:\s*[-|:]\s*)").unwrap()
 });
 
 static CLEAN_BRACKETS_COMBINED: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)\s*[\(\[\{]\s*(?:UNITED\s+STATES|ENGLISH|AMERICA|USA|US|EN)\s*[\)\]\}]").unwrap()
+    Regex::new(r"(?i)\s*[\(\[\{]\s*(?:UNITED\s+STATES|UNITED\s+KINGDOM|ENGLISH|AMERICA|USA|US|UK|CA|EN)\s*[\)\]\}]").unwrap()
 });
 
 static CLEAN_END_COMBINED: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)\s+(?:UNITED\s+STATES|ENGLISH|AMERICA|USA|US|EN)\s*$").unwrap()
+    Regex::new(r"(?i)\s+(?:UNITED\s+STATES|UNITED\s+KINGDOM|ENGLISH|AMERICA|USA|US|UK|CA|EN)\s*$").unwrap()
 });
 
 static CLEAN_START_COMBINED: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)^(?:UNITED\s+STATES|ENGLISH|AMERICA|USA|US|EN)\s+").unwrap()
+    Regex::new(r"(?i)^(?:UNITED\s+STATES|UNITED\s+KINGDOM|ENGLISH|AMERICA|USA|US|UK|CA|EN)\s+").unwrap()
 });
 
 // Standalone USA mentions (e.g. "USA Sports")
@@ -353,6 +353,35 @@ pub fn is_english_vod(name: &str) -> bool {
     upper.ends_with("|EN")
 }
 
+/// Check if a name/category is UK live content
+pub fn is_uk_live(name: &str) -> bool {
+    let n = name.to_uppercase();
+    n.contains("UK |") || n.contains("|UK|") || n.contains("UNITED KINGDOM") || n.contains(" BRITISH ") || n.contains("[UK]") || n.contains("(UK)")
+}
+
+/// Check if a name/category is Canadian live content
+pub fn is_ca_live(name: &str) -> bool {
+    let n = name.to_uppercase();
+    n.contains("CA |") || n.contains("|CA|") || n.contains("CANADA") || n.contains("CANADIAN") || n.contains("[CA]") || n.contains("(CA)")
+}
+
+/// Check if a name/category is English (US/UK/CA) live content
+pub fn is_english_live(name: &str) -> bool {
+    is_american_live(name) || is_uk_live(name) || is_ca_live(name)
+}
+
+/// Check if a name/category is Sports content
+pub fn is_sports_content(name: &str) -> bool {
+    let n = name.to_uppercase();
+    n.contains("SPORT") || n.contains("FOOTBALL") || n.contains("SOCCER") || n.contains("BASKETBALL") || 
+    n.contains("NBA") || n.contains("NFL") || n.contains("MLB") || n.contains("NHL") || n.contains("UFC") || 
+    n.contains("BOXING") || n.contains("WRESTLING") || n.contains("WWE") || n.contains("AEW") || 
+    n.contains("CRICKET") || n.contains("RUGBY") || n.contains("GOLF") || n.contains("TENNIS") || 
+    n.contains("RACING") || n.contains("F1") || n.contains("MOTOGP") || n.contains("DAZN") || 
+    n.contains("BEIN") || n.contains("SKY SPORTS") || n.contains("TNT SPORTS") || n.contains("BT SPORT") ||
+    n.contains("PPV") || n.contains("PEACOCK") || n.contains("ESPN") || n.contains("BALLY") || n.contains("YES NETWORK")
+}
+
 /// Parse a category name to extract metadata
 pub fn parse_category(name: &str) -> ParsedCategory {
     let original = name.to_string();
@@ -504,7 +533,8 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     }
 
     // Capture leading channel numbers (e.g. "01:", "15-", "03 ")
-    let re_chan = Regex::new(r"^\s*(\d+[:\s\-|]+)").unwrap();
+    // STRICT MODE: If colon is used, it MUST be followed by space to distinguish from timestamps (8:20PM)
+    let re_chan = Regex::new(r"^\s*([0-9]+)(?:\s*:\s+|\s*[\-|]\s*|\s+)").unwrap();
     if let Some(caps) = re_chan.captures(&display_name) {
         channel_prefix = Some(caps.get(1).unwrap().as_str().trim().to_string());
         // Remove the channel prefix from display_name to avoid duplicate display
@@ -592,6 +622,47 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     }
 
     // --- TIME PARSING ---
+    
+    // 0. Explicit 'start:' tag parsing (Priority 1)
+    // This allows us to capture full timestamps before cleanup nukes them
+    if let Some(caps) = START_TIME_REGEX.captures(&display_name) {
+        if let Ok(naive_dt) = NaiveDateTime::parse_from_str(caps.get(1).unwrap().as_str(), "%Y-%m-%d %H:%M:%S") {
+            let source_tz = provider_tz
+                .and_then(|ptz| ptz.parse::<chrono_tz::Tz>().ok())
+                .unwrap_or(chrono_tz::UTC);
+            start_time = Some(
+                source_tz
+                    .from_local_datetime(&naive_dt)
+                    .single()
+                    .unwrap_or_else(|| Utc::now().with_timezone(&source_tz))
+                    .with_timezone(&Utc),
+            );
+            // Remove the start tag from name
+            display_name = display_name.replace(caps.get(0).unwrap().as_str(), "").trim().to_string();
+        }
+    }
+
+    // 0b. Explicit 'stop:' tag parsing (Priority 1)
+    // Same rationale: capture stop times before cleanup nukes them
+    if let Some(caps) = STOP_TIME_REGEX.captures(&display_name) {
+        if let Ok(naive_dt) =
+            NaiveDateTime::parse_from_str(caps.get(1).unwrap().as_str(), "%Y-%m-%d %H:%M:%S")
+        {
+            let source_tz = provider_tz
+                .and_then(|ptz| ptz.parse::<chrono_tz::Tz>().ok())
+                .unwrap_or(chrono_tz::UTC);
+            stop_time = Some(
+                source_tz
+                    .from_local_datetime(&naive_dt)
+                    .single()
+                    .unwrap_or_else(|| Utc::now().with_timezone(&source_tz))
+                    .with_timezone(&Utc),
+            );
+            // Remove the stop tag from name
+            display_name = display_name.replace(caps.get(0).unwrap().as_str(), "").trim().to_string();
+        }
+    }
+
     // Look for patterns like:
     // 14:00
     // [14:00]
@@ -674,17 +745,10 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
 
                     // Convert to UTC
                     if let Some(dt) = source_tz.from_local_datetime(&naive_dt).single() {
-                        // If the parsed time is way in the past (> 24h), maybe it is next year?
-                        // Or if detected 'day' is < current day, maybe it's next year (e.g. 01/01 parsed in Dec).
-                        // For now, assume current year is safe for typical EPG style names.
-
-                        // Fix: if we defaulted to today's date but the time has passed significantly,
-                        // usually these streams are for UPCOMING events.
-                        // But if we parsed a specific date, stick to it.
-                        // If we didn't parse a date, and the time is < now - 4 hours, maybe it's tomorrow?
-                        // Actually, sticking to "Today" is safest for [HH:MM] format.
-
-                        start_time = Some(dt.with_timezone(&Utc));
+                        // Priority Check: Only set start_time if NOT already set by START_TIME_REGEX
+                        if start_time.is_none() {
+                             start_time = Some(dt.with_timezone(&Utc));
+                        }
 
                         // Clean the name: Remove the time string
                         display_name = display_name
@@ -703,6 +767,64 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         }
     }
 
+    // Fallback: LOOSE TIME PARSING (e.g. "8PM", "12/27 8PM") - When colon is missing
+    // We try this if strict TIME_REGEX failed
+    if start_time.is_none() && (is_live_event || upper.contains("SPORT") || upper.contains("VS")) {
+        let re_loose = Regex::new(r"(?i)(?:(\d{1,2})[/.[:punct:]](\d{1,2})\s+)?(\d{1,2})\s*(am|pm)").unwrap();
+        if let Some(caps) = re_loose.captures(&display_name) {
+            let now = Utc::now();
+            let current_year = now.year();
+
+            // Date capture
+            let d1 = caps.get(1).map(|m| m.as_str().parse::<u32>().unwrap_or(0));
+            let d2 = caps.get(2).map(|m| m.as_str().parse::<u32>().unwrap_or(0));
+            
+            // Hour/AMPM
+            let mut hour: u32 = caps.get(3).unwrap().as_str().parse().unwrap_or(0);
+            let am_pm = caps.get(4).unwrap().as_str().to_lowercase();
+            
+            if am_pm == "pm" && hour < 12 {
+                hour += 12;
+            } else if am_pm == "am" && hour == 12 {
+                hour = 0;
+            }
+
+            // Try to resolve date: US (MM/DD) priority for Trex/English, then DD/MM
+            let mut naive_date = NaiveDate::from_ymd_opt(current_year, now.month(), now.day());
+            
+            if let (Some(v1), Some(v2)) = (d1, d2) {
+                if v1 > 0 && v2 > 0 {
+                    // Try MM/DD first (v1=Month, v2=Day)
+                    if let Some(nd) = NaiveDate::from_ymd_opt(current_year, v1, v2) {
+                        naive_date = Some(nd);
+                    } else if let Some(nd) = NaiveDate::from_ymd_opt(current_year, v2, v1) {
+                         // Fallback DD/MM
+                        naive_date = Some(nd);
+                    }
+                }
+            }
+
+            if let Some(nd) = naive_date {
+                 if let Some(naive_time) = NaiveTime::from_hms_opt(hour, 0, 0) {
+                     let naive_dt = NaiveDateTime::new(nd, naive_time);
+                     
+                     // Use Provider TZ (default generic USA/Europe logic)
+                     let source_tz: chrono_tz::Tz = if let Some(ptz) = provider_tz {
+                         ptz.parse().unwrap_or(chrono_tz::America::Chicago) // Default to Cental if fail
+                     } else {
+                         chrono_tz::Europe::London
+                     };
+
+                     if let Some(dt) = source_tz.from_local_datetime(&naive_dt).single() {
+                         start_time = Some(dt.with_timezone(&Utc));
+                         // Clean match
+                         display_name = display_name.replace(caps.get(0).unwrap().as_str(), "").trim().to_string();
+                     }
+                 }
+            }
+        }
+    }
+
     // Try to extract location (keep existing logic)
     if let Some(start) = display_name.find('(') {
         if let Some(end) = display_name.find(')') {
@@ -717,7 +839,7 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     }
 
     // Clean up display name
-    let clean_display = display_name
+    let mut clean_display = display_name
         .replace("ᴴᴰ", "")
         .replace("ᵁᴴᴰ", "")
         .replace("³⁸⁴⁰ᴾ", "")
@@ -730,8 +852,19 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         .replace("LIVE-EVENT", "")
         .replace("[]", "")
         .replace("()", "")
+        .replace("  ", " ") // Quick double space fix
         .trim()
         .to_string();
+
+    // Aggressively strip date/time artifacts from name (e.g. "12/27", "8PM", "30PM")
+    // We rely on the app's standardized timedisplay [Tomorrow 09:30 AM] instead.
+    // Explicitly check for start of string (^ pattern) to catch "30PM Texans"
+    let re_time_junk = Regex::new(r"(?i)(?:\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b|(?:\b|^)\d{1,2}:\d{2}(?:\s*[AP]M)?\b|(?:\b|^)\d{1,2}\s*[AP]M\b)").unwrap();
+    clean_display = re_time_junk.replace_all(&clean_display, "").to_string();
+
+    // Cleanup whitespace left gaps
+    let re_spaces = Regex::new(r"\s+").unwrap();
+    clean_display = re_spaces.replace_all(&clean_display, " ").trim().to_string();
 
     if !clean_display.is_empty() {
         display_name = clean_display;
@@ -778,28 +911,6 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                         .unwrap_or_else(|| Utc::now().with_timezone(&source_tz))
                         .with_timezone(&Utc),
                 );
-            }
-        }
-    }
-
-    // Backup: If start_time is still None, try to find a raw 'start: YYYY-MM-DD' in the name anyway
-    if start_time.is_none() {
-        if let Some(caps) = START_TIME_REGEX.captures(&display_name) {
-            if let Ok(naive_dt) =
-                NaiveDateTime::parse_from_str(caps.get(1).unwrap().as_str(), "%Y-%m-%d %H:%M:%S")
-            {
-                let source_tz = provider_tz
-                    .and_then(|ptz| ptz.parse::<chrono_tz::Tz>().ok())
-                    .unwrap_or(chrono_tz::UTC);
-                start_time = Some(
-                    source_tz
-                        .from_local_datetime(&naive_dt)
-                        .single()
-                        .unwrap_or_else(|| Utc::now().with_timezone(&source_tz))
-                        .with_timezone(&Utc),
-                );
-                // Clean the name
-                display_name = display_name.replace(caps.get(0).unwrap().as_str(), "").trim().to_string();
             }
         }
     }

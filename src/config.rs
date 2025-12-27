@@ -38,6 +38,43 @@ impl DnsProvider {
     }
 }
 
+/// Playlist processing mode options
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
+pub enum PlaylistMode {
+    #[default]
+    Default,
+    Merica,
+    Sports,
+    AllEnglish,
+    SportsMerica,
+}
+
+impl PlaylistMode {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            PlaylistMode::Default => "Default",
+            PlaylistMode::Merica => "'merica",
+            PlaylistMode::Sports => "Sports",
+            PlaylistMode::AllEnglish => "All English (US/UK/CA)",
+            PlaylistMode::SportsMerica => "Sports + 'merica",
+        }
+    }
+
+    pub fn is_merica_variant(&self) -> bool {
+        matches!(self, PlaylistMode::Merica | PlaylistMode::SportsMerica)
+    }
+
+    pub fn all() -> &'static [PlaylistMode] {
+        &[
+            PlaylistMode::Default,
+            PlaylistMode::Merica,
+            PlaylistMode::Sports,
+            PlaylistMode::AllEnglish,
+            PlaylistMode::SportsMerica,
+        ]
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Account {
     pub name: String,
@@ -69,7 +106,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub timezone: Option<String>,
     #[serde(default)]
-    pub american_mode: bool,
+    pub playlist_mode: PlaylistMode,
     #[serde(default)]
     pub dns_provider: DnsProvider,
     #[serde(default)]

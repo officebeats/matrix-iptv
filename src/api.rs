@@ -48,6 +48,10 @@ pub struct Stream {
     pub is_english: bool,
     #[serde(skip)]
     pub clean_name: String,
+    #[serde(skip)]
+    pub latency_ms: Option<u64>,
+    #[serde(skip)]
+    pub account_name: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

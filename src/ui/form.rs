@@ -343,5 +343,61 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
             f.render_widget(hints_para, chunks[2]);
         }
+        SettingsState::PlaylistModeSelection => {
+            // Split area: list on top, description in middle, hints on bottom
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(8), Constraint::Min(3), Constraint::Length(3)])
+                .split(area);
+
+            // Playlist mode options
+            let modes = crate::config::PlaylistMode::all();
+            let items: Vec<ListItem> = modes.iter().map(|m| {
+                let is_current = *m == app.config.playlist_mode;
+                let prefix = if is_current { "✓ " } else { "  " };
+                ListItem::new(format!("{}{}", prefix, m.display_name()))
+            }).collect();
+            
+            let list = List::new(items)
+                .block(Block::default()
+                    .title(" SELECT PLAYLIST MODE ")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Double)
+                    .border_style(Style::default().fg(Color::Cyan)))
+                .highlight_style(Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD))
+                .highlight_symbol(" > ");
+            f.render_stateful_widget(list, chunks[0], &mut app.playlist_mode_list_state);
+
+            // Show description for selected mode
+            let desc = if let Some(idx) = app.playlist_mode_list_state.selected() {
+                match idx {
+                    0 => "Default: Shows all content exactly as provided by the server without extra filtering.",
+                    1 => "'merica: US-optimized display. Shows flags for American channels and prioritizes sports parsing.",
+                    2 => "Sports: Filters for sports content only, across all regions.",
+                    3 => "All English: Combined view of US, UK, and Canada English content.",
+                    4 => "Sports + 'merica: The ultimate US sports fan experience. Only American sports channels and events.",
+                    _ => ""
+                }
+            } else {
+                ""
+            };
+            let desc_block = Paragraph::new(desc)
+                .block(Block::default().title(" MODE_MANIFEST ").borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(Color::DarkGray)))
+                .style(Style::default().fg(Color::White))
+                .wrap(ratatui::widgets::Wrap { trim: true });
+            f.render_widget(desc_block, chunks[1]);
+
+            // Navigation hints
+            let hints = Line::from(vec![
+                Span::styled(" ↑↓ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("Navigate  ", Style::default().fg(Color::White)),
+                Span::styled(" Enter ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("Select  ", Style::default().fg(Color::White)),
+                Span::styled(" Esc ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("Cancel", Style::default().fg(Color::White)),
+            ]);
+            let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
+            f.render_widget(hints_para, chunks[2]);
+        }
     }
 }

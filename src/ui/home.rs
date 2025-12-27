@@ -79,10 +79,5 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_widget(Paragraph::new(guides_text).block(Block::default().borders(Borders::ALL).border_type(BorderType::Thick).border_style(Style::default().fg(DARK_GREEN)).padding(ratatui::widgets::Padding::new(2, 2, 1, 1))), main_zone_chunks[0]);
 
-    let footer_info = Paragraph::new(vec![Line::from(vec![
-        Span::styled(" Esc ", Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD)), Span::styled("Back  ", Style::default().fg(Color::White)),
-        Span::styled(" x ", Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD)), Span::styled("Settings  ", Style::default().fg(Color::White)),
-        Span::styled(" Enter ", Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD)), Span::styled("Play", Style::default().fg(Color::White)),
-    ])]).alignment(Alignment::Center);
-    f.render_widget(footer_info, main_layout[2]);
+    crate::ui::footer::render_footer(f, app, main_layout[2]);
 }

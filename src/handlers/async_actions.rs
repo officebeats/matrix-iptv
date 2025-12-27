@@ -60,7 +60,7 @@ pub async fn handle_async_action(
             if let Some(client) = &app.current_client {
                 let client = client.clone();
                 let tx = tx.clone();
-                let am = app.config.american_mode;
+                let pm = app.config.playlist_mode;
                 let account_name = app.config.accounts.get(app.selected_account_index)
                                     .map(|a| a.name.clone()).unwrap_or_default();
 
@@ -72,7 +72,7 @@ pub async fn handle_async_action(
                 tokio::spawn(async move {
                     match c1.get_live_categories().await {
                         Ok(mut cats) => {
-                            preprocessing::preprocess_categories(&mut cats, &cat_favs, am, true, false, &account_name_live);
+                            preprocessing::preprocess_categories(&mut cats, &cat_favs, pm, true, false, &account_name_live);
                             let _ = t1.send(AsyncAction::CategoriesLoaded(cats)).await;
                         }
                         Err(e) => {
@@ -89,7 +89,7 @@ pub async fn handle_async_action(
                 tokio::spawn(async move {
                     match c_vod.get_vod_categories().await {
                         Ok(mut cats) => {
-                            preprocessing::preprocess_categories(&mut cats, &vod_cat_favs, am, false, true, &account_name_vod_c);
+                            preprocessing::preprocess_categories(&mut cats, &vod_cat_favs, pm, false, true, &account_name_vod_c);
                             let _ = t_vod.send(AsyncAction::VodCategoriesLoaded(cats)).await;
                         }
                         Err(e) => {
@@ -107,7 +107,7 @@ pub async fn handle_async_action(
                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                     match c2.get_live_streams("ALL").await {
                         Ok(mut streams) => {
-                            preprocessing::preprocess_streams(&mut streams, &stream_favs, am, true, &account_name_live_s_c);
+                            preprocessing::preprocess_streams(&mut streams, &stream_favs, pm, true, &account_name_live_s_c);
                             let _ = t2.send(AsyncAction::TotalChannelsLoaded(streams)).await;
                         }
                         Err(e) => {
@@ -125,7 +125,7 @@ pub async fn handle_async_action(
                     tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
                     match c4.get_vod_streams_all().await {
                         Ok(mut streams) => {
-                            preprocessing::preprocess_streams(&mut streams, &vod_favs, am, false, &account_name_vod_s_c);
+                            preprocessing::preprocess_streams(&mut streams, &vod_favs, pm, false, &account_name_vod_s_c);
                             let _ = t4.send(AsyncAction::TotalMoviesLoaded(streams)).await;
                         }
                         Err(e) => {
@@ -142,7 +142,7 @@ pub async fn handle_async_action(
                 tokio::spawn(async move {
                     match c5.get_series_categories().await {
                         Ok(mut cats) => {
-                            preprocessing::preprocess_categories(&mut cats, &series_cat_favs, am, false, false, &account_name_ser_c);
+                            preprocessing::preprocess_categories(&mut cats, &series_cat_favs, pm, false, false, &account_name_ser_c);
                             let _ = t5.send(AsyncAction::SeriesCategoriesLoaded(cats)).await;
                         }
                         Err(e) => {
@@ -160,7 +160,7 @@ pub async fn handle_async_action(
                     tokio::time::sleep(std::time::Duration::from_millis(2500)).await;
                     match c_series.get_series_all().await {
                         Ok(mut series) => {
-                            preprocessing::preprocess_streams(&mut series, &series_favs, am, false, &account_name_ser_s_c);
+                            preprocessing::preprocess_streams(&mut series, &series_favs, pm, false, &account_name_ser_s_c);
                             let _ = t_series.send(AsyncAction::TotalSeriesLoaded(series)).await;
                         }
                         Err(e) => {
@@ -273,6 +273,7 @@ pub async fn handle_async_action(
                 account.total_channels = Some(count);
                 let _ = app.config.save();
             }
+            if app.search_mode { app.update_search(); }
         }
         AsyncAction::TotalMoviesLoaded(streams) => {
             let count = streams.len();
@@ -282,6 +283,7 @@ pub async fn handle_async_action(
                 account.total_movies = Some(count);
                 let _ = app.config.save();
             }
+            if app.search_mode { app.update_search(); }
         }
         AsyncAction::TotalSeriesLoaded(series) => {
             let count = series.len();
@@ -291,15 +293,94 @@ pub async fn handle_async_action(
                 account.total_series = Some(count);
                 let _ = app.config.save();
             }
+            if app.search_mode { app.update_search(); }
         }
         AsyncAction::PlaylistRefreshed(ui, si) => {
-            app.account_info = ui;
-            app.server_info = si;
-            app.state_loading = false;
-            app.loading_message = None;
+            app.account_info = ui.clone();
+            app.server_info = si.clone();
+            app.state_loading = true; // Stay loading while we reload data
+            
             if let Some(account) = app.config.accounts.get_mut(app.selected_account_index) {
                 account.last_refreshed = Some(chrono::Utc::now().timestamp());
                 let _ = app.config.save();
+            }
+
+            if let Some(client) = &app.current_client {
+                let client = client.clone();
+                let tx = tx.clone();
+                let pm = app.config.playlist_mode;
+                let account_name = app.config.accounts.get(app.selected_account_index)
+                                    .map(|a| a.name.clone()).unwrap_or_default();
+
+                // 1. Live Categories
+                let c1 = client.clone();
+                let t1 = tx.clone();
+                let cat_favs = app.config.favorites.categories.clone();
+                let account_name_live = account_name.clone();
+                tokio::spawn(async move {
+                    match c1.get_live_categories().await {
+                        Ok(mut cats) => {
+                            preprocessing::preprocess_categories(&mut cats, &cat_favs, pm, true, false, &account_name_live);
+                            let _ = t1.send(AsyncAction::CategoriesLoaded(cats)).await;
+                        }
+                        Err(e) => { let _ = t1.send(AsyncAction::Error(format!("Live Categories Error: {}", e))).await; }
+                    }
+                });
+
+                // 2. VOD Categories
+                let c_vod = client.clone();
+                let t_vod = tx.clone();
+                let vod_cat_favs = app.config.favorites.vod_categories.clone();
+                let account_name_vod_c = account_name.clone();
+                tokio::spawn(async move {
+                    match c_vod.get_vod_categories().await {
+                        Ok(mut cats) => {
+                            preprocessing::preprocess_categories(&mut cats, &vod_cat_favs, pm, false, true, &account_name_vod_c);
+                            let _ = t_vod.send(AsyncAction::VodCategoriesLoaded(cats)).await;
+                        }
+                        Err(e) => { let _ = t_vod.send(AsyncAction::Error(format!("VOD Categories Error: {}", e))).await; }
+                    }
+                });
+
+                // 3. Series Categories
+                let c5 = client.clone();
+                let t5 = tx.clone();
+                let series_cat_favs = app.config.favorites.categories.clone(); 
+                let account_name_ser_c = account_name.clone();
+                tokio::spawn(async move {
+                    match c5.get_series_categories().await {
+                        Ok(mut cats) => {
+                            preprocessing::preprocess_categories(&mut cats, &series_cat_favs, pm, false, false, &account_name_ser_c);
+                            let _ = t5.send(AsyncAction::SeriesCategoriesLoaded(cats)).await;
+                        }
+                        Err(e) => { let _ = t5.send(AsyncAction::Error(format!("Series Category Error: {}", e))).await; }
+                    }
+                });
+
+                // 4. Background Full Scans (Delayed)
+                let c2 = client.clone();
+                let t2 = tx.clone();
+                let stream_favs = app.config.favorites.streams.clone();
+                let account_name_live_s_c = account_name.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    if let Ok(mut streams) = c2.get_live_streams("ALL").await {
+                        preprocessing::preprocess_streams(&mut streams, &stream_favs, pm, true, &account_name_live_s_c);
+                        let _ = t2.send(AsyncAction::TotalChannelsLoaded(streams)).await;
+                    }
+                });
+
+                let c4 = client.clone();
+                let t4 = tx.clone();
+                let vod_favs = app.config.favorites.vod_streams.clone();
+                let account_name_vod_s_c = account_name.clone();
+                tokio::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
+                    if let Ok(mut streams) = c4.get_vod_streams_all().await {
+                        preprocessing::preprocess_streams(&mut streams, &vod_favs, pm, false, &account_name_vod_s_c);
+                        let _ = t4.send(AsyncAction::TotalMoviesLoaded(streams)).await;
+                    }
+                });
             }
         }
         AsyncAction::SeriesInfoLoaded(info) => {
@@ -311,7 +392,7 @@ pub async fn handle_async_action(
                     if let serde_json::Value::Array(ep_array) = season_episodes {
                         for ep_val in ep_array {
                             if let Ok(mut episode) = serde_json::from_value::<SeriesEpisode>(ep_val.clone()) {
-                                if app.config.american_mode {
+                                if app.config.playlist_mode.is_merica_variant() {
                                     if let Some(ref title) = episode.title {
                                         episode.title = Some(parser::clean_american_name(title));
                                     }
@@ -346,6 +427,17 @@ pub async fn handle_async_action(
             app.streams.iter_mut().for_each(update_stream);
             app.global_all_streams.iter_mut().for_each(update_stream);
             app.all_streams.iter_mut().for_each(update_stream);
+        }
+        AsyncAction::StreamHealthLoaded(stream_id, latency) => {
+            let update_health = |s: &mut Stream| {
+                if get_id_str(&s.stream_id) == stream_id {
+                    s.latency_ms = Some(latency);
+                }
+            };
+            app.streams.iter_mut().for_each(&update_health);
+            app.global_all_streams.iter_mut().for_each(&update_health);
+            app.all_streams.iter_mut().for_each(&update_health);
+            app.global_search_results.iter_mut().for_each(&update_health);
         }
         AsyncAction::Error(e) => {
             app.login_error = Some(e);

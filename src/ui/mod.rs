@@ -46,7 +46,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         CurrentScreen::ContentTypeSelection => {
             popups::render_content_type_selection(f, app, area);
         }
-        CurrentScreen::Play => {
+        CurrentScreen::Play | CurrentScreen::GlobalSearch => {
             // Placeholder or actual play info screen
             render_main_layout(f, app, area);
         }
@@ -126,6 +126,9 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
         }
         CurrentScreen::Settings | CurrentScreen::TimezoneSettings => {
             form::render_settings(f, app, content_area);
+        }
+        CurrentScreen::GlobalSearch => {
+            panes::render_global_search_pane(f, app, content_area);
         }
         _ => {}
     }

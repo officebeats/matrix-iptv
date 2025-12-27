@@ -28,9 +28,12 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         spans.push(Span::styled(" Esc ", key_style));
         spans.push(Span::styled("Stop Editing", label_style));
     } else {
+        // Global Search Value Prop (Gold)
+        spans.push(Span::styled(" Alt+Space ", Style::default().fg(ratatui::style::Color::Yellow).add_modifier(Modifier::BOLD)));
+        spans.push(Span::styled("Global Search  ", Style::default().fg(ratatui::style::Color::Yellow)));
+
         spans.push(Span::styled(" f ", key_style));
-        spans.push(Span::styled("Search", label_style));
-        spans.push(Span::styled("  ", Style::default()));
+        spans.push(Span::styled("Search ", label_style));
         
         spans.push(Span::styled(" h ", key_style));
         spans.push(Span::styled("Help", label_style));
@@ -54,15 +57,38 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(left_p, area);
 
     // MODE Indicator (Bottom Right)
-    if app.config.american_mode {
-        let mode_spans = vec![
+    let playlist_mode = app.config.playlist_mode;
+    if playlist_mode != crate::config::PlaylistMode::Default {
+        let mut mode_spans = vec![
             Span::styled(" MODE: ", Style::default().fg(DARK_GREEN)),
-            Span::styled("(", Style::default().fg(DARK_GREEN)),
-            Span::styled("u", Style::default().fg(ratatui::style::Color::Rgb(255, 50, 50)).add_modifier(Modifier::BOLD)),
-            Span::styled("s", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
-            Span::styled("a", Style::default().fg(ratatui::style::Color::LightBlue).add_modifier(Modifier::BOLD)),
-            Span::styled(") ", Style::default().fg(DARK_GREEN)),
         ];
+
+        match playlist_mode {
+            crate::config::PlaylistMode::Merica => {
+                let gold_style = Style::default().fg(ratatui::style::Color::Yellow).add_modifier(Modifier::BOLD);
+                mode_spans.extend(vec![
+                    Span::styled("'", gold_style),
+                    Span::styled("m", Style::default().fg(ratatui::style::Color::Rgb(255, 50, 50)).add_modifier(Modifier::BOLD)),
+                    Span::styled("e", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
+                    Span::styled("r", Style::default().fg(ratatui::style::Color::LightBlue).add_modifier(Modifier::BOLD)),
+                    Span::styled("i", gold_style),
+                    Span::styled("c", gold_style),
+                    Span::styled("a", gold_style),
+                ]);
+            }
+            crate::config::PlaylistMode::Sports => {
+                mode_spans.push(Span::styled("[SPORTS]", Style::default().fg(ratatui::style::Color::Yellow).add_modifier(Modifier::BOLD)));
+            }
+            crate::config::PlaylistMode::AllEnglish => {
+                mode_spans.push(Span::styled("[ALL_ENGLISH]", Style::default().fg(ratatui::style::Color::LightBlue).add_modifier(Modifier::BOLD)));
+            }
+            crate::config::PlaylistMode::SportsMerica => {
+                mode_spans.push(Span::styled("[USA SPORTS]", Style::default().fg(ratatui::style::Color::Rgb(255, 215, 0)).add_modifier(Modifier::BOLD)));
+            }
+            _ => {}
+        }
+        
+        mode_spans.push(Span::styled(" ", Style::default()));
         
         let right_p = Paragraph::new(Line::from(mode_spans))
             .alignment(Alignment::Right);

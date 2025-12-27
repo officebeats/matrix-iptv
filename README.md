@@ -77,46 +77,45 @@ matrix-iptv
 
 ## ✨ Features
 
-- **USA Mode**: Strictly optimized for **Strong 8K**, **Mega OTT**, and **TRex**. Hides international clutter and cleans channel names instantly.
+- **🛡️ Playlist Modes**:
+  - **'Merica Mode**: Filters for US/UK/Canada content, removes international clutter from **Strong 8K**, **Mega OTT**, & **TRex**. Renames "Football" to "Soccer".
+  - **Sports Mode**: Prioritizes live sports events and adds league icons (NBA, NFL, MLB, NHL) for rapid identification.
 - **⚡ Instant Response**: Built in Rust for maximum performance. Navigate tens of thousands of channels with zero lag.
 - **📡 Xtream API Native**: Strictly optimized for **Xtream API** providers (support for M3U is not planned at this time).
-- **🏟️ Sports & Live Focused**: Layout and performance tuned specifically for the most demanding live events.
-- **📁 "All" Content Navigation**: Browse everything at once with "All Channels" and "All Movies" views.
-- **🎬 Full Series Support**: Dedicated multi-column view for Series, Seasons, and Episodes.
-- **📟 Infinite Screensaver**: High-performance Matrix rain screensaver (find it in Settings).
-- **📡 Secure**: Uses Private DNS-over-HTTPS (DoH) for connecting to your provider.
-- **📽️ Headless Playback**: Integrated borderless fullscreen mode for a cinematic experience without window distractions.
+- **🔎 Global Search**: Press **`Alt`+`Space`** (or `/`) to search across Live TV, Movies, and Series content instantly.
+- **📁 Unified Navigation**: "All" views for Channels, Movies, and Series allow for rapid browsing without digging into categories.
+- **🎬 Full Series Support**: dedicated browsing for TV Shows with Season/Episode hierarchy and tracking.
+- **🎞️ VOD Experience**: Browse movies with rich metadata and instant playback.
+- **📟 Matrix Rain Screensaver**: A high-performance, authentic digital rain screensaver that activates when idle.
+- **🔒 Secure**: Uses Private DNS-over-HTTPS (DoH) for secure provider connection.
+- **👁️ Headless Playback**: Integrated borderless fullscreen mode for a cinematic experience.
 
 ---
 
-## 🏎️ Optimized Providers
+## 🛡️ Playlist Modes
 
-> **⚠️ Disclaimer:** This is an experimental feature strictly targeting the top 3 most widely available playlists on platforms like **z2u** and **g2g**. Please do not request support or additions for other playlists at this time.
+Matrix IPTV CLI features advanced preprocessing engines called **Playlist Modes**. These filters run _before_ content reaches your screen to optimize the experience.
 
-> **💻 OS Compatibility:** Development and testing are done primarily on **Windows**. Mac and Linux variants are provided as-is and may contain platform-specific bugs. If you encounter an issue, please report it with **screenshots and a detailed description** so I can "vibe code" a fix. As a Product Manager, I rely on clear visual and descriptive data to troubleshoot!
+#### **'Merica Mode 🇺🇸**
 
-Matrix IPTV CLI is refined for high-density, high-quality playlists, including:
+Strictly optimized for **Strong 8K**, **Mega OTT**, and **TRex IPTV** playlists.
 
-- **Strong 8K**: Custom filtering logic to remove international clutter (AR|, etc.) and maximize US sports visibility.
-- **Mega OTT**: Optimized category parsing and rapid metadata loading.
-- **TRex IPTV**: Enhanced sport category prioritization and fast channel tuning.
+- **Geo-Filtering**: Hides international categories (AR, FR, DE, etc.) to focus on English-speaking content.
+- **Name Cleaning**: Intelligent renaming (e.g., removes `US |`, `USA |`, `FHD`) for cleaner lists.
+- **Sports Renaming**: Renames "American Football" to "Football" and "Football" to "Soccer".
 
----
+#### **Sports Mode 🏟️**
 
-## USA Mode
+Designed for the game day power user.
 
-The **USA Mode** is a powerful filtering and cleaning engine strictly optimized for **Strong 8K**, **Mega OTT**, and **TRex IPTV** playlists.
+- **League Icons**: Automatically detects and prefixes league names with icons (🏀 NBA, 🏈 NFL, ⚾ MLB, 🏒 NHL).
+- **Category Sorting**: Hoists sports categories to the top of the list for quick access.
 
-#### **How to use:**
+To change modes:
 
-1. Press the **`x`** key to open **Settings**.
-2. Navigate to **USA Mode**.
-3. Press **`Enter`** to toggle it On/Off.
-4. Press **`Esc`** to return and apply the filtering instantly.
-
-- **Strict Geo-Filtering**: Automatically hides international categories (UK, AR, etc.) in these optimized playlists to keep your list clean.
-- **Clean Channel Names**: Removes redundant tags like `US |`, `USA |`, and `FHD |` from channel names, leaving you with just the name of the network.
-- **Smart Filtering**: Prioritizes American sports and local networks (NFL, NBA, ESPN) for an effortless viewing experience.
+1. Press **`m`** (or Go to Settings > Playlist Mode).
+2. Select your desired mode.
+3. Press **`Enter`**. The app will reload your playlist with the new optimizations.
 
 ---
 
@@ -125,25 +124,27 @@ The **USA Mode** is a powerful filtering and cleaning engine strictly optimized 
 We leverage advanced **MPV** flags to ensure professional-level video quality even on lower-end hardware:
 
 - **Headless Fullscreen**: Launches directly into borderless fullscreen (`--no-border`, `--fs`) for a professional, TV-like experience.
-- **Advanced Anti-Aliasing**: Uses `spline36` scaling, providing superior edge smoothing and diagonal line clarity on any machine.
-- **Oversample Upscaling**: High-quality temporal upscaling that sharpens images while reducing movement flickering (Temporal AA).
-- **Motion Smoothing**: High-performance `display-resample` interpolation for fluid sports playback at native refresh rates.
-- **Hardware Acceleration**: Automatic `hwdec=auto-safe` with modern Windows `d3d11-flip` presentation for zero-copy GPU decoding.
-- **Anti-Ringing Filter**: Eliminates halos around sharp edges and logos for a cleaner, high-end look.
+- **Advanced Anti-Aliasing**: Uses `spline36` scaling, providing superior edge smoothing.
+- **Oversample Upscaling**: High-quality temporal upscaling that sharpens images.
+- **Motion Smoothing**: High-performance `display-resample` interpolation for fluid sports playback.
+- **Hardware Acceleration**: Automatic `hwdec=auto-safe` with modern Windows `d3d11-flip` presentation.
 
 ---
 
 ## ⌨️ Common Controls
 
-| Key                     | Action                                                     |
-| :---------------------- | :--------------------------------------------------------- |
-| **`Enter`**             | **Play Channel / Select Category**                         |
-| **`Esc` / `Backspace`** | **Go Back**                                                |
-| **`/`**                 | **Search** (Filters results instantly)                     |
-| **`j` / `↓`**           | Move Down                                                  |
-| **`k` / `↑`**           | Move Up                                                    |
-| **`x`**                 | **Settings** (Update your playlist or turn on Screensaver) |
-| **`q`**                 | **Quit**                                                   |
+| Key                     | Action                                |
+| :---------------------- | :------------------------------------ |
+| **`Enter`**             | **Play Channel / Select / Confirm**   |
+| **`Esc` / `Backspace`** | **Go Back / Cancel**                  |
+| **`/`**                 | **Search** (Filters current view)     |
+| **`Alt` + `Space`**     | **Global Search** (Search everything) |
+| **`j` / `↓`**           | Move Down                             |
+| **`k` / `↑`**           | Move Up                               |
+| **`m`**                 | **Playlist Mode** (Quick Switch)      |
+| **`x`**                 | **Settings**                          |
+| **`r`**                 | **Refresh Playlist**                  |
+| **`q`**                 | **Quit**                              |
 
 ---
 

@@ -57,8 +57,8 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD),
     )];
     
-    if app.config.american_mode {
-        spans.push(Span::styled(" \u{1f1fa}\u{1f1f8} ", Style::default().add_modifier(Modifier::BOLD)));
+    if app.config.playlist_mode.is_merica_variant() {
+        spans.push(Span::styled(" [MODE: 'MERICA] ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
     }
 
     spans.push(separator.clone());
@@ -97,7 +97,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         };
 
         let exp_formatted = if let Ok(ts) = exp.parse::<i64>() {
-             Utc.timestamp_opt(ts, 0).single().map(|dt| dt.format("%m/%d/%Y").to_string()).unwrap_or(exp)
+             Utc.timestamp_opt(ts, 0).single().map(|dt| dt.format("%b %d, %Y").to_string()).unwrap_or(exp)
         } else {
             exp
         };

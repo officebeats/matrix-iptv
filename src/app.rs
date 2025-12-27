@@ -24,6 +24,7 @@ pub enum AsyncAction {
     TotalSeriesLoaded(Vec<Stream>),
     PlaylistRefreshed(Option<UserInfo>, Option<ServerInfo>),
     EpgLoaded(String, String), // stream_id, program_title
+    StreamHealthLoaded(String, u64), // stream_id, latency_ms
     Error(String),
 }
 
@@ -41,6 +42,7 @@ pub enum CurrentScreen {
     TimezoneSettings, // Edit Timezone
     Play,             // (Optional) Info screen before playing
     ContentTypeSelection, // New intermediate screen
+    GlobalSearch,         // Ctrl+P Global Search across all content
 }
 
 #[derive(PartialEq, Debug)]
@@ -145,6 +147,7 @@ pub struct App {
     pub global_all_series_streams: Vec<Stream>,
 
     // Settings
+    pub playlist_mode_list_state: ListState,
     pub settings_options: Vec<String>,
     pub settings_descriptions: Vec<String>,
     pub selected_settings_index: usize,
@@ -219,6 +222,10 @@ pub struct App {
     pub focus_timestamp: Option<std::time::Instant>,
     #[cfg(target_arch = "wasm32")]
     pub focus_timestamp: Option<f64>,
+
+    // Global Search
+    pub global_search_results: Vec<Stream>,
+    pub global_search_list_state: ListState,
 }
 
 #[derive(Clone)]
@@ -236,6 +243,7 @@ pub enum SettingsState {
     ManageAccounts,
     DnsSelection,
     VideoModeSelection,
+    PlaylistModeSelection,
     About,
 }
 
@@ -329,6 +337,9 @@ impl App {
             global_all_vod_streams: vec![],
             global_all_series_streams: vec![],
 
+            global_search_results: vec![],
+            global_search_list_state: ListState::default(),
+
             settings_options: vec![],
             settings_descriptions: vec![],
             selected_settings_index: 0,
@@ -387,6 +398,7 @@ impl App {
             show_welcome_popup: false,
             matrix_rain_columns: vec![],
             matrix_rain_logo_hits: vec![false; 101 * 6], // 101 wide x 6 high logo
+            playlist_mode_list_state: ListState::default(),
         };
 
         app.refresh_settings_options();
@@ -402,11 +414,7 @@ impl App {
             ),
             format!(
                 "Playlist Mode: {}",
-                if self.config.american_mode {
-                    "American 'Merica Mode 🇺🇸"
-                } else {
-                    "Default"
-                }
+                self.config.playlist_mode.display_name()
             ),
             format!(
                 "DNS Provider: {}",
@@ -428,7 +436,7 @@ impl App {
         self.settings_descriptions = vec![
             "Add, edit, or remove IPTV playlist connections.".to_string(),
             "Set your local timezone for accurate program scheduling.".to_string(),
-            "American 'Merica Mode: Optimizes display for US sports fans. Shows US flag for American channels, prioritizes NFL/NBA/MLB content parsing, and filters international noise. Default mode shows all content as-is.".to_string(),
+            "Playlist Mode: Change how playlists are processed and displayed. e.g. 'merica mode for US sports, Sports mode for global athletics, etc.".to_string(),
             "Choose DNS provider for network requests. Quad9 recommended for privacy.".to_string(),
             "Enhanced = Interpolation, upscaling, and soap opera effect for smoother video. MPV Default = Standard MPV settings with no enhancements.".to_string(),
             "Launch the iconic Matrix digital rain animation.".to_string(),
@@ -620,23 +628,41 @@ impl App {
         );
     }
 
+    pub fn next_global_search_result(&mut self) {
+        Self::navigate_list(
+            self.global_search_results.len(),
+            &mut self.selected_stream_index,
+            &mut self.global_search_list_state,
+            true,
+        );
+    }
+
+    pub fn previous_global_search_result(&mut self) {
+        Self::navigate_list(
+            self.global_search_results.len(),
+            &mut self.selected_stream_index,
+            &mut self.global_search_list_state,
+            false,
+        );
+    }
+
     pub fn update_search(&mut self) {
         let query = self.search_query.to_lowercase();
 
         match self.current_screen {
             CurrentScreen::Categories | CurrentScreen::Streams => {
-                let american_mode = self.config.american_mode;
+                let is_merica = self.config.playlist_mode.is_merica_variant();
                 match self.active_pane {
                     Pane::Categories => {
                         self.categories = self
                             .all_categories
                             .iter()
                             .filter(|c| {
-                                c.search_name.contains(&query) && (!american_mode || c.is_american)
+                                c.search_name.contains(&query) && (!is_merica || c.is_american)
                             })
                             .map(|c| {
                                 let mut c_mod = c.clone();
-                                if american_mode {
+                                if is_merica {
                                     c_mod.category_name = c_mod.clean_name.clone();
                                 }
                                 c_mod
@@ -655,11 +681,11 @@ impl App {
                             .all_streams
                             .iter()
                             .filter(|s| {
-                                s.search_name.contains(&query) && (!american_mode || s.is_american)
+                                s.search_name.contains(&query) && (!is_merica || s.is_american)
                             })
                             .map(|s| {
                                 let mut s_mod = s.clone();
-                                if american_mode {
+                                if is_merica {
                                     s_mod.name = s_mod.clean_name.clone();
                                 }
                                 s_mod
@@ -679,18 +705,18 @@ impl App {
                 }
             }
             CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
-                let american_mode = self.config.american_mode;
+                let is_merica = self.config.playlist_mode.is_merica_variant();
                 match self.active_pane {
                     Pane::Categories => {
                         self.vod_categories = self
                             .all_vod_categories
                             .iter()
                             .filter(|c| {
-                                c.search_name.contains(&query) && (!american_mode || c.is_english)
+                                c.search_name.contains(&query) && (!is_merica || c.is_english)
                             })
                             .map(|c| {
                                 let mut c_mod = c.clone();
-                                if american_mode {
+                                if is_merica {
                                     c_mod.category_name = c_mod.clean_name.clone();
                                 }
                                 c_mod
@@ -709,11 +735,11 @@ impl App {
                             .all_vod_streams
                             .iter()
                             .filter(|s| {
-                                s.search_name.contains(&query) && (!american_mode || s.is_english)
+                                s.search_name.contains(&query) && (!is_merica || s.is_english)
                             })
                             .map(|s| {
                                 let mut s_mod = s.clone();
-                                if american_mode {
+                                if is_merica {
                                     s_mod.name = s_mod.clean_name.clone();
                                 }
                                 s_mod
@@ -733,18 +759,18 @@ impl App {
                 }
             }
             CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
-                let american_mode = self.config.american_mode;
+                let is_merica = self.config.playlist_mode.is_merica_variant();
                 match self.active_pane {
                     Pane::Categories => {
                         self.series_categories = self
                             .all_series_categories
                             .iter()
                             .filter(|c| {
-                                c.search_name.contains(&query) && (!american_mode || c.is_english)
+                                c.search_name.contains(&query) && (!is_merica || c.is_english)
                             })
                             .map(|c| {
                                 let mut c_mod = c.clone();
-                                if american_mode {
+                                if is_merica {
                                     c_mod.category_name = c_mod.clean_name.clone();
                                 }
                                 c_mod
@@ -762,11 +788,11 @@ impl App {
                             .all_series_streams
                             .iter()
                             .filter(|s| {
-                                s.search_name.contains(&query) && (!american_mode || s.is_english)
+                                s.search_name.contains(&query) && (!is_merica || s.is_english)
                             })
                             .map(|s| {
                                 let mut s_mod = s.clone();
-                                if american_mode {
+                                if is_merica {
                                     s_mod.name = s_mod.clean_name.clone();
                                 }
                                 s_mod
@@ -783,6 +809,50 @@ impl App {
                         // Filter episodes by title
                         // Note: We don't have all_series_episodes, so search is limited
                     }
+                }
+            }
+            CurrentScreen::GlobalSearch => {
+                let is_merica = self.config.playlist_mode.is_merica_variant();
+                let mut results = Vec::new();
+
+                // Search through global caches
+                for s in &self.global_all_streams {
+                    if s.search_name.to_lowercase().contains(&query) {
+                        let mut s_mod = s.clone();
+                        if is_merica { s_mod.name = s_mod.clean_name.clone(); }
+                        results.push(s_mod);
+                    }
+                    if results.len() >= 100 { break; }
+                }
+
+                if results.len() < 100 {
+                    for s in &self.global_all_vod_streams {
+                        if s.search_name.to_lowercase().contains(&query) {
+                            let mut s_mod = s.clone();
+                            if is_merica { s_mod.name = s_mod.clean_name.clone(); }
+                            results.push(s_mod);
+                        }
+                        if results.len() >= 100 { break; }
+                    }
+                }
+
+                if results.len() < 100 {
+                    for s in &self.global_all_series_streams {
+                        if s.search_name.to_lowercase().contains(&query) {
+                            let mut s_mod = s.clone();
+                            if is_merica { s_mod.name = s_mod.clean_name.clone(); }
+                            results.push(s_mod);
+                        }
+                        if results.len() >= 100 { break; }
+                    }
+                }
+
+                self.global_search_results = results;
+                self.selected_stream_index = 0;
+                if !self.global_search_results.is_empty() {
+                    self.global_search_list_state.select(Some(0));
+                } else {
+                    self.global_search_list_state.select(None);
                 }
             }
             _ => {}

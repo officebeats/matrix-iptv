@@ -137,6 +137,55 @@ async fn run_app<B: ratatui::backend::Backend>(
                 }
             }
         }
+
+        // 1.6 Debounced Stream Health Check
+        if (app.current_screen == CurrentScreen::Streams && app.active_pane == Pane::Streams && !app.streams.is_empty()) ||
+           (app.current_screen == CurrentScreen::GlobalSearch && !app.global_search_results.is_empty()) {
+            
+            let focused_stream = if app.current_screen == CurrentScreen::GlobalSearch {
+                app.global_search_results.get(app.selected_stream_index)
+            } else {
+                app.streams.get(app.selected_stream_index)
+            };
+
+            if let Some(stream) = focused_stream {
+                let focused_id = get_id_str(&stream.stream_id);
+                if stream.latency_ms.is_none() {
+                    if let Some(client) = &app.current_client {
+                        let client = client.clone();
+                        let tx = tx.clone();
+                        let fid = focused_id.clone();
+                        let ext = stream.container_extension.as_deref().unwrap_or("ts");
+                        let url = client.get_stream_url(&fid, ext);
+                        
+                        // We use a small delay to avoid spamming while scrolling
+                        if app.focus_timestamp.is_none() {
+                            app.focus_timestamp = Some(std::time::Instant::now());
+                        } else if app.focus_timestamp.unwrap().elapsed().as_millis() >= 1000 {
+                            app.focus_timestamp = None; // Reset
+                            tokio::spawn(async move {
+                                let start = std::time::Instant::now();
+                                let req_client = reqwest::Client::builder()
+                                    .timeout(std::time::Duration::from_secs(3))
+                                    .build()
+                                    .unwrap_or_default();
+                                
+                                if let Ok(resp) = req_client.head(&url).send().await {
+                                    if resp.status().is_success() {
+                                        let latency = start.elapsed().as_millis() as u64;
+                                        let _ = tx.send(AsyncAction::StreamHealthLoaded(fid, latency)).await;
+                                    } else {
+                                        let _ = tx.send(AsyncAction::StreamHealthLoaded(fid, 2000)).await;
+                                    }
+                                } else {
+                                    let _ = tx.send(AsyncAction::StreamHealthLoaded(fid, 5000)).await;
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
         
         // FTUE: Handle Matrix rain animation
         if app.show_matrix_rain {

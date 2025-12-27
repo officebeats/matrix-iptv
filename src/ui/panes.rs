@@ -92,6 +92,10 @@ pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
                      icon_span = Some(ratatui::text::Span::styled("\u{1f3ce} ", Style::default().fg(Color::Rgb(255, 100, 100)))); // Racing car (light red)
                 } else if upper_display.contains("SOCCER") || upper_display.contains("EPL") || upper_display.contains("MLS") || upper_display.contains("PREMIER") || upper_display.contains("LALIGA") || upper_display.contains("FIFA") || upper_display.contains("UEFA") {
                      icon_span = Some(ratatui::text::Span::styled("\u{26bd} ", Style::default().fg(Color::Rgb(255, 182, 193)))); // Soccer ball (light pink)
+                } else if upper_display.contains("RUGBY") || upper_display.contains("SIX NATIONS") {
+                     icon_span = Some(ratatui::text::Span::raw("\u{1f3c9} ")); // Rugby football
+                } else if upper_display.contains("EVENT") || upper_display.contains("PPV") || upper_display.contains("SHREDS") {
+                     icon_span = Some(ratatui::text::Span::raw("\u{1f3ab} ")); // Ticket
                 } else if upper_display.contains("ESPN") || upper_display.contains("DAZN") || upper_display.contains("B/R") || upper_display.contains("BALLY") || upper_display.contains("MAX SPORTS") {
                      icon_span = Some(ratatui::text::Span::raw("\u{1f4fa} ")); // TV (sports network)
                 }
@@ -104,7 +108,7 @@ pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
             if let Some(ref country) = parsed.country {
                 // In American Mode, don't show the US flag (redundant)
                 let is_us = country == "US" || country == "USA" || country == "AM";
-                if !(app.config.american_mode && is_us) {
+                if !(app.config.playlist_mode.is_merica_variant() && is_us) {
                     let flag = country_flag(country);
                     if !flag.is_empty() {
                         spans.push(ratatui::text::Span::raw(format!("{} ", flag)));
@@ -222,6 +226,10 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 league_icon_span = Some(ratatui::text::Span::styled("\u{1f3ce} ", Style::default().fg(Color::Rgb(255, 100, 100)))); // Racing car (light red)
             } else if upper_name.contains("SOCCER") || upper_name.contains("MLS") || upper_name.contains("PREMIER") || upper_name.contains("LALIGA") || upper_name.contains("FIFA") || upper_name.contains("UEFA") {
                 league_icon_span = Some(ratatui::text::Span::styled("\u{26bd} ", Style::default().fg(Color::Rgb(255, 182, 193)))); // Soccer (light pink)
+            } else if upper_name.contains("RUGBY") {
+                league_icon_span = Some(ratatui::text::Span::raw("\u{1f3c9} ")); // Rugby football
+            } else if upper_name.contains("EVENT") || upper_name.contains("PPV") {
+                league_icon_span = Some(ratatui::text::Span::raw("\u{1f3ab} ")); // Ticket
             } else if upper_name.contains("ESPN") || upper_name.contains("DAZN") || upper_name.contains("B/R") || upper_name.contains("BALLY") {
                 league_icon_span = Some(ratatui::text::Span::raw("\u{1f4fa} ")); // TV (sports network)
             }
@@ -248,7 +256,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             if let Some(ref country) = parsed.country {
                 // In American Mode, don't show the US flag (redundant)
                 let is_us = country == "US" || country == "USA" || country == "AM";
-                if !(app.config.american_mode && is_us) {
+                if !(app.config.playlist_mode.is_merica_variant() && is_us) {
                     let flag = country_flag(country);
                     if !flag.is_empty() {
                         spans.push(ratatui::text::Span::raw(format!("{} ", flag)));
@@ -296,6 +304,9 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 spans.push(ratatui::text::Span::styled(format!("({})", loc), Style::default().fg(Color::LightBlue)));
             }
 
+            // 8. Network Health (Latency)
+            spans.push(latency_to_bars(s.latency_ms));
+
             ListItem::new(Line::from(spans))
         })
         .collect();
@@ -323,4 +334,114 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
     }
 
     f.render_stateful_widget(list, area, &mut adjusted_state);
+}
+
+pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
+    let visible_height = area.height.saturating_sub(2) as usize;
+    let total = app.global_search_results.len();
+    let selected = app.selected_stream_index;
+
+    let half_window = visible_height / 2;
+    let start = if selected > half_window {
+        selected - half_window
+    } else {
+        0
+    };
+    let end = (start + visible_height + half_window).min(total);
+    let adjusted_start = if end == total && end > visible_height + half_window {
+        end.saturating_sub(visible_height + half_window)
+    } else {
+        start
+    };
+
+    let user_tz_str = app.config.get_user_timezone();
+    let user_tz: Tz = user_tz_str.parse().unwrap_or(chrono_tz::UTC);
+
+    let items: Vec<ListItem> = app
+        .global_search_results
+        .iter()
+        .enumerate()
+        .skip(adjusted_start)
+        .take(end - adjusted_start)
+        .map(|(_, s)| {
+            let parsed = parse_stream(&s.name, app.provider_timezone.as_deref());
+            let mut spans = vec![];
+            
+            // Type indicator (Live/VOD/Series)
+            let type_str = match s.stream_type.as_str() {
+                "movie" => " [VOD] ",
+                "series" => " [SERIES] ",
+                _ => " [LIVE] ",
+            };
+            let type_color = match s.stream_type.as_str() {
+                "movie" => Color::LightMagenta,
+                "series" => Color::LightCyan,
+                _ => Color::LightGreen,
+            };
+            spans.push(ratatui::text::Span::styled(type_str, Style::default().fg(type_color).add_modifier(Modifier::BOLD)));
+
+            // Name
+            let (styled_name, _) = stylize_channel_name(
+                &parsed.display_name,
+                false,
+                false,
+                parsed.quality,
+                None,
+                parsed.sports_event.as_ref(),
+                Style::default().fg(Color::White),
+            );
+            spans.extend(styled_name);
+
+            // Time Reference (Live only)
+            if s.stream_type == "live" {
+                if let Some(st) = parsed.start_time {
+                    let time_str = format!(" {} ", format_relative_time(st, &user_tz));
+                    spans.push(ratatui::text::Span::styled(time_str, Style::default().fg(Color::Rgb(150, 150, 150))));
+                }
+            }
+
+            // Latency
+            spans.push(latency_to_bars(s.latency_ms));
+
+            // Playlist Source
+            if let Some(account) = &s.account_name {
+                spans.push(ratatui::text::Span::styled(format!(" [{}]", account), Style::default().fg(Color::DarkGray)));
+            }
+
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+
+    let title = format!(" // GLOBAL_SEARCH ({}) - Type to Filter / Enter to Play ", app.global_search_results.len());
+    let list = List::new(items)
+        .block(
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL)
+                .border_type(BorderType::Double)
+                .border_style(Style::default().fg(MATRIX_GREEN)),
+        )
+        .highlight_style(
+            Style::default()
+                .bg(MATRIX_GREEN)
+                .fg(Color::Black)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol(" » ");
+
+    let mut adjusted_state = app.global_search_list_state.clone();
+    if adjusted_start > 0 {
+        adjusted_state.select(Some(selected - adjusted_start));
+    }
+
+    f.render_stateful_widget(list, area, &mut adjusted_state);
+}
+
+fn latency_to_bars(latency: Option<u64>) -> ratatui::text::Span<'static> {
+    match latency {
+        Some(l) if l < 200 => ratatui::text::Span::styled(" [📶📶📶]", Style::default().fg(Color::Green)),
+        Some(l) if l < 600 => ratatui::text::Span::styled(" [📶📶  ]", Style::default().fg(Color::Yellow)),
+        Some(_) => ratatui::text::Span::styled(" [📶    ]", Style::default().fg(Color::Red)),
+        None => ratatui::text::Span::styled(" [      ]", Style::default().fg(Color::DarkGray)),
+    }
 }

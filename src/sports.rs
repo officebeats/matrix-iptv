@@ -329,9 +329,9 @@ pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
     // Supported separators: x, vs, @, - (if surrounded by spaces)
     // We use a non-greedy match for names and look for boundaries like "start:", "[", or end of string.
     // Regex for: [Prefix:][space] Team One (T1) [separator] Team Two (T2) [time/other info]
-    // Supported separators: x, vs, @, - (if surrounded by spaces)
-    // We use a non-greedy match for names and look for boundaries like "start:", "[", time patterns, or end of string.
-    let re = regex::Regex::new(r"(?i)(?:^|[:])\s*([^:(]+?)\s*(?:\(([^)]+?)\))?\s*(?:x|vs|@|\s-\s)\s*([^:(\[]+?)\s*(?:\(([^)]+?)\))?(?:\s+start:|\[|\s\d{1,2}:\d{2}|$)").ok()?;
+    // Supported separators: x, vs, at, @, - (if surrounded by spaces)
+    // We use explicit space requirements (\s+) for text separators to be safer than \b which failed on "Texans"
+    let re = regex::Regex::new(r"(?i)(?:^|[:])\s*([^:(]+?)\s*(?:\(([^)]+?)\))?\s*(?:(?:\s+(?:x|vs|at)\s+)|@|\s-\s)\s*([^:(\[]+?)\s*(?:\(([^)]+?)\))?(?:\s+start:|\[|\s\d{1,2}:\d{2}|$)").ok()?;
 
     if let Some(caps) = re.captures(display_name) {
         let team1 = caps.get(1)?.as_str().trim().to_string();
