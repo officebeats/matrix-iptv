@@ -83,7 +83,7 @@ matrix-iptv
 - **🏟️ Sports & Live Focused**: Layout and performance tuned specifically for the most demanding live events.
 - **📁 "All" Content Navigation**: Browse everything at once with "All Channels" and "All Movies" views.
 - **🎬 Full Series Support**: Dedicated multi-column view for Series, Seasons, and Episodes.
-- **📟 Cinematic Visuals**: Featuring a "Neo-style" Matrix Rain startup sequence where the logo materializes from falling code, plus an immersive, infinite rain screensaver.
+- **📟 Infinite Screensaver**: High-performance Matrix rain screensaver (find it in Settings).
 - **📡 Secure**: Uses Private DNS-over-HTTPS (DoH) for connecting to your provider.
 - **📽️ Headless Playback**: Integrated borderless fullscreen mode for a cinematic experience without window distractions.
 
@@ -142,9 +142,6 @@ We leverage advanced **MPV** flags to ensure professional-level video quality ev
 | **`/`**                 | **Search** (Filters results instantly)                     |
 | **`j` / `↓`**           | Move Down                                                  |
 | **`k` / `↑`**           | Move Up                                                    |
-| **`1`**                 | **Live TV** (Switch to Live Channels)                      |
-| **`2`**                 | **Movies** (Switch to VOD)                                 |
-| **`3`**                 | **Series** (Switch to Series)                              |
 | **`x`**                 | **Settings** (Update your playlist or turn on Screensaver) |
 | **`q`**                 | **Quit**                                                   |
 
