@@ -51,10 +51,23 @@ pub async fn handle_async_action(
 
             app.state_loading = true;
 
-            let ts_now = chrono::Utc::now().timestamp();
-            if let Some(account) = app.config.accounts.get_mut(app.selected_account_index) {
-                account.last_refreshed = Some(ts_now);
-                let _ = app.config.save();
+            // Determine if we need a full refresh based on auto_refresh_hours config
+            let should_full_refresh = {
+                let last = app.config.accounts.get(app.selected_account_index)
+                    .and_then(|a| a.last_refreshed).unwrap_or(0);
+                let now = chrono::Utc::now().timestamp();
+                let threshold_hours = app.config.auto_refresh_hours as i64;
+                // Refresh if: threshold is 0 (always), no last_refreshed, or stale
+                threshold_hours == 0 || last == 0 || (now - last) > (threshold_hours * 3600)
+            };
+
+            // Update last_refreshed timestamp only if we're doing a full refresh
+            if should_full_refresh {
+                let ts_now = chrono::Utc::now().timestamp();
+                if let Some(account) = app.config.accounts.get_mut(app.selected_account_index) {
+                    account.last_refreshed = Some(ts_now);
+                    let _ = app.config.save();
+                }
             }
 
             if let Some(client) = &app.current_client {
@@ -100,48 +113,10 @@ pub async fn handle_async_action(
                     }
                 });
 
-                // Background Counts (Live) - Delayed to prioritize categories
-                let c2 = client.clone();
-                let t2 = tx.clone();
-                let stream_favs = app.config.favorites.streams.clone();
-                let account_name_live_s_c = account_name.clone();
-                let pms2 = pms.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                    match c2.get_live_streams("ALL").await {
-                        Ok(mut streams) => {
-                            preprocessing::preprocess_streams(&mut streams, &stream_favs, &pms2, true, &account_name_live_s_c);
-                            let _ = t2.send(AsyncAction::TotalChannelsLoaded(streams)).await;
-                        }
-                        Err(e) => {
-                            let _ = t2.send(AsyncAction::LoadingMessage(format!("Scan Warning: {}", e))).await;
-                        }
-                    }
-                });
-
-                // VOD Full Scan - Delayed even more
-                let c4 = client.clone();
-                let t4 = tx.clone();
-                let vod_favs = app.config.favorites.vod_streams.clone();
-                let account_name_vod_s_c = account_name.clone();
-                let pms4 = pms.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
-                    match c4.get_vod_streams_all().await {
-                        Ok(mut streams) => {
-                            preprocessing::preprocess_streams(&mut streams, &vod_favs, &pms4, false, &account_name_vod_s_c);
-                            let _ = t4.send(AsyncAction::TotalMoviesLoaded(streams)).await;
-                        }
-                        Err(e) => {
-                            let _ = t4.send(AsyncAction::LoadingMessage(format!("Scan Warning: {}", e))).await;
-                        }
-                    }
-                });
-
-                // Series Categories
+                // Series Categories (always fetch - small payload)
                 let c5 = client.clone();
                 let t5 = tx.clone();
-                let series_cat_favs = app.config.favorites.categories.clone(); 
+                let series_cat_favs = app.config.favorites.categories.clone();
                 let account_name_ser_c = account_name.clone();
                 let pms5 = pms.clone();
                 tokio::spawn(async move {
@@ -151,29 +126,69 @@ pub async fn handle_async_action(
                             let _ = t5.send(AsyncAction::SeriesCategoriesLoaded(cats)).await;
                         }
                         Err(e) => {
-                            let _ = t5.send(AsyncAction::Error(format!("Background Series Category Error: {}", e))).await;
+                            let _ = t5.send(AsyncAction::Error(format!("Series Categories Error: {}", e))).await;
                         }
                     }
                 });
 
-                // Series Full Scan - Delayed even more
-                let c_series = client.clone();
-                let t_series = tx.clone();
-                let series_favs = app.config.favorites.vod_streams.clone(); 
-                let account_name_ser_s_c = account_name.clone();
-                let pms_ser = pms.clone();
-                tokio::spawn(async move {
-                    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
-                    match c_series.get_series_all().await {
-                        Ok(mut series) => {
-                            preprocessing::preprocess_streams(&mut series, &series_favs, &pms_ser, false, &account_name_ser_s_c);
-                            let _ = t_series.send(AsyncAction::TotalSeriesLoaded(series)).await;
+                // Background Full Scans - Only run if data is stale
+                if should_full_refresh {
+                    let c2 = client.clone();
+                    let t2 = tx.clone();
+                    let stream_favs = app.config.favorites.streams.clone();
+                    let account_name_live_s_c = account_name.clone();
+                    let pms2 = pms.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        match c2.get_live_streams("ALL").await {
+                            Ok(mut streams) => {
+                                preprocessing::preprocess_streams(&mut streams, &stream_favs, &pms2, true, &account_name_live_s_c);
+                                let _ = t2.send(AsyncAction::TotalChannelsLoaded(streams)).await;
+                            }
+                            Err(e) => {
+                                let _ = t2.send(AsyncAction::LoadingMessage(format!("Scan Warning: {}", e))).await;
+                            }
                         }
-                        Err(e) => {
-                            let _ = t_series.send(AsyncAction::LoadingMessage(format!("Scan Warning: {}", e))).await;
+                    });
+
+                    // VOD Full Scan - Delayed even more
+                    let c4 = client.clone();
+                    let t4 = tx.clone();
+                    let vod_favs = app.config.favorites.vod_streams.clone();
+                    let account_name_vod_s_c = account_name.clone();
+                    let pms4 = pms.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+                        match c4.get_vod_streams_all().await {
+                            Ok(mut streams) => {
+                                preprocessing::preprocess_streams(&mut streams, &vod_favs, &pms4, false, &account_name_vod_s_c);
+                                let _ = t4.send(AsyncAction::TotalMoviesLoaded(streams)).await;
+                            }
+                            Err(e) => {
+                                let _ = t4.send(AsyncAction::LoadingMessage(format!("Scan Warning: {}", e))).await;
+                            }
                         }
-                    }
-                });
+                    });
+
+                    // Series Full Scan - Delayed even more
+                    let c_series = client.clone();
+                    let t_series = tx.clone();
+                    let series_favs = app.config.favorites.vod_streams.clone(); 
+                    let account_name_ser_s_c = account_name.clone();
+                    let pms_ser = pms.clone();
+                    tokio::spawn(async move {
+                        tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+                        match c_series.get_series_all().await {
+                            Ok(mut series) => {
+                                preprocessing::preprocess_streams(&mut series, &series_favs, &pms_ser, false, &account_name_ser_s_c);
+                                let _ = t_series.send(AsyncAction::TotalSeriesLoaded(series)).await;
+                            }
+                            Err(e) => {
+                                let _ = t_series.send(AsyncAction::LoadingMessage(format!("Scan Warning: {}", e))).await;
+                            }
+                        }
+                    });
+                }
             }
         }
         AsyncAction::LoginFailed(e) => {

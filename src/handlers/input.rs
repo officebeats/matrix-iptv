@@ -357,6 +357,24 @@ pub async fn handle_key_event(
                     app.current_screen = CurrentScreen::Home;
                     app.current_client = None; 
                 }
+                KeyCode::Char('R') => {
+                    // Manual refresh - force full playlist rescan
+                    if let Some(client) = &app.current_client {
+                        app.loading_message = Some("Refreshing playlist...".to_string());
+                        let client = client.clone();
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            match client.authenticate().await {
+                                Ok((_, ui, si)) => {
+                                    let _ = tx.send(AsyncAction::PlaylistRefreshed(ui, si)).await;
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(AsyncAction::Error(format!("Refresh failed: {}", e))).await;
+                                }
+                            }
+                        });
+                    }
+                }
                 _ => {}
             }
         }
@@ -763,6 +781,25 @@ pub async fn handle_key_event(
                         }
                     }
                     KeyCode::Char('x') => { app.current_screen = CurrentScreen::Settings }
+                    KeyCode::Char('g') => {
+                        // Add to group - open group picker
+                        if app.active_pane == Pane::Streams && !app.streams.is_empty() {
+                            let stream = &app.streams[app.selected_stream_index];
+                            let stream_id = get_id_str(&stream.stream_id);
+                            app.pending_stream_for_group = Some(stream_id);
+                            app.selected_group_index = 0;
+                            app.group_list_state.select(Some(0));
+                            app.previous_screen = Some(app.current_screen.clone());
+                            app.current_screen = CurrentScreen::GroupPicker;
+                        }
+                    }
+                    KeyCode::Char('G') => {
+                        // Open group management
+                        app.previous_screen = Some(app.current_screen.clone());
+                        app.selected_group_index = 0;
+                        app.group_list_state.select(if app.config.favorites.groups.is_empty() { None } else { Some(0) });
+                        app.current_screen = CurrentScreen::GroupManagement;
+                    }
                     _ => {}
                 }
             }
@@ -1185,13 +1222,27 @@ pub async fn handle_key_event(
                                 app.video_mode_list_state.select(Some(idx));
                             }
                             5 => { 
+                                // Open Auto-Refresh selection
+                                app.settings_state = SettingsState::AutoRefreshSelection;
+                                // Options: 0=Off, 1=6h, 2=12h, 3=24h, 4=48h
+                                let idx = match app.config.auto_refresh_hours {
+                                    0 => 0,
+                                    6 => 1,
+                                    12 => 2,
+                                    24 => 3,
+                                    48 => 4,
+                                    _ => 2, // Default to 12h
+                                };
+                                app.auto_refresh_list_state.select(Some(idx));
+                            }
+                            6 => { 
                                 // Enable Matrix Rain Screensaver
                                 app.show_matrix_rain = true;
                                 app.matrix_rain_screensaver_mode = true;
                                 app.matrix_rain_start_time = None;
                                 app.matrix_rain_columns.clear();
                             }
-                            6 => { app.settings_state = SettingsState::About; }
+                            7 => { app.settings_state = SettingsState::About; }
                             _ => {}
                         }
                     }
@@ -1365,6 +1416,37 @@ pub async fn handle_key_event(
                     }
                     _ => {}
                 }
+                SettingsState::AutoRefreshSelection => match key.code {
+                    KeyCode::Esc | KeyCode::Backspace => { app.settings_state = SettingsState::Main; }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        if let Some(idx) = app.auto_refresh_list_state.selected() {
+                            let new_idx = if idx == 0 { 4 } else { idx - 1 };
+                            app.auto_refresh_list_state.select(Some(new_idx));
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if let Some(idx) = app.auto_refresh_list_state.selected() {
+                            let new_idx = if idx >= 4 { 0 } else { idx + 1 };
+                            app.auto_refresh_list_state.select(Some(new_idx));
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if let Some(idx) = app.auto_refresh_list_state.selected() {
+                            app.config.auto_refresh_hours = match idx {
+                                0 => 0,
+                                1 => 6,
+                                2 => 12,
+                                3 => 24,
+                                4 => 48,
+                                _ => 12,
+                            };
+                            let _ = app.config.save();
+                        }
+                        app.settings_state = SettingsState::Main;
+                        app.refresh_settings_options();
+                    }
+                    _ => {}
+                }
             }
         }
         CurrentScreen::TimezoneSettings => {
@@ -1389,6 +1471,88 @@ pub async fn handle_key_event(
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
                     app.next_timezone();
+                }
+                _ => {}
+            }
+        }
+        CurrentScreen::GroupManagement => {
+            match key.code {
+                KeyCode::Esc | KeyCode::Backspace => {
+                    app.current_screen = app.previous_screen.take().unwrap_or(CurrentScreen::ContentTypeSelection);
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if !app.config.favorites.groups.is_empty() && app.selected_group_index > 0 {
+                        app.selected_group_index -= 1;
+                        app.group_list_state.select(Some(app.selected_group_index));
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if !app.config.favorites.groups.is_empty() && app.selected_group_index < app.config.favorites.groups.len() - 1 {
+                        app.selected_group_index += 1;
+                        app.group_list_state.select(Some(app.selected_group_index));
+                    }
+                }
+                KeyCode::Char('n') => {
+                    // Create new group with default name
+                    let new_name = format!("Group {}", app.config.favorites.groups.len() + 1);
+                    app.config.create_group(new_name, Some("📁".to_string()));
+                    app.selected_group_index = app.config.favorites.groups.len().saturating_sub(1);
+                    app.group_list_state.select(Some(app.selected_group_index));
+                }
+                KeyCode::Char('d') | KeyCode::Delete => {
+                    // Delete selected group
+                    if !app.config.favorites.groups.is_empty() {
+                        app.config.delete_group(app.selected_group_index);
+                        if app.selected_group_index > 0 && app.selected_group_index >= app.config.favorites.groups.len() {
+                            app.selected_group_index = app.config.favorites.groups.len().saturating_sub(1);
+                        }
+                        app.group_list_state.select(if app.config.favorites.groups.is_empty() { None } else { Some(app.selected_group_index) });
+                    }
+                }
+                KeyCode::Enter => {
+                    // View group contents (shows as a synthetic category)
+                    if !app.config.favorites.groups.is_empty() {
+                        // For now, just go back - full group viewing can be a future enhancement
+                        app.current_screen = app.previous_screen.take().unwrap_or(CurrentScreen::ContentTypeSelection);
+                    }
+                }
+                _ => {}
+            }
+        }
+        CurrentScreen::GroupPicker => {
+            let total_options = app.config.favorites.groups.len() + 1; // +1 for "Create New"
+            match key.code {
+                KeyCode::Esc => {
+                    app.pending_stream_for_group = None;
+                    app.current_screen = app.previous_screen.take().unwrap_or(CurrentScreen::Streams);
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if app.selected_group_index > 0 {
+                        app.selected_group_index -= 1;
+                        app.group_list_state.select(Some(app.selected_group_index));
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if app.selected_group_index < total_options - 1 {
+                        app.selected_group_index += 1;
+                        app.group_list_state.select(Some(app.selected_group_index));
+                    }
+                }
+                KeyCode::Enter => {
+                    if let Some(stream_id) = app.pending_stream_for_group.take() {
+                        if app.selected_group_index < app.config.favorites.groups.len() {
+                            // Add to existing group
+                            app.config.add_to_group(app.selected_group_index, stream_id);
+                            app.loading_message = Some(format!("Added to {}", app.config.favorites.groups[app.selected_group_index].name));
+                        } else {
+                            // Create new group and add
+                            let new_name = format!("Group {}", app.config.favorites.groups.len() + 1);
+                            let idx = app.config.create_group(new_name.clone(), Some("📁".to_string()));
+                            app.config.add_to_group(idx, stream_id);
+                            app.loading_message = Some(format!("Created {} and added stream", new_name));
+                        }
+                    }
+                    app.current_screen = app.previous_screen.take().unwrap_or(CurrentScreen::Streams);
                 }
                 _ => {}
             }

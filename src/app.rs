@@ -43,6 +43,8 @@ pub enum CurrentScreen {
     Play,             // (Optional) Info screen before playing
     ContentTypeSelection, // New intermediate screen
     GlobalSearch,         // Ctrl+Space Global Search across all content
+    GroupManagement,      // Manage custom groups (create/edit/delete)
+    GroupPicker,          // Pick a group to add stream to
 }
 
 #[derive(PartialEq, Debug)]
@@ -165,6 +167,9 @@ pub struct App {
     // Video Mode selection
     pub video_mode_list_state: ListState,
 
+    // Auto-Refresh selection
+    pub auto_refresh_list_state: ListState,
+
     // Editing
     pub editing_account_index: Option<usize>,
 
@@ -226,6 +231,12 @@ pub struct App {
     // Global Search
     pub global_search_results: Vec<Stream>,
     pub global_search_list_state: ListState,
+
+    // Group Management
+    pub selected_group_index: usize,
+    pub group_list_state: ListState,
+    pub pending_stream_for_group: Option<String>,  // Stream ID waiting to be added to a group
+    pub group_name_input: String,  // For creating/renaming groups
 }
 
 #[derive(Clone)]
@@ -244,6 +255,7 @@ pub enum SettingsState {
     DnsSelection,
     VideoModeSelection,
     PlaylistModeSelection,
+    AutoRefreshSelection,
     About,
 }
 
@@ -367,6 +379,7 @@ impl App {
             timezone_list_state: ListState::default(),
             dns_list_state: ListState::default(),
             video_mode_list_state: ListState::default(),
+            auto_refresh_list_state: ListState::default(),
 
             active_pane: Pane::Categories,
             search_query: String::new(),
@@ -399,6 +412,12 @@ impl App {
             matrix_rain_columns: vec![],
             matrix_rain_logo_hits: vec![false; 101 * 6], // 101 wide x 6 high logo
             playlist_mode_list_state: ListState::default(),
+            
+            // Group Management
+            selected_group_index: 0,
+            group_list_state: ListState::default(),
+            pending_stream_for_group: None,
+            group_name_input: String::new(),
         };
 
         app.refresh_settings_options();
@@ -428,6 +447,14 @@ impl App {
                     "Enhanced"
                 }
             ),
+            format!(
+                "Auto-Refresh: {}",
+                if self.config.auto_refresh_hours == 0 {
+                    "Disabled".to_string()
+                } else {
+                    format!("Every {}h", self.config.auto_refresh_hours)
+                }
+            ),
             "Matrix Rain Screensaver".to_string(),
             "About".to_string(),
         ];
@@ -439,6 +466,7 @@ impl App {
             "Playlist Mode: Change how playlists are processed and displayed. e.g. 'merica mode for US sports, Sports mode for global athletics, etc.".to_string(),
             "Choose DNS provider for network requests. Quad9 recommended for privacy.".to_string(),
             "Enhanced = Interpolation, upscaling, and soap opera effect for smoother video. MPV Default = Standard MPV settings with no enhancements.".to_string(),
+            "How often to automatically refresh playlist data when logging in. Set to 0 to disable.".to_string(),
             "Launch the iconic Matrix digital rain animation.".to_string(),
             "View application info, version, and credits.".to_string(),
         ];

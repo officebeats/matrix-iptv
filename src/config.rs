@@ -115,15 +115,27 @@ pub struct Account {
     pub server_timezone: Option<String>,
 }
 
+/// A user-defined channel group
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ChannelGroup {
+    pub name: String,
+    #[serde(default)]
+    pub icon: Option<String>,  // Emoji or icon name
+    #[serde(default)]
+    pub stream_ids: Vec<String>,  // Ordered list of stream IDs
+}
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct Favorites {
     pub categories: std::collections::HashSet<String>, // Category IDs
     pub streams: std::collections::HashSet<String>,    // Stream IDs
     pub vod_categories: std::collections::HashSet<String>,
     pub vod_streams: std::collections::HashSet<String>,
+    #[serde(default)]
+    pub groups: Vec<ChannelGroup>,  // Custom user groups
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AppConfig {
     pub accounts: Vec<Account>,
     pub last_used_account_index: Option<usize>,
@@ -143,6 +155,28 @@ pub struct AppConfig {
     pub dns_provider: DnsProvider,
     #[serde(default)]
     pub use_default_mpv: bool,  // Use default MPV settings instead of optimized
+    
+    /// Auto-refresh playlist if older than this many hours. 0 = disabled.
+    #[serde(default = "default_auto_refresh_hours")]
+    pub auto_refresh_hours: u32,
+}
+
+fn default_auto_refresh_hours() -> u32 { 12 }
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            accounts: Vec::new(),
+            last_used_account_index: None,
+            favorites: Favorites::default(),
+            timezone: None,
+            playlist_mode: PlaylistMode::default(),
+            processing_modes: Vec::new(),
+            dns_provider: DnsProvider::default(),
+            use_default_mpv: false,
+            auto_refresh_hours: 12,
+        }
+    }
 }
 
 impl AppConfig {
@@ -308,5 +342,47 @@ impl AppConfig {
     pub fn set_dns_provider(&mut self, provider: DnsProvider) {
         self.dns_provider = provider;
         let _ = self.save();
+    }
+
+    // Group management methods
+    pub fn create_group(&mut self, name: String, icon: Option<String>) -> usize {
+        let group = ChannelGroup {
+            name,
+            icon,
+            stream_ids: Vec::new(),
+        };
+        self.favorites.groups.push(group);
+        let _ = self.save();
+        self.favorites.groups.len() - 1
+    }
+
+    pub fn delete_group(&mut self, index: usize) {
+        if index < self.favorites.groups.len() {
+            self.favorites.groups.remove(index);
+            let _ = self.save();
+        }
+    }
+
+    pub fn add_to_group(&mut self, group_index: usize, stream_id: String) {
+        if let Some(group) = self.favorites.groups.get_mut(group_index) {
+            if !group.stream_ids.contains(&stream_id) {
+                group.stream_ids.push(stream_id);
+                let _ = self.save();
+            }
+        }
+    }
+
+    pub fn remove_from_group(&mut self, group_index: usize, stream_id: &str) {
+        if let Some(group) = self.favorites.groups.get_mut(group_index) {
+            group.stream_ids.retain(|id| id != stream_id);
+            let _ = self.save();
+        }
+    }
+
+    pub fn rename_group(&mut self, group_index: usize, new_name: String) {
+        if let Some(group) = self.favorites.groups.get_mut(group_index) {
+            group.name = new_name;
+            let _ = self.save();
+        }
     }
 }

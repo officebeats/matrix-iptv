@@ -10,6 +10,7 @@ pub mod form;
 pub mod home;
 pub mod vod;
 pub mod series;
+pub mod groups;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -45,6 +46,14 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         }
         CurrentScreen::ContentTypeSelection => {
             popups::render_content_type_selection(f, app, area);
+        }
+        CurrentScreen::GroupManagement => {
+            groups::render_group_management(f, app, area);
+        }
+        CurrentScreen::GroupPicker => {
+            // Render the underlying screen first, then overlay the picker
+            render_main_layout(f, app, area);
+            groups::render_group_picker(f, app, area);
         }
         CurrentScreen::Play | CurrentScreen::GlobalSearch => {
             // Placeholder or actual play info screen

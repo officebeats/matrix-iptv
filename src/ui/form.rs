@@ -432,5 +432,63 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
             f.render_widget(hints_para, chunks[2]);
         }
+        SettingsState::AutoRefreshSelection => {
+            // Split area: list on top, description in middle, hints on bottom
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(9), Constraint::Min(3), Constraint::Length(3)])
+                .split(area);
+
+            // Auto-refresh interval options
+            let intervals = vec![
+                ("Disabled", "Never auto-refresh playlist data on login"),
+                ("Every 6 hours", "Refresh if last sync was more than 6 hours ago"),
+                ("Every 12 hours", "Refresh if last sync was more than 12 hours ago (Recommended)"),
+                ("Every 24 hours", "Refresh if last sync was more than 24 hours ago"),
+                ("Every 48 hours", "Refresh if last sync was more than 48 hours ago"),
+            ];
+            let items: Vec<ListItem> = intervals.iter().enumerate().map(|(i, (name, _))| {
+                let current_idx = match app.config.auto_refresh_hours {
+                    0 => 0, 6 => 1, 12 => 2, 24 => 3, 48 => 4, _ => 2
+                };
+                let is_current = i == current_idx;
+                let prefix = if is_current { "✓ " } else { "  " };
+                ListItem::new(format!("{}{}", prefix, name))
+            }).collect();
+            
+            let list = List::new(items)
+                .block(Block::default()
+                    .title(" AUTO-REFRESH INTERVAL ")
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Double)
+                    .border_style(Style::default().fg(Color::Cyan)))
+                .highlight_style(Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD))
+                .highlight_symbol(" > ");
+            f.render_stateful_widget(list, chunks[0], &mut app.auto_refresh_list_state);
+
+            // Show description for selected interval
+            let desc = if let Some(idx) = app.auto_refresh_list_state.selected() {
+                intervals.get(idx).map(|(_, d)| *d).unwrap_or("")
+            } else {
+                ""
+            };
+            let desc_block = Paragraph::new(desc)
+                .block(Block::default().title(" INFO ").borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(Color::DarkGray)))
+                .style(Style::default().fg(Color::White))
+                .wrap(ratatui::widgets::Wrap { trim: true });
+            f.render_widget(desc_block, chunks[1]);
+
+            // Navigation hints
+            let hints = Line::from(vec![
+                Span::styled(" ↑↓ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("Navigate  ", Style::default().fg(Color::White)),
+                Span::styled(" Enter ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("Select  ", Style::default().fg(Color::White)),
+                Span::styled(" Esc ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled("Cancel", Style::default().fg(Color::White)),
+            ]);
+            let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
+            f.render_widget(hints_para, chunks[2]);
+        }
     }
 }

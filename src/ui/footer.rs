@@ -156,6 +156,9 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             push_sep!();
             spans.push(Span::styled("Enter", key_style));
             spans.push(Span::styled(": Select", label_style));
+            push_sep!();
+            spans.push(Span::styled("R", key_style));
+            spans.push(Span::styled(": Refresh", label_style));
         }
         _ => {
             push_sep!();
