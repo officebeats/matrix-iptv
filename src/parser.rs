@@ -21,11 +21,11 @@ static YEAR_STRIP_REGEX: Lazy<Regex> = Lazy::new(|| {
 });
 
 // American Mode cleaning regexes - pre-compiled and combined for performance
-static CLEAN_U_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^[\W_]*u\s+").unwrap());
+static CLEAN_U_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^[\W_]*u[\s\u{00A0}\u{200B}]*").unwrap());
 
 static CLEAN_PREFIX_COMBINED: Lazy<Regex> = Lazy::new(|| {
     // Order matters: Longest matches first to avoid partial replacements (e.g. USA vs US)
-    Regex::new(r"(?i)^(?:UNITED\s+STATES|ENGLISH|AMERICA|USA|US|EN)(?:\s*[-|:]\s*)").unwrap()
+    Regex::new(r"(?i)^(?:UNITED\s+STATES|ENGLISH|AMERICA|USA|US|EN|NBA|NFL|MLB|UFC|NHL|MLS)(?:\s*[-|:]\s*)").unwrap()
 });
 
 static CLEAN_BRACKETS_COMBINED: Lazy<Regex> = Lazy::new(|| {
@@ -49,6 +49,90 @@ static CLEAN_MULTI_PIPE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*\|\s*\|+").u
 static CLEAN_TRAILING_HYPHEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+-\s*$").unwrap());
 static CLEAN_LEADING_HYPHEN: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*-\s+").unwrap());
 static CLEAN_MULTI_SPACE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s+").unwrap());
+
+// Combined regex for foreign patterns in is_american_live
+static FOREIGN_PATTERNS_REGEX: Lazy<Regex> = Lazy::new(|| {
+    let patterns = [
+        r"(?i)AR\s*\|", r"(?i)\|AR\|", r"(?i)\sAR\s", r"(?i)ARAB", r"(?i)ARABIC",
+        r"(?i)SA\s*\|", r"(?i)\|SA\|", r"(?i)SAUDI", r"(?i)KSA",
+        r"(?i)AE\s*\|", r"(?i)\|AE\|", r"(?i)UAE", r"(?i)EMIRATES",
+        r"(?i)QA\s*\|", r"(?i)\|QA\|", r"(?i)QATAR",
+        r"(?i)KW\s*\|", r"(?i)\|KW\|", r"(?i)KUWAIT",
+        r"(?i)IR\s*\|", r"(?i)\|IR\|", r"(?i)IRAN", r"(?i)PERSIAN",
+        r"(?i)AF\s*\|", r"(?i)\|AF\|", r"(?i)AFGHAN",
+        r"(?i)IL\s*\|", r"(?i)\|IL\|", r"(?i)ISRAEL",
+        r"(?i)TR\s*\|", r"(?i)\|TR\|", r"(?i)TURK", r"(?i)TURKEY",
+        r"(?i)IN\s*\|", r"(?i)\|IN\|", r"(?i)INDIA", r"(?i)INDIAN", r"(?i)HINDI", r"(?i)PUNJABI", r"(?i)TAMIL", r"(?i)TELUGU", r"(?i)MALAYALAM", r"(?i)KANNADA", r"(?i)MARATHI", r"(?i)BENGALI",
+        r"(?i)PK\s*\|", r"(?i)\|PK\|", r"(?i)PAKISTAN", r"(?i)URDU",
+        r"(?i)BD\s*\|", r"(?i)\|BD\|", r"(?i)BANGLA", r"(?i)BANGLADESH",
+        r"(?i)CN\s*\|", r"(?i)\|CN\|", r"(?i)CHINA", r"(?i)CHINESE", r"(?i)MANDARIN", r"(?i)CANTONESE",
+        r"(?i)JP\s*\|", r"(?i)\|JP\|", r"(?i)JAPAN",
+        r"(?i)KR\s*\|", r"(?i)\|KR\|", r"(?i)KOREA",
+        r"(?i)PH\s*\|", r"(?i)\|PH\|", r"(?i)PHILIPPINES", r"(?i)FILIPINO", r"(?i)PINOY",
+        r"(?i)VN\s*\|", r"(?i)\|VN\|", r"(?i)VIETNAM",
+        r"(?i)TH\s*\|", r"(?i)\|TH\|", r"(?i)THAILAND",
+        r"(?i)ID\s*\|", r"(?i)\|ID\|", r"(?i)INDONESIA",
+        r"(?i)MY\s*\|", r"(?i)\|MY\|", r"(?i)MALAYSIA",
+        r"(?i)ASIA\s*\|", r"(?i)\|ASIA\|", r"(?i)\sASIA", 
+        r"(?i)AM\s*\|", r"(?i)\|AM\|", r"(?i)ARMENIA", r"(?i)ARMENIAN",
+        r"(?i)KH\s*\|", r"(?i)KURDISH", r"(?i)KURD",
+        r"(?i)AZ\s*\|", r"(?i)AZERBAIJAN",
+        r"(?i)GE\s*\|", r"(?i)GEORGIA",
+        r"(?i)HK\s*\|", r"(?i)HONG KONG",
+        r"(?i)AFRICA", r"(?i)NIGERIA", r"(?i)KENYA", r"(?i)SOMALIA", r"(?i)ZA\s*\|", r"(?i)SOUTH AFRICA", r"(?i)MAROC", r"(?i)MOROCCO", r"(?i)TUNISIA", r"(?i)ALGERIA", r"(?i)EGYPT",
+        r"(?i)UK\s*\|", r"(?i)\|UK\|", r"(?i)\sUK\s", r"(?i)UNITED KINGDOM", r"(?i)BRITISH",
+        r"(?i)IE\s*\|", r"(?i)\|IE\|", r"(?i)\sIE\s", r"(?i)IRELAND", r"(?i)IRISH",
+        r"(?i)SC\s*\|", r"(?i)\|SC\|", r"(?i)SCOTLAND", r"(?i)SPFL",
+        r"(?i)FR\s*\|", r"(?i)\|FR\|", r"(?i)\sFR\s", r"(?i)FRANCE", r"(?i)FRENCH",
+        r"(?i)DE\s*\|", r"(?i)\|DE\|", r"(?i)\sDE\s", r"(?i)GERMAN", r"(?i)GERMANY", r"(?i)DEUTSCH",
+        r"(?i)IT\s*\|", r"(?i)\|IT\|", r"(?i)\sIT\s", r"(?i)ITALY", r"(?i)ITALIAN",
+        r"(?i)ES\s*\|", r"(?i)\|ES\|", r"(?i)\sES\s", r"(?i)SPAIN", r"(?i)SPANISH", r"(?i)ESPANA", r"(?i)LATINO",
+        r"(?i)PT\s*\|", r"(?i)\|PT\|", r"(?i)\sPT\s", r"(?i)PORTUGAL", r"(?i)PORTUGUESE", r"(?i)BRAZIL", r"(?i)BR\s*\|",
+        r"(?i)NL\s*\|", r"(?i)\|NL\|", r"(?i)\sNL\s", r"(?i)DUTCH", r"(?i)NETHERLANDS",
+        r"(?i)BE\s*\|", r"(?i)\|BE\|", r"(?i)BELGIUM",
+        r"(?i)PL\s*\|", r"(?i)\|PL\|", r"(?i)\sPL\s", r"(?i)POLAND", r"(?i)POLISH",
+        r"(?i)RU\s*\|", r"(?i)\|RU\|", r"(?i)\sRU\s", r"(?i)RUSSIA", r"(?i)RUSSIAN",
+        r"(?i)GR\s*\|", r"(?i)\|GR\|", r"(?i)\sGR\s", r"(?i)GREECE", r"(?i)GREEK",
+        r"(?i)AL\s*\|", r"(?i)\|AL\|", r"(?i)ALBANIA", r"(?i)ALBANIAN", r"(?i)SHQIP",
+        r"(?i)RO\s*\|", r"(?i)\|RO\|", r"(?i)ROMANIA", r"(?i)ROMANIAN",
+        r"(?i)BG\s*\|", r"(?i)\|BG\|", r"(?i)BULGARIA", r"(?i)BULGARIAN",
+        r"(?i)HU\s*\|", r"(?i)\|HU\|", r"(?i)HUNGARY", r"(?i)HUNGARIAN", r"(?i)MAGYAR",
+        r"(?i)CZ\s*\|", r"(?i)\|CZ\|", r"(?i)CZECH", r"(?i)CS\s*\|",
+        r"(?i)SK\s*\|", r"(?i)\|SK\|", r"(?i)SLOVAKIA",
+        r"(?i)HR\s*\|", r"(?i)\|HR\|", r"(?i)CROATIA", r"(?i)HRVATSKA",
+        r"(?i)RS\s*\|", r"(?i)\|RS\|", r"(?i)SERBIA", r"(?i)SRPSKI",
+        r"(?i)BA\s*\|", r"(?i)\|BA\|", r"(?i)BOSNIA",
+        r"(?i)MK\s*\|", r"(?i)\|MK\|", r"(?i)MACEDONIA",
+        r"(?i)SI\s*\|", r"(?i)\|SI\|", r"(?i)SLOVENIA",
+        r"(?i)EX-YU", r"(?i)BALKAN", r"(?i)YUGOSLAVIA", r"(?i)CG\s*\|", r"(?i)MONTENEGRO",
+        r"(?i)CY\s*\|", r"(?i)\|CY\|", r"(?i)CYPRUS",
+        r"(?i)MT\s*\|", r"(?i)\|MT\|", r"(?i)MALTA",
+        r"(?i)UA\s*\|", r"(?i)\|UA\|", r"(?i)UKRAINE", r"(?i)UKRAINIAN",
+        r"(?i)AT\s*\|", r"(?i)\|AT\|", r"(?i)AUSTRIA", r"(?i)AUSTRIAN",
+        r"(?i)CH\s*\|", r"(?i)\|CH\|", r"(?i)SWISS", r"(?i)SWITZERLAND",
+        r"(?i)SE\s*\|", r"(?i)\|SE\|", r"(?i)SWEDEN", r"(?i)SWEDISH",
+        r"(?i)DK\s*\|", r"(?i)\|DK\|", r"(?i)DENMARK", r"(?i)DANISH",
+        r"(?i)NO\s*\|", r"(?i)\|NO\|", r"(?i)NORWAY", r"(?i)NORWEGIAN",
+        r"(?i)FI\s*\|", r"(?i)\|FI\|", r"(?i)FINLAND", r"(?i)FINNISH",
+        r"(?i)IS\s*\|", r"(?i)ICELAND",
+        r"(?i)AU\s*\|", r"(?i)\|AU\|", r"(?i)AUSTRALIA",
+        r"(?i)NZ\s*\|", r"(?i)\|NZ\|", r"(?i)NEW ZEALAND",
+        r"(?i)LATAM", r"(?i)SUR AMERICA", r"(?i)ARGENTINA", r"(?i)COLOMBIA", r"(?i)CHILE", r"(?i)PERU", r"(?i)VENEZUELA", r"(?i)BOLIVIA", r"(?i)ECUADOR", r"(?i)URUGUAY", r"(?i)PARAGUAY", r"(?i)CR\s*\|", r"(?i)CARIBBEAN",
+        r"(?i)CANADA", r"(?i)CA\s*\|", r"(?i)\sC\s*\|",
+        r"(?i)XXX", r"(?i)ADULT", r"(?i)18\+", r"(?i)PORN",
+    ];
+    Regex::new(&patterns.join("|")).unwrap()
+});
+
+static FOREIGN_VOD_KEYWORDS_REGEX: Lazy<Regex> = Lazy::new(|| {
+    let keywords = [
+        r"FRANCE", r"FRENCH", r"INDIA", r"INDIAN", r"HINDI", r"TURKISH", r"TURK", 
+        r"ARABIC", r"ARAB", r"SPANISH", r"LATINO", r"GERMAN", r"ITALIAN", 
+        r"PORTUGUESE", r"RUSSIAN", r"CHINESE", r"KOREAN", r"JAPANESE",
+        r"POLISH", r"DUTCH", r"SWEDISH", r"DANISH", r"NORWEGIAN"
+    ];
+    Regex::new(&format!(r"(?i){}", keywords.join("|"))).unwrap()
+});
 
 
 /// Parsed category with extracted metadata
@@ -107,6 +191,8 @@ pub enum ContentType {
 impl ContentType {
     pub fn icon(&self) -> &'static str {
         match self {
+            ContentType::Sports => "\u{26be}", // Default sports
+            ContentType::PPV => "\u{1f3df}",    // Stadium/Event
             _ => "",
         }
     }
@@ -115,12 +201,8 @@ impl ContentType {
 /// Get color for country/region code
 pub fn country_color(country: &str) -> Color {
     match country.to_uppercase().as_str() {
-        "US" | "USA" | "AM" => Color::Rgb(0, 255, 255),
+        "US" | "USA" | "AM" | "NBA" | "NFL" | "MLB" | "NHL" | "UFC" | "SPORTS" | "PPV" => Color::Rgb(0, 255, 255),
         "UK" | "GB" | "EU" => Color::Rgb(57, 255, 20),
-        "FR" | "FRANCE" => Color::Rgb(255, 105, 180),
-        "CA" | "CANADA" => Color::Rgb(255, 69, 0), // Orange Red
-        "VIP" => Color::Rgb(255, 255, 0),
-        "4K" => Color::Rgb(255, 0, 255),
         _ => Color::White,
     }
 }
@@ -128,7 +210,7 @@ pub fn country_color(country: &str) -> Color {
 /// Get flag emoji for country
 pub fn country_flag(country: &str) -> &'static str {
     match country.to_uppercase().as_str() {
-        "US" | "USA" | "AM" => "🇺🇸",
+        "US" | "USA" | "AM" | "NBA" | "NFL" | "MLB" | "NHL" | "UFC" | "SPORTS" | "PPV" => "🇺🇸",
         "UK" | "GB" => "🇬🇧",
         "EU" => "🇪🇺",
         "FR" | "FRANCE" => "🇫🇷",
@@ -199,94 +281,8 @@ pub fn is_american_live(name: &str) -> bool {
         return true;
     }
     
-    // 2. Explicit exclusions for international/foreign content (Backup for non-prefixed items)
-    let foreign_patterns = [
-        // Arabic/Middle East/Asia
-        "AR |", "AR|", "|AR|", " AR ", "ARAB", "ARABIC",
-        "SA |", "SA|", "|SA|", "SAUDI", "KSA",
-        "AE |", "AE|", "|AE|", "UAE", "EMIRATES",
-        "QA |", "QA|", "|QA|", "QATAR",
-        "KW |", "KW|", "|KW|", "KUWAIT",
-        "IR |", "IR|", "|IR|", "IRAN", "PERSIAN",
-        "AF |", "AF|", "|AF|", "AFGHAN",
-        "IL |", "IL|", "|IL|", "ISRAEL",
-        "TR |", "TR|", "|TR|", "TURK", "TURKEY",
-        "IN |", "IN|", "|IN|", "INDIA", "INDIAN", "HINDI", "PUNJABI", "TAMIL", "TELUGU", "MALAYALAM", "KANNADA", "MARATHI", "BENGALI",
-        "PK |", "PK|", "|PK|", "PAKISTAN", "URDU",
-        "BD |", "BD|", "|BD|", "BANGLA", "BANGLADESH",
-        "CN |", "CN|", "|CN|", "CHINA", "CHINESE", "MANDARIN", "CANTONESE",
-        "JP |", "JP|", "|JP|", "JAPAN",
-        "KR |", "KR|", "|KR|", "KOREA",
-        "PH |", "PH|", "|PH|", "PHILIPPINES", "FILIPINO", "PINOY",
-        "VN |", "VN|", "|VN|", "VIETNAM",
-        "TH |", "TH|", "|TH|", "THAILAND",
-        "ID |", "ID|", "|ID|", "INDONESIA",
-        "MY |", "MY|", "|MY|", "MALAYSIA",
-        "ASIA |", "ASIA|", "|ASIA|", " ASIA", 
-        "AM |", "AM|", "|AM|", "ARMENIA", "ARMENIAN",
-        "KH |", "KH|", "KURDISH", "KURD",
-        "AZ |", "AZ|", "AZERBAIJAN",
-        "GE |", "GE|", "GEORGIA",
-        "HK |", "HK|", "HONG KONG",
-
-        // Africa
-        "AFRICA", "NIGERIA", "KENYA", "SOMALIA", "ZA |", "ZA|", "SOUTH AFRICA", "MAROC", "MOROCCO", "TUNISIA", "ALGERIA", "EGYPT",
-
-        // Europe (Extended)
-        "UK |", "UK|", "|UK|", " UK ", "UNITED KINGDOM", "BRITISH",
-        "IE |", "IE|", "|IE|", " IE ", "IRELAND", "IRISH",
-        "SC |", "SC|", "|SC|", "SCOTLAND", "SPFL",
-        "FR |", "FR|", "|FR|", " FR ", "FRANCE", "FRENCH",
-        "DE |", "DE|", "|DE|", " DE ", "GERMAN", "GERMANY", "DEUTSCH",
-        "IT |", "IT|", "|IT|", " IT ", "ITALY", "ITALIAN",
-        "ES |", "ES|", "|ES|", " ES ", "SPAIN", "SPANISH", "ESPANA", "LATINO",
-        "PT |", "PT|", "|PT|", " PT ", "PORTUGAL", "PORTUGUESE", "BRAZIL", "BR |", "BR|",
-        "NL |", "NL|", "|NL|", " NL ", "DUTCH", "NETHERLANDS",
-        "BE |", "BE|", "|BE|", "BELGIUM",
-        "PL |", "PL|", "|PL|", " PL ", "POLAND", "POLISH",
-        "RU |", "RU|", "|RU|", " RU ", "RUSSIA", "RUSSIAN",
-        "GR |", "GR|", "|GR|", " GR ", "GREECE", "GREEK",
-        "AL |", "AL|", "|AL|", "ALBANIA", "ALBANIAN", "SHQIP",
-        "RO |", "RO|", "|RO|", "ROMANIA", "ROMANIAN",
-        "BG |", "BG|", "|BG|", "BULGARIA", "BULGARIAN",
-        "HU |", "HU|", "|HU|", "HUNGARY", "HUNGARIAN", "MAGYAR",
-        "CZ |", "CZ|", "|CZ|", "CZECH", "CS |", "CS|",
-        "SK |", "SK|", "|SK|", "SLOVAKIA",
-        "HR |", "HR|", "|HR|", "CROATIA", "HRVATSKA",
-        "RS |", "RS|", "|RS|", "SERBIA", "SRPSKI",
-        "BA |", "BA|", "|BA|", "BOSNIA",
-        "MK |", "MK|", "|MK|", "MACEDONIA",
-        "SI |", "SI|", "|SI|", "SLOVENIA",
-        "EX-YU", "BALKAN", "YUGOSLAVIA", "CG |", "CG|", "MONTENEGRO",
-        "CY |", "CY|", "|CY|", "CYPRUS",
-        "MT |", "MT|", "|MT|", "MALTA",
-        "UA |", "UA|", "|UA|", "UKRAINE", "UKRAINIAN",
-        "AT |", "AT|", "|AT|", "AUSTRIA", "AUSTRIAN",
-        "CH |", "CH|", "|CH|", "SWISS", "SWITZERLAND",
-        "SE |", "SE|", "|SE|", "SWEDEN", "SWEDISH",
-        "DK |", "DK|", "|DK|", "DENMARK", "DANISH",
-        "NO |", "NO|", "|NO|", "NORWAY", "NORWEGIAN",
-        "FI |", "FI|", "|FI|", "FINLAND", "FINNISH",
-        "IS |", "IS|", "ICELAND",
-
-        // Oceania
-        "AU |", "AU|", "|AU|", "AUSTRALIA",
-        "NZ |", "NZ|", "|NZ|", "NEW ZEALAND",
-
-        // Latin/South America (Generic)
-        "LATAM", "SUR AMERICA", "ARGENTINA", "COLOMBIA", "CHILE", "PERU", "VENEZUELA", "BOLIVIA", "ECUADOR", "URUGUAY", "PARAGUAY", "CR |", "CR|", "CARIBBEAN",
-        
-        // Canada
-        "CANADA", "CA |", "CA|", " C |", "C |", 
-        
-        // Adult
-        "XXX", "ADULT", "18+", "PORN",
-    ];
-    
-    for pattern in foreign_patterns {
-        if n.contains(pattern) {
-            return false;
-        }
+    if FOREIGN_PATTERNS_REGEX.is_match(&n) {
+        return false;
     }
 
     // Default: Allow everything else (Exclusion-based filtering)
@@ -298,64 +294,49 @@ pub fn is_american_live(name: &str) -> bool {
 /// Uses pre-compiled static regexes for performance
 pub fn clean_american_name(name: &str) -> String {
     // Normalize special separators first
-    let mut cleaned = name.replace("▎", "|");
+    let cleaned = name.replace("▎", "|");
     
-    // Remove all @ symbols globally
-    cleaned = cleaned.replace("@", "");
+    // Remove all @ symbols globally, BOM, and hidden characters
+    let cleaned = cleaned.replace("@", "")
+                        .replace("\u{feff}", "")
+                        .replace("\u{200b}", "");
 
-    // Remove BOM and common hidden characters
-    cleaned = cleaned.replace("\u{feff}", "").replace("\u{200b}", "");
-
-    // Remove "u " prefix using pre-compiled regex (handles Mega OTT)
-    cleaned = CLEAN_U_PREFIX.replace(&cleaned, "").to_string();
-    
-    // Remove common leading language prefixes
-    cleaned = CLEAN_PREFIX_COMBINED.replace_all(&cleaned, "").to_string();
-    
-    // Remove keywords in brackets: (USA), [USA], {USA}, (EN), etc.
-    cleaned = CLEAN_BRACKETS_COMBINED.replace_all(&cleaned, " ").to_string();
-    
-    // Remove keywords at end/start of string
-    cleaned = CLEAN_END_COMBINED.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_START_COMBINED.replace_all(&cleaned, "").to_string();
+    // Chain replacements to minimize intermediate String allocations
+    let cleaned = CLEAN_U_PREFIX.replace(&cleaned, "");
+    let cleaned = CLEAN_PREFIX_COMBINED.replace_all(&cleaned, "");
+    let cleaned = CLEAN_BRACKETS_COMBINED.replace_all(&cleaned, " ");
+    let cleaned = CLEAN_END_COMBINED.replace_all(&cleaned, "");
+    let cleaned = CLEAN_START_COMBINED.replace_all(&cleaned, "");
     
     // Final cleanup: remove redundant pipes, hyphens, and double spaces
-    cleaned = CLEAN_TRAILING_PIPE.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_LEADING_PIPE.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_MULTI_PIPE.replace_all(&cleaned, " |").to_string();
-    cleaned = CLEAN_TRAILING_HYPHEN.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_LEADING_HYPHEN.replace_all(&cleaned, "").to_string();
-    cleaned = CLEAN_MULTI_SPACE.replace_all(&cleaned, " ").to_string();
+    let cleaned = CLEAN_TRAILING_PIPE.replace_all(&cleaned, "");
+    let cleaned = CLEAN_LEADING_PIPE.replace_all(&cleaned, "");
+    let cleaned = CLEAN_MULTI_PIPE.replace_all(&cleaned, " |");
+    let cleaned = CLEAN_TRAILING_HYPHEN.replace_all(&cleaned, "");
+    let cleaned = CLEAN_LEADING_HYPHEN.replace_all(&cleaned, "");
+    let cleaned = CLEAN_MULTI_SPACE.replace_all(&cleaned, " ");
     
     // Remove any remaining standalone USA mentions
-    cleaned = CLEAN_USA_STANDALONE.replace_all(&cleaned, "").to_string();
+    let cleaned = CLEAN_USA_STANDALONE.replace_all(&cleaned, "");
     
     // Extra cleanup for leading/trailing colons and dots
-    cleaned = cleaned.trim_start_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
-                     .trim_end_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
-                     .trim()
-                     .to_string();
+    let cleaned_str = cleaned.trim_start_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
+                      .trim_end_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
+                      .trim();
 
-    if cleaned.is_empty() {
+    if cleaned_str.is_empty() {
         return name.to_string();
     }
 
-    cleaned
+    cleaned_str.to_string()
 }
 
 /// Check if a name/category is English VOD content
 pub fn is_english_vod(name: &str) -> bool {
     let upper = name.to_uppercase();
     
-    // Explicit exclusions for foreign language content
-    let foreign_keywords = ["FRANCE", "FRENCH", "INDIA", "INDIAN", "HINDI", "TURKISH", "TURK", 
-                            "ARABIC", "ARAB", "SPANISH", "LATINO", "GERMAN", "ITALIAN", 
-                            "PORTUGUESE", "RUSSIAN", "CHINESE", "KOREAN", "JAPANESE",
-                            "POLISH", "DUTCH", "SWEDISH", "DANISH", "NORWEGIAN"];
-    for kw in foreign_keywords {
-        if upper.contains(kw) {
-            return false;
-        }
+    if FOREIGN_VOD_KEYWORDS_REGEX.is_match(&upper) {
+        return false;
     }
     
     // Keywords for English
@@ -375,74 +356,52 @@ pub fn is_english_vod(name: &str) -> bool {
 /// Parse a category name to extract metadata
 pub fn parse_category(name: &str) -> ParsedCategory {
     let original = name.to_string();
-    let mut display_name = name.to_string();
     let mut country: Option<String> = None;
     let mut quality: Option<Quality> = None;
     let mut content_type: Option<ContentType> = None;
     let mut is_vip = false;
 
-    // Detect country/region prefix patterns
-    let country_patterns = [
-        ("US|", "US"),
-        ("US |", "US"),
-        ("AM |", "US"),
-        ("AM|", "US"),
-        ("UK|", "UK"),
-        ("UK |", "UK"),
-        ("EU |", "EU"),
-        ("EU|", "EU"),
-        ("FR|", "FR"),
-        ("FR |", "FR"),
-        ("CA|", "CA"),
-        ("CA |", "CA"),
-        ("DE|", "DE"),
-        ("DE |", "DE"),
-        ("ES|", "ES"),
-        ("ES |", "ES"),
-        ("IT|", "IT"),
-        ("IT |", "IT"),
-        ("VIP |", "VIP"),
-        ("VIP|", "VIP"),
-        ("4K|", "4K"),
-        ("4K |", "4K"),
-    ];
+    // Clean control chars and 'u ' prefix early
+    let mut display_name = name.replace(|c: char| c.is_control(), "");
+    let re_u = Regex::new(r"(?i)^[\W_]*u\s+").unwrap();
+    display_name = re_u.replace(&display_name, "").trim().to_string();
 
-    for (pattern, code) in country_patterns {
-        if name.to_uppercase().starts_with(pattern) {
-            country = Some(code.to_string());
-            display_name = name[pattern.len()..].trim().to_string();
-            if code == "VIP" {
-                is_vip = true;
-            }
-            break;
+    // Generic Country/Sports Prefix Detection (e.g. "US |", "NBA:", "UK-", "NBA PASS", "S |")
+    let re_prefix = Regex::new(r"(?i)^([A-Z0-9]{1,5})(?:\s*[|:-]\s*|\s+)").unwrap();
+    if let Some(caps) = re_prefix.captures(&display_name.to_uppercase()) {
+        let code = caps.get(1).unwrap().as_str();
+        let allowed = ["S", "US", "USA", "AM", "UK", "GB", "CA", "EU", "FR", "DE", "ES", "IT", "VIP", "NBA", "NFL", "MLB", "NHL", "UFC", "PPV"];
+        if allowed.contains(&code) {
+             // If it's just a single char category marker like 'S |', we just strip it and don't set country
+             if code != "S" {
+                country = Some(code.to_string());
+             }
+             
+             if let Some(pos) = display_name.find(|c| c == '|' || c == ':' || c == '-') {
+                 display_name = display_name[pos + 1..].trim().to_string();
+             } else if let Some(pos) = display_name.find(' ') {
+                 display_name = display_name[pos + 1..].trim().to_string();
+             }
+             if code == "VIP" { is_vip = true; }
         }
     }
 
     // Also check for ▎ separator (Promax style)
     if country.is_none() {
-        if let Some(pos) = name.find('▎') {
-            let prefix = name[..pos].trim().to_uppercase();
-            if [
-                "UK", "US", "EU", "FR", "CA", "VIP", "SPORTS", "PPV", "MULTI",
-            ]
-            .contains(&prefix.as_str())
+        if let Some(pos) = display_name.find('▎') {
+            let prefix = display_name[..pos].trim().to_uppercase();
+            if ["UK", "US", "EU", "FR", "CA", "VIP", "SPORTS", "PPV", "MULTI"].contains(&prefix.as_str())
             {
                 country = Some(prefix.clone());
-                display_name = name[pos + "▎".len()..].trim().to_string();
-                if prefix == "VIP" {
-                    is_vip = true;
-                }
+                display_name = display_name[pos + "▎".len()..].trim().to_string();
+                if prefix == "VIP" { is_vip = true; }
             }
         }
     }
 
     // Detect quality
-    let upper = name.to_uppercase();
-    if upper.contains("4K")
-        || upper.contains("ᵁᴴᴰ")
-        || upper.contains("³⁸⁴⁰")
-        || upper.contains("UHD")
-    {
+    let upper = display_name.to_uppercase();
+    if upper.contains("4K") || upper.contains("ᵁᴴᴰ") || upper.contains("³⁸⁴⁰") || upper.contains("UHD") {
         quality = Some(Quality::UHD4K);
     } else if upper.contains("FHD") || upper.contains("1080") {
         quality = Some(Quality::FHD);
@@ -453,7 +412,7 @@ pub fn parse_category(name: &str) -> ParsedCategory {
     }
 
     // Detect content type
-    if upper.contains("SPORT") {
+    if upper.contains("SPORT") || ["NBA", "NFL", "MLB", "NHL", "UFC", "F1"].iter().any(|s| upper.contains(s)) {
         content_type = Some(ContentType::Sports);
     } else if upper.contains("NEWS") {
         content_type = Some(ContentType::News);
@@ -463,25 +422,36 @@ pub fn parse_category(name: &str) -> ParsedCategory {
         content_type = Some(ContentType::Kids);
     } else if upper.contains("MUSIC") {
         content_type = Some(ContentType::Music);
-    } else if upper.contains("DOCUMENTARY")
-        || upper.contains("DOCUMENTAIRE")
-        || upper.contains("DOC")
-    {
+    } else if upper.contains("DOCUMENTARY") || upper.contains("DOCUMENTAIRE") || upper.contains("DOC") {
         content_type = Some(ContentType::Documentary);
-    } else if upper.contains("ENTERTAINMENT") {
-        content_type = Some(ContentType::Entertainment);
-    } else if upper.contains("RELIGIOUS") || upper.contains("BIBLICAL") {
-        content_type = Some(ContentType::Religious);
-    } else if upper.contains("PPV") || upper.contains("PAY PER VIEW") {
-        content_type = Some(ContentType::PPV);
     } else if upper.contains("GENERAL") {
         content_type = Some(ContentType::General);
     }
 
-    // Check VIP in content
-    if upper.contains("VIP") {
-        is_vip = true;
+    // Aggressive cleaning for display_name
+    let mut cleaned = display_name;
+    let suffixes = [
+        "(PPV)", "[PPV]", "PPV", "(USA)", "[USA]", "USA", "(UK)", "[UK]", "UK",
+        "(CA)", "[CA]", "CA", "(VIP)", "[VIP]", "VIP", "(4K)", "[4K]", "4K",
+        " - ", " | ", " : ",
+    ];
+    for s in suffixes {
+        let upper_c = cleaned.to_uppercase();
+        if upper_c.ends_with(s) {
+            cleaned = cleaned[..cleaned.len() - s.len()].trim().to_string();
+        } else if upper_c.starts_with(s) {
+            cleaned = cleaned[s.len()..].trim().to_string();
+        }
     }
+    
+    // Final cleanup: strip leading/trailing pipes, colons, dashes
+    cleaned = cleaned.trim_start_matches(|c: char| c == '|' || c == ':' || c == '-' || c.is_whitespace())
+                     .trim_end_matches(|c: char| c == '|' || c == ':' || c == '-' || c.is_whitespace())
+                     .to_string();
+    
+    display_name = cleaned;
+
+    if upper.contains("VIP") { is_vip = true; }
 
     ParsedCategory {
         original_name: original,
@@ -507,6 +477,7 @@ pub struct ParsedStream {
     pub start_time: Option<DateTime<Utc>>,
     pub stop_time: Option<DateTime<Utc>>,
     pub sports_event: Option<crate::sports::SportsEvent>,
+    pub channel_prefix: Option<String>,
 }
 
 /// Parse a stream/channel name to extract metadata
@@ -521,6 +492,7 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     let mut start_time: Option<DateTime<Utc>> = None;
     let mut stop_time: Option<DateTime<Utc>> = None;
     let mut sports_event: Option<crate::sports::SportsEvent> = None;
+    let mut channel_prefix: Option<String> = None;
 
     // Check if it's a separator line
     let trimmed = name.trim();
@@ -528,38 +500,28 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         && (trimmed.ends_with("####") || trimmed.ends_with("═══"))
     {
         is_separator = true;
-        display_name = trimmed
-            .trim_matches('#')
-            .trim_matches('═')
-            .trim()
-            .to_string();
+        display_name = trimmed.trim_matches('#').trim_matches('═').trim().to_string();
+    }
+
+    // Capture leading channel numbers (e.g. "01:", "15-", "03 ")
+    let re_chan = Regex::new(r"^\s*(\d+[:\s\-|]+)").unwrap();
+    if let Some(caps) = re_chan.captures(&display_name) {
+        channel_prefix = Some(caps.get(1).unwrap().as_str().trim().to_string());
+        // Remove the channel prefix from display_name to avoid duplicate display
+        display_name = re_chan.replace(&display_name, "").to_string();
     }
 
     // Check for "u " prefix (specific to Mega OTT and others)
-    // We do this loop to handle cases like "u u NFL" or "u [u] NFL"
     let mut clean_loop = true;
     while clean_loop {
         clean_loop = false;
         let start_len = display_name.len();
         
-        // Remove "u " prefix
-        if display_name.trim_start().to_lowercase().starts_with("u ") {
-            if let Some(rest) = display_name.trim_start()[2..].trim_start().to_string().into() {
-                display_name = rest;
-                clean_loop = true;
-            }
-        }
+        // Remove "u " prefix and hidden characters
+        display_name = CLEAN_U_PREFIX.replace(&display_name, "").to_string();
         
-        // Remove "u " with regex (for hidden chars)
-        let re_u = Regex::new(r"(?i)^[\W_]*u\s+").unwrap();
-        if re_u.is_match(&display_name) {
-             display_name = re_u.replace(&display_name, "").to_string();
-             clean_loop = true;
-        }
-        
-        // Remove "MNF", "TNF", "SNF" from start if it's duplicated later
-        // e.g. "MNF 8: Saints x Titans" -> "Saints x Titans"
-        let re_mnf = Regex::new(r"(?i)^(MNF|TNF|SNF|NBA|NFL)\s+\d*[:|-]?\s*").unwrap();
+        // Remove "MNF", "TNF", "SNF", "NBA", etc.
+        let re_mnf = Regex::new(r"(?i)^(MNF|TNF|SNF|NBA|NFL|NHL|MLB|UFC|MLS|SLING|S)(?:\s*[:|-]\s*|\s+)").unwrap();
         if re_mnf.is_match(&display_name) {
              display_name = re_mnf.replace(&display_name, "").to_string();
              clean_loop = true;
@@ -567,6 +529,14 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
 
         if display_name.len() < start_len {
             clean_loop = true;
+        }
+    }
+
+    // Second pass: Check for channel numbers again after prefix cleaning (e.g. "UFC | 05")
+    if channel_prefix.is_none() {
+        if let Some(caps) = re_chan.captures(&display_name) {
+             channel_prefix = Some(caps.get(1).unwrap().as_str().trim().to_string());
+             display_name = re_chan.replace(&display_name, "").to_string();
         }
     }
 
@@ -588,27 +558,21 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         }
     }
 
-    // Detect country/region prefix patterns
-    let country_patterns = [
-        ("US|", "US"),
-        ("US |", "US"),
-        ("UK|", "UK"),
-        ("UK |", "UK"),
-        ("FR|", "FR"),
-        ("FR |", "FR"),
-        ("CA|", "CA"),
-        ("CA |", "CA"),
-        ("4K|", "4K"),
-        ("4K |", "4K"),
-        ("CHRITMAS|", "XMAS"),
-        ("CHRISTMAS|", "XMAS"),
-    ];
-
-    for (pattern, code) in country_patterns {
-        if name.to_uppercase().starts_with(pattern) {
-            country = Some(code.to_string());
-            display_name = name[pattern.len()..].trim().to_string();
-            break;
+    // Detect and strip country/region prefix patterns (Aggressive Generic)
+    let mut clean_loop = true;
+    while clean_loop {
+        clean_loop = false;
+        let re_prefix = Regex::new(r"(?i)^([A-Z0-9]{1,5})(?:\s*[|:-]\s*|\s+)").unwrap();
+        if let Some(caps) = re_prefix.captures(&display_name) {
+            let code = caps.get(1).unwrap().as_str().to_uppercase();
+            let allowed = ["S", "US", "USA", "AM", "UK", "GB", "CA", "EN", "EU", "FR", "DE", "ES", "IT", "VIP", "NBA", "NFL", "MLB", "NHL", "UFC", "PPV"];
+            if allowed.contains(&code.as_str()) {
+                 if country.is_none() && code != "S" && code != "EN" {
+                    country = Some(code);
+                 }
+                 display_name = re_prefix.replace(&display_name, "").to_string();
+                 clean_loop = true;
+            }
         }
     }
 
@@ -834,6 +798,8 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                         .unwrap_or_else(|| Utc::now().with_timezone(&source_tz))
                         .with_timezone(&Utc),
                 );
+                // Clean the name
+                display_name = display_name.replace(caps.get(0).unwrap().as_str(), "").trim().to_string();
             }
         }
     }
@@ -853,6 +819,20 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                     .unwrap_or_else(|| Utc::now().with_timezone(&source_tz))
                     .with_timezone(&Utc),
             );
+            // Clean the name
+            display_name = display_name.replace(caps.get(0).unwrap().as_str(), "").trim().to_string();
+        }
+    }
+
+    // Final attempt to capture leading channel numbers if not already found
+    if channel_prefix.is_none() {
+        let re_chan_final = Regex::new(r"^\s*(\d+)[\s:|x-]*").unwrap();
+        if let Some(caps) = re_chan_final.captures(&display_name) {
+            let num = caps.get(1).unwrap().as_str();
+            channel_prefix = Some(num.to_string());
+            // Optionally clean it from display name if it's there
+            let raw_prefix = caps.get(0).unwrap().as_str();
+            display_name = display_name.replace(raw_prefix, "").trim().to_string();
         }
     }
 
@@ -867,6 +847,7 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         start_time,
         stop_time,
         sports_event,
+        channel_prefix,
     }
 }
 

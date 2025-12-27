@@ -112,6 +112,14 @@ pub struct XtreamClient {
     client: reqwest::Client,
 }
 
+pub fn get_id_str(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::String(val) => val.clone(),
+        serde_json::Value::Number(val) => val.to_string(),
+        _ => v.to_string(),
+    }
+}
+
 impl XtreamClient {
     pub fn new(base_url: String, username: String, password: String) -> Self {
         let base_url = if base_url.ends_with('/') {
@@ -121,12 +129,15 @@ impl XtreamClient {
         };
 
         // Build client with User-Agent and timeouts
-        let client = reqwest::Client::builder()
-            .user_agent("IPTV Smarters Pro")
+        let builder = reqwest::Client::builder()
+            .user_agent("IPTV Smarters Pro");
+        
+        #[cfg(not(target_arch = "wasm32"))]
+        let builder = builder
             .timeout(std::time::Duration::from_secs(60))
-            .connect_timeout(std::time::Duration::from_secs(10))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
+            .connect_timeout(std::time::Duration::from_secs(10));
+
+        let client = builder.build().unwrap_or_else(|_| reqwest::Client::new());
 
         Self {
             base_url,
@@ -250,7 +261,13 @@ impl XtreamClient {
             self.base_url, self.username, self.password
         );
         let resp = self.client.get(&url).send().await
-            .map_err(|e| anyhow::anyhow!("Network request failed: {}", e))?;
+            .map_err(|e| {
+                let mut msg = format!("Network request failed: {}", e);
+                if e.is_connect() { msg = format!("Connection failed (Check internet/URL): {}", e); }
+                if e.is_timeout() { msg = format!("Request timed out (Server slow?): {}", e); }
+                if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error (Try Quad9/Cloudflare DNS in Settings): {}", e); }
+                anyhow::anyhow!(msg)
+            })?;
 
         if !resp.status().is_success() {
             return Err(anyhow::anyhow!("Server returned error status: {}", resp.status()));
@@ -262,10 +279,15 @@ impl XtreamClient {
             server_info: Option<ServerInfo>,
         }
 
-        let body = resp.text().await
+        let bytes = resp.bytes().await
             .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
 
-        match serde_json::from_str::<AuthResponse>(&body) {
+        let bytes_for_auth = bytes.clone();
+        let auth_res = tokio::task::spawn_blocking(move || {
+            serde_json::from_slice::<AuthResponse>(&bytes_for_auth)
+        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?;
+
+        match auth_res {
             Ok(json) => {
                 if let Some(info) = json.user_info {
                     return Ok((info.auth == 1, Some(info), json.server_info));
@@ -273,12 +295,12 @@ impl XtreamClient {
                 Ok((false, None, None))
             }
             Err(e) => {
-                // Check for common error strings in the body (sometimes providers return plain text errors)
-                let lower_body = body.to_lowercase();
-                if lower_body.contains("invalid") || lower_body.contains("expired") || lower_body.contains("disabled") {
+                // Check if it's plain text error
+                let text = String::from_utf8_lossy(&bytes).to_lowercase();
+                if text.contains("invalid") || text.contains("expired") || text.contains("disabled") {
                     return Ok((false, None, None));
                 }
-                Err(anyhow::anyhow!("Failed to parse server response: {}. Body: {}", e, body.chars().take(100).collect::<String>()))
+                Err(anyhow::anyhow!("Failed to parse server response: {}. Body: {}", e, text.chars().take(100).collect::<String>()))
             }
         }
     }
@@ -289,9 +311,25 @@ impl XtreamClient {
             self.base_url, self.username, self.password
         );
         let resp = self.client.get(&url).send().await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch live categories: {}", e))?;
-        let categories: Vec<Category> = resp.json().await
-            .map_err(|e| anyhow::anyhow!("Failed to parse live categories JSON: {}", e))?;
+            .map_err(|e| {
+                let mut msg = format!("Failed to fetch live categories: {}", e);
+                if e.is_connect() { msg = format!("Connection failed: {}", e); }
+                if e.is_timeout() { msg = format!("Request timed out: {}", e); }
+                if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error: {}", e); }
+                anyhow::anyhow!(msg)
+            })?;
+        let bytes = resp.bytes().await
+            .map_err(|e| anyhow::anyhow!("Failed to read live categories body: {}", e))?;
+        
+        if bytes.is_empty() || bytes == "{}" || bytes == "null" {
+            return Ok(Vec::new());
+        }
+
+        let categories = tokio::task::spawn_blocking(move || {
+            serde_json::from_slice::<Vec<Category>>(&bytes)
+        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
+          .map_err(|e| anyhow::anyhow!("Failed to parse live categories JSON: {}", e))?;
+          
         Ok(categories)
     }
 
@@ -309,9 +347,25 @@ impl XtreamClient {
             )
         };
         let resp = self.client.get(&url).send().await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch live streams (category {}): {}", category_id, e))?;
-        let streams: Vec<Stream> = resp.json().await
-            .map_err(|e| anyhow::anyhow!("Failed to parse live streams JSON (category {}): {}", category_id, e))?;
+            .map_err(|e| {
+                let mut msg = format!("Failed to fetch live streams (category {}): {}", category_id, e);
+                if e.is_connect() { msg = format!("Connection failed: {}", e); }
+                if e.is_timeout() { msg = format!("Request timed out: {}", e); }
+                if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error: {}", e); }
+                anyhow::anyhow!(msg)
+            })?;
+        
+        let bytes = resp.bytes().await
+            .map_err(|e| anyhow::anyhow!("Failed to read live streams body (category {}): {}", category_id, e))?;
+
+        if bytes.is_empty() || bytes == "{}" || bytes == "null" {
+            return Ok(Vec::new());
+        }
+
+        let streams = tokio::task::spawn_blocking(move || {
+            serde_json::from_slice::<Vec<Stream>>(&bytes)
+        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
+          .map_err(|e| anyhow::anyhow!("Failed to parse live streams JSON (category {}): {}", category_id, e))?;
         
         // Deduplicate streams based on ID AND name
         // Optimized for performance: avoided unnecessary lowercasing and optimized pre-allocation
@@ -323,11 +377,7 @@ impl XtreamClient {
             .into_iter()
             .filter(|s| {
                 // Efficient ID conversion
-                let id_str = match &s.stream_id {
-                    serde_json::Value::String(val) => val.clone(),
-                    serde_json::Value::Number(val) => val.to_string(),
-                    _ => s.stream_id.to_string(),
-                };
+                let id_str = get_id_str(&s.stream_id);
 
                 // Check ID first (fastest)
                 if seen_ids.contains(&id_str) {
@@ -354,9 +404,25 @@ impl XtreamClient {
             self.base_url, self.username, self.password
         );
         let resp = self.client.get(&url).send().await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch VOD categories: {}", e))?;
-        let categories: Vec<Category> = resp.json().await
-            .map_err(|e| anyhow::anyhow!("Failed to parse VOD categories JSON: {}", e))?;
+            .map_err(|e| {
+                let mut msg = format!("Failed to fetch VOD categories: {}", e);
+                if e.is_connect() { msg = format!("Connection failed: {}", e); }
+                if e.is_timeout() { msg = format!("Request timed out: {}", e); }
+                if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error: {}", e); }
+                anyhow::anyhow!(msg)
+            })?;
+        let bytes = resp.bytes().await
+            .map_err(|e| anyhow::anyhow!("Failed to read VOD categories body: {}", e))?;
+
+        if bytes.is_empty() || bytes == "{}" || bytes == "null" {
+            return Ok(Vec::new());
+        }
+
+        let categories = tokio::task::spawn_blocking(move || {
+            serde_json::from_slice::<Vec<Category>>(&bytes)
+        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
+          .map_err(|e| anyhow::anyhow!("Failed to parse VOD categories JSON: {}", e))?;
+
         Ok(categories)
     }
 
@@ -366,9 +432,26 @@ impl XtreamClient {
             self.base_url, self.username, self.password, category_id
         );
         let resp = self.client.get(&url).send().await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch VOD streams (category {}): {}", category_id, e))?;
-        let streams: Vec<Stream> = resp.json().await
-            .map_err(|e| anyhow::anyhow!("Failed to parse VOD streams JSON (category {}): {}", category_id, e))?;
+            .map_err(|e| {
+                let mut msg = format!("Failed to fetch VOD streams (category {}): {}", category_id, e);
+                if e.is_connect() { msg = format!("Connection failed: {}", e); }
+                if e.is_timeout() { msg = format!("Request timed out: {}", e); }
+                if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error: {}", e); }
+                anyhow::anyhow!(msg)
+            })?;
+        
+        let bytes = resp.bytes().await
+            .map_err(|e| anyhow::anyhow!("Failed to read VOD streams body (category {}): {}", category_id, e))?;
+
+        if bytes.is_empty() || bytes == "{}" || bytes == "null" {
+            return Ok(Vec::new());
+        }
+
+        let streams = tokio::task::spawn_blocking(move || {
+            serde_json::from_slice::<Vec<Stream>>(&bytes)
+        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
+          .map_err(|e| anyhow::anyhow!("Failed to parse VOD streams JSON (category {}): {}", category_id, e))?;
+
         Ok(streams)
     }
 
@@ -378,9 +461,26 @@ impl XtreamClient {
             self.base_url, self.username, self.password
         );
         let resp = self.client.get(&url).send().await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch all VOD streams: {}", e))?;
-        let streams: Vec<Stream> = resp.json().await
-            .map_err(|e| anyhow::anyhow!("Failed to parse all VOD streams JSON: {}", e))?;
+            .map_err(|e| {
+                let mut msg = format!("Failed to fetch all VOD streams: {}", e);
+                if e.is_connect() { msg = format!("Connection failed: {}", e); }
+                if e.is_timeout() { msg = format!("Request timed out: {}", e); }
+                if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error: {}", e); }
+                anyhow::anyhow!(msg)
+            })?;
+        
+        let bytes = resp.bytes().await
+            .map_err(|e| anyhow::anyhow!("Failed to read all VOD streams body: {}", e))?;
+
+        if bytes.is_empty() || bytes == "{}" || bytes == "null" {
+            return Ok(Vec::new());
+        }
+
+        let streams = tokio::task::spawn_blocking(move || {
+            serde_json::from_slice::<Vec<Stream>>(&bytes)
+        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
+          .map_err(|e| anyhow::anyhow!("Failed to parse all VOD streams JSON: {}", e))?;
+
         Ok(streams)
     }
 
@@ -391,8 +491,18 @@ impl XtreamClient {
         );
         let resp = self.client.get(&url).send().await
             .map_err(|e| anyhow::anyhow!("Failed to fetch series categories: {}", e))?;
-        let categories: Vec<Category> = resp.json().await
-            .map_err(|e| anyhow::anyhow!("Failed to parse series categories JSON: {}", e))?;
+        let bytes = resp.bytes().await
+            .map_err(|e| anyhow::anyhow!("Failed to read series categories body: {}", e))?;
+
+        if bytes.is_empty() || bytes == "{}" || bytes == "null" {
+            return Ok(Vec::new());
+        }
+
+        let categories = tokio::task::spawn_blocking(move || {
+            serde_json::from_slice::<Vec<Category>>(&bytes)
+        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
+          .map_err(|e| anyhow::anyhow!("Failed to parse series categories JSON: {}", e))?;
+
         Ok(categories)
     }
 
@@ -403,16 +513,19 @@ impl XtreamClient {
         );
         let resp = self.client.get(&url).send().await
             .map_err(|e| anyhow::anyhow!("Failed to fetch all series: {}", e))?;
-        let text = resp.text().await
-            .map_err(|e| anyhow::anyhow!("Failed to get all series text: {}", e))?;
+        let bytes = resp.bytes().await
+            .map_err(|e| anyhow::anyhow!("Failed to read all series body: {}", e))?;
         
         // Providers sometimes return {} when there are no series instead of []
-        if text.trim() == "{}" || text.trim() == "null" {
+        if bytes.is_empty() || bytes == "{}" || bytes == "null" {
             return Ok(Vec::new());
         }
 
-        let series: Vec<Stream> = serde_json::from_str(&text)
-            .map_err(|e| anyhow::anyhow!("Failed to parse all series JSON: {}", e))?;
+        let series = tokio::task::spawn_blocking(move || {
+            serde_json::from_slice::<Vec<Stream>>(&bytes)
+        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
+          .map_err(|e| anyhow::anyhow!("Failed to parse all series JSON: {}", e))?;
+
         Ok(series)
     }
 

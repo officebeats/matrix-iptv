@@ -2,11 +2,15 @@ pub mod api;
 pub mod app;
 pub mod config;
 pub mod parser;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod player;
 pub mod setup;
 pub mod sports;
 pub mod ui;
+pub mod preprocessing;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod matrix_rain;
+pub mod handlers;
 
 // Wasm module
 #[cfg(target_arch = "wasm32")]

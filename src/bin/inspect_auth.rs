@@ -1,4 +1,3 @@
-use matrix_iptv_lib::api::XtreamClient;
 use matrix_iptv_lib::config::AppConfig;
 use tokio;
 

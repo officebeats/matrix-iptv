@@ -1,0 +1,85 @@
+{
+  "accounts": [
+    {
+      "name": "Strong 8K",
+      "base_url": "http://pledge78502.cdn-akm.me:80",
+      "username": "7c34d33c9e21",
+      "password": "037dacb169",
+      "epg_url": null,
+      "last_refreshed": null,
+      "total_channels": null,
+      "total_movies": null,
+      "total_series": null,
+      "server_timezone": null
+    },
+    {
+      "name": "Trex",
+      "base_url": "http://line.offcial-trex.pro",
+      "username": "3a6aae52fb",
+      "password": "39c165888139",
+      "epg_url": null,
+      "last_refreshed": null,
+      "total_channels": null,
+      "total_movies": null,
+      "total_series": null,
+      "server_timezone": null
+    },
+    {
+      "name": "Premium Mega 4k FHD",
+      "base_url": "http://smarters.live:80",
+      "username": "ZPY7BP5A",
+      "password": "ZX2JVDNQ",
+      "epg_url": null,
+      "last_refreshed": null,
+      "total_channels": null,
+      "total_movies": null,
+      "total_series": null,
+      "server_timezone": null
+    },
+    {
+      "name": "Promax 4k OTT",
+      "base_url": "http://line.queen-4k.cc/",
+      "username": "11D246",
+      "password": "41D1C5",
+      "epg_url": null,
+      "last_refreshed": null,
+      "total_channels": null,
+      "total_movies": null,
+      "total_series": null,
+      "server_timezone": null
+    },
+    {
+      "name": "Mega OTT 1",
+      "base_url": "http://line.4smart.in",
+      "username": "45Z88W6",
+      "password": "Z7PHTX3",
+      "epg_url": null,
+      "last_refreshed": null,
+      "total_channels": null,
+      "total_movies": null,
+      "total_series": null,
+      "server_timezone": null
+    },
+    {
+      "name": "Mega OTT 2",
+      "base_url": "http://pwwkvdbn.qastertv.xyz",
+      "username": "CZ2FWXLS",
+      "password": "AQ9CFKL6",
+      "epg_url": null,
+      "last_refreshed": null,
+      "total_channels": null,
+      "total_movies": null,
+      "total_series": null,
+      "server_timezone": null
+    }
+  ],
+  "last_used_account_index": null,
+  "favorites": {
+    "categories": [],
+    "streams": [],
+    "vod_categories": [],
+    "vod_streams": []
+  },
+  "timezone": null,
+  "american_mode": true
+}

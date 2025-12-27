@@ -49,6 +49,7 @@ pub enum InputMode {
     Editing,
 }
 
+#[derive(PartialEq)]
 pub enum LoginField {
     Name,
     Url,
@@ -145,6 +146,7 @@ pub struct App {
 
     // Settings
     pub settings_options: Vec<String>,
+    pub settings_descriptions: Vec<String>,
     pub selected_settings_index: usize,
     pub settings_list_state: ListState,
     pub selected_content_type_index: usize,
@@ -153,6 +155,12 @@ pub struct App {
     pub input_timezone: Input,
     pub timezone_list: Vec<String>,
     pub timezone_list_state: ListState,
+
+    // DNS selection
+    pub dns_list_state: ListState,
+
+    // Video Mode selection
+    pub video_mode_list_state: ListState,
 
     // Editing
     pub editing_account_index: Option<usize>,
@@ -195,15 +203,22 @@ pub struct App {
 
     // FTUE (First Time User Experience)
     pub show_matrix_rain: bool,
+    #[cfg(not(target_arch = "wasm32"))]
     pub matrix_rain_start_time: Option<std::time::Instant>,
+    #[cfg(target_arch = "wasm32")]
+    pub matrix_rain_start_time: Option<f64>,
     pub matrix_rain_screensaver_mode: bool, // true = screensaver (no logo), false = startup (with logo)
     pub show_welcome_popup: bool,
     pub matrix_rain_columns: Vec<MatrixColumn>,
+    pub matrix_rain_logo_hits: Vec<bool>, // Tracks which logo pixels have been "activated"
 
     // EPG Enrichment
     pub epg_cache: std::collections::HashMap<String, String>,
     pub last_focused_stream_id: Option<String>,
+    #[cfg(not(target_arch = "wasm32"))]
     pub focus_timestamp: Option<std::time::Instant>,
+    #[cfg(target_arch = "wasm32")]
+    pub focus_timestamp: Option<f64>,
 }
 
 #[derive(Clone)]
@@ -219,6 +234,8 @@ pub struct MatrixColumn {
 pub enum SettingsState {
     Main,
     ManageAccounts,
+    DnsSelection,
+    VideoModeSelection,
     About,
 }
 
@@ -236,7 +253,12 @@ impl App {
 
         let _show_ftue = config.accounts.is_empty();
         // Always show matrix rain animation on startup (3 seconds)
+        #[cfg(not(target_arch = "wasm32"))]
         let matrix_rain_start = Some(std::time::Instant::now());
+        #[cfg(target_arch = "wasm32")]
+        let matrix_rain_start = web_sys::window()
+            .and_then(|w| w.performance())
+            .map(|p| p.now());
 
         let mut app = App {
             cached_user_timezone: config.get_user_timezone(),
@@ -308,6 +330,7 @@ impl App {
             global_all_series_streams: vec![],
 
             settings_options: vec![],
+            settings_descriptions: vec![],
             selected_settings_index: 0,
             settings_list_state: ListState::default(),
             selected_content_type_index: 0,
@@ -331,6 +354,8 @@ impl App {
                 "Pacific/Auckland".to_string(),
             ],
             timezone_list_state: ListState::default(),
+            dns_list_state: ListState::default(),
+            video_mode_list_state: ListState::default(),
 
             active_pane: Pane::Categories,
             search_query: String::new(),
@@ -361,6 +386,7 @@ impl App {
             matrix_rain_screensaver_mode: false, // Startup mode (with logo)
             show_welcome_popup: false,
             matrix_rain_columns: vec![],
+            matrix_rain_logo_hits: vec![false; 101 * 6], // 101 wide x 6 high logo
         };
 
         app.refresh_settings_options();
@@ -375,24 +401,55 @@ impl App {
                 self.config.get_user_timezone()
             ),
             format!(
-                "[USA] American Playlist Mode: {}",
+                "Playlist Mode: {}",
                 if self.config.american_mode {
-                    "ON"
+                    "American 'Merica Mode 🇺🇸"
                 } else {
-                    "OFF"
+                    "Default"
                 }
             ),
             format!(
                 "DNS Provider: {}",
                 self.config.dns_provider.display_name()
             ),
+            format!(
+                "Video Mode: {}",
+                if self.config.use_default_mpv {
+                    "MPV Default"
+                } else {
+                    "Enhanced"
+                }
+            ),
             "Matrix Rain Screensaver".to_string(),
             "About".to_string(),
+        ];
+
+        // Descriptions for each setting (same order as settings_options)
+        self.settings_descriptions = vec![
+            "Add, edit, or remove IPTV playlist connections.".to_string(),
+            "Set your local timezone for accurate program scheduling.".to_string(),
+            "American 'Merica Mode: Optimizes display for US sports fans. Shows US flag for American channels, prioritizes NFL/NBA/MLB content parsing, and filters international noise. Default mode shows all content as-is.".to_string(),
+            "Choose DNS provider for network requests. Quad9 recommended for privacy.".to_string(),
+            "Enhanced = Interpolation, upscaling, and soap opera effect for smoother video. MPV Default = Standard MPV settings with no enhancements.".to_string(),
+            "Launch the iconic Matrix digital rain animation.".to_string(),
+            "View application info, version, and credits.".to_string(),
         ];
 
         if self.settings_list_state.selected().is_none() {
             self.settings_list_state.select(Some(0));
         }
+    }
+
+    pub fn get_selected_account(&self) -> Option<&crate::config::Account> {
+        self.config.accounts.get(self.selected_account_index)
+    }
+
+    pub fn get_selected_category(&self) -> Option<&Category> {
+        self.categories.get(self.selected_category_index)
+    }
+
+    pub fn get_selected_stream(&self) -> Option<&Stream> {
+        self.streams.get(self.selected_stream_index)
     }
 
     pub fn next_timezone(&mut self) {
@@ -430,184 +487,137 @@ impl App {
         };
     }
 
-    pub fn next_account(&mut self) {
-        let len = self.config.accounts.len();
-        if len > 0 {
-            let i = match self.account_list_state.selected() {
-                Some(i) => (i + 1) % len,
-                None => 0,
-            };
-            self.selected_account_index = i;
-            self.account_list_state.select(Some(i));
+    fn navigate_list(
+        len: usize,
+        current_index: &mut usize,
+        list_state: &mut ListState,
+        forward: bool,
+    ) {
+        if len == 0 {
+            return;
         }
+        let i = match list_state.selected() {
+            Some(i) => {
+                if forward {
+                    (i + 1) % len
+                } else if i == 0 {
+                    len - 1
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        *current_index = i;
+        list_state.select(Some(i));
+    }
+
+    pub fn next_account(&mut self) {
+        Self::navigate_list(
+            self.config.accounts.len(),
+            &mut self.selected_account_index,
+            &mut self.account_list_state,
+            true,
+        );
     }
 
     pub fn previous_account(&mut self) {
-        let len = self.config.accounts.len();
-        if len > 0 {
-            let i = match self.account_list_state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        len - 1
-                    } else {
-                        i - 1
-                    }
-                }
-                None => 0,
-            };
-            self.selected_account_index = i;
-            self.account_list_state.select(Some(i));
-        }
+        Self::navigate_list(
+            self.config.accounts.len(),
+            &mut self.selected_account_index,
+            &mut self.account_list_state,
+            false,
+        );
     }
 
     pub fn next_category(&mut self) {
-        let len = self.categories.len();
-        if len > 0 {
-            let i = match self.category_list_state.selected() {
-                Some(i) => (i + 1) % len,
-                None => 0,
-            };
-            self.selected_category_index = i;
-            self.category_list_state.select(Some(i));
-        }
+        Self::navigate_list(
+            self.categories.len(),
+            &mut self.selected_category_index,
+            &mut self.category_list_state,
+            true,
+        );
     }
 
     pub fn previous_category(&mut self) {
-        let len = self.categories.len();
-        if len > 0 {
-            let i = match self.category_list_state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        len - 1
-                    } else {
-                        i - 1
-                    }
-                }
-                None => 0,
-            };
-            self.selected_category_index = i;
-            self.category_list_state.select(Some(i));
-        }
+        Self::navigate_list(
+            self.categories.len(),
+            &mut self.selected_category_index,
+            &mut self.category_list_state,
+            false,
+        );
     }
 
     pub fn next_stream(&mut self) {
-        let len = self.streams.len();
-        if len > 0 {
-            let i = match self.stream_list_state.selected() {
-                Some(i) => (i + 1) % len,
-                None => 0,
-            };
-            self.selected_stream_index = i;
-            self.stream_list_state.select(Some(i));
-        }
+        Self::navigate_list(
+            self.streams.len(),
+            &mut self.selected_stream_index,
+            &mut self.stream_list_state,
+            true,
+        );
     }
 
     pub fn previous_stream(&mut self) {
-        let len = self.streams.len();
-        if len > 0 {
-            let i = match self.stream_list_state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        len - 1
-                    } else {
-                        i - 1
-                    }
-                }
-                None => 0,
-            };
-            self.selected_stream_index = i;
-            self.stream_list_state.select(Some(i));
-        }
+        Self::navigate_list(
+            self.streams.len(),
+            &mut self.selected_stream_index,
+            &mut self.stream_list_state,
+            false,
+        );
     }
 
     pub fn next_vod_category(&mut self) {
-        let len = self.vod_categories.len();
-        if len > 0 {
-            let i = match self.vod_category_list_state.selected() {
-                Some(i) => (i + 1) % len,
-                None => 0,
-            };
-            self.selected_vod_category_index = i;
-            self.vod_category_list_state.select(Some(i));
-        }
+        Self::navigate_list(
+            self.vod_categories.len(),
+            &mut self.selected_vod_category_index,
+            &mut self.vod_category_list_state,
+            true,
+        );
     }
 
     pub fn previous_vod_category(&mut self) {
-        let len = self.vod_categories.len();
-        if len > 0 {
-            let i = match self.vod_category_list_state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        len - 1
-                    } else {
-                        i - 1
-                    }
-                }
-                None => 0,
-            };
-            self.selected_vod_category_index = i;
-            self.vod_category_list_state.select(Some(i));
-        }
+        Self::navigate_list(
+            self.vod_categories.len(),
+            &mut self.selected_vod_category_index,
+            &mut self.vod_category_list_state,
+            false,
+        );
     }
 
     pub fn next_vod_stream(&mut self) {
-        let len = self.vod_streams.len();
-        if len > 0 {
-            let i = match self.vod_stream_list_state.selected() {
-                Some(i) => (i + 1) % len,
-                None => 0,
-            };
-            self.selected_vod_stream_index = i;
-            self.vod_stream_list_state.select(Some(i));
-        }
+        Self::navigate_list(
+            self.vod_streams.len(),
+            &mut self.selected_vod_stream_index,
+            &mut self.vod_stream_list_state,
+            true,
+        );
     }
 
     pub fn previous_vod_stream(&mut self) {
-        let len = self.vod_streams.len();
-        if len > 0 {
-            let i = match self.vod_stream_list_state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        len - 1
-                    } else {
-                        i - 1
-                    }
-                }
-                None => 0,
-            };
-            self.selected_vod_stream_index = i;
-            self.vod_stream_list_state.select(Some(i));
-        }
+        Self::navigate_list(
+            self.vod_streams.len(),
+            &mut self.selected_vod_stream_index,
+            &mut self.vod_stream_list_state,
+            false,
+        );
     }
 
     pub fn next_setting(&mut self) {
-        let len = self.settings_options.len();
-        if len > 0 {
-            let i = match self.settings_list_state.selected() {
-                Some(i) => (i + 1) % len,
-                None => 0,
-            };
-            self.selected_settings_index = i;
-            self.settings_list_state.select(Some(i));
-        }
+        Self::navigate_list(
+            self.settings_options.len(),
+            &mut self.selected_settings_index,
+            &mut self.settings_list_state,
+            true,
+        );
     }
 
     pub fn previous_setting(&mut self) {
-        let len = self.settings_options.len();
-        if len > 0 {
-            let i = match self.settings_list_state.selected() {
-                Some(i) => {
-                    if i == 0 {
-                        len - 1
-                    } else {
-                        i - 1
-                    }
-                }
-                None => 0,
-            };
-            self.selected_settings_index = i;
-            self.settings_list_state.select(Some(i));
-        }
+        Self::navigate_list(
+            self.settings_options.len(),
+            &mut self.selected_settings_index,
+            &mut self.settings_list_state,
+            false,
+        );
     }
 
     pub fn update_search(&mut self) {
@@ -781,99 +791,57 @@ impl App {
 
     // Series Navigation Helpers
     pub fn next_series_category(&mut self) {
-        let i = match self.series_category_list_state.selected() {
-            Some(i) => {
-                if i >= self.series_categories.len() - 1 {
-                    0
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.selected_series_category_index = i;
-        self.series_category_list_state.select(Some(i));
+        Self::navigate_list(
+            self.series_categories.len(),
+            &mut self.selected_series_category_index,
+            &mut self.series_category_list_state,
+            true,
+        );
     }
 
     pub fn previous_series_category(&mut self) {
-        let i = match self.series_category_list_state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.series_categories.len() - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.selected_series_category_index = i;
-        self.series_category_list_state.select(Some(i));
+        Self::navigate_list(
+            self.series_categories.len(),
+            &mut self.selected_series_category_index,
+            &mut self.series_category_list_state,
+            false,
+        );
     }
 
     pub fn next_series_stream(&mut self) {
-        let i = match self.series_stream_list_state.selected() {
-            Some(i) => {
-                if i >= self.series_streams.len() - 1 {
-                    0
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.selected_series_stream_index = i;
-        self.series_stream_list_state.select(Some(i));
+        Self::navigate_list(
+            self.series_streams.len(),
+            &mut self.selected_series_stream_index,
+            &mut self.series_stream_list_state,
+            true,
+        );
     }
 
     pub fn previous_series_stream(&mut self) {
-        let i = match self.series_stream_list_state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.series_streams.len() - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.selected_series_stream_index = i;
-        self.series_stream_list_state.select(Some(i));
+        Self::navigate_list(
+            self.series_streams.len(),
+            &mut self.selected_series_stream_index,
+            &mut self.series_stream_list_state,
+            false,
+        );
     }
 
     pub fn next_series_episode(&mut self) {
-        if self.series_episodes.is_empty() {
-            return;
-        }
-        let i = match self.series_episode_list_state.selected() {
-            Some(i) => {
-                if i >= self.series_episodes.len() - 1 {
-                    0
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.selected_series_episode_index = i;
-        self.series_episode_list_state.select(Some(i));
+        Self::navigate_list(
+            self.series_episodes.len(),
+            &mut self.selected_series_episode_index,
+            &mut self.series_episode_list_state,
+            true,
+        );
     }
 
     pub fn previous_series_episode(&mut self) {
-        if self.series_episodes.is_empty() {
-            return;
-        }
-        let i = match self.series_episode_list_state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    self.series_episodes.len() - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.selected_series_episode_index = i;
-        self.series_episode_list_state.select(Some(i));
+        Self::navigate_list(
+            self.series_episodes.len(),
+            &mut self.selected_series_episode_index,
+            &mut self.series_episode_list_state,
+            false,
+        );
     }
 
     pub fn save_account(&mut self) {
@@ -936,6 +904,7 @@ impl App {
 
     /// Handles a key event and returns an optional AsyncAction to be spawned.
     /// This allows testing the logic without running the full TUI.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn handle_key_event(&mut self, key: crossterm::event::KeyEvent) -> Option<AsyncAction> {
         use crossterm::event::KeyCode;
 

@@ -39,44 +39,53 @@ impl Player {
 
     /// Start MPV and return the IPC pipe path for monitoring
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn play(&self, url: &str) -> Result<(), anyhow::Error> {
+    pub fn play(&self, url: &str, use_default_mpv: bool) -> Result<(), anyhow::Error> {
         self.stop();
 
         // Create a unique named pipe path for this session
         let pipe_name = format!("\\\\.\\pipe\\mpv_ipc_{}", std::process::id());
 
-        let child = Command::new("mpv")
-            .arg(url)
-            .arg("--fs")        // Start in Fullscreen
-            .arg("--no-border") // Headless (no window decorations)
-            .arg("--osc=no")    // Disable On Screen Controller for clean look
-            .arg("--video-sync=display-resample") // Smooth motion sync (required for interpolation)
-            .arg("--interpolation=yes") // Pseudo-frame generation / motion smoothing
-            .arg("--tscale=oversample") // Sharpest, high-quality upscaling/interpolation (temporal AA)
-            .arg("--cache=yes")
-            .arg("--demuxer-max-bytes=256MiB") // Increased Cache
-            .arg("--demuxer-max-back-bytes=64MiB")
-            .arg("--demuxer-readahead-secs=20") // Buffer stability
-            .arg("--d3d11-flip=yes")            // Modern Windows presentation (faster)
-            .arg("--framedrop=vo")              // Drop frames gracefully if GPU lags
-            .arg("--vd-lavc-fast")      // Enable fast decoding optimizations
-            .arg("--vd-lavc-skiploopfilter=all") // Major CPU saver for low-end machines
-            .arg("--vd-lavc-threads=0") // Maximize thread usage for decoding
-            .arg("--sharpen=0.6")        // Lowered to let scales do the work
-            .arg("--scale=spline36")     // Better anti-aliasing (edges)
-            .arg("--cscale=mitchell")    // Clean chroma scaling
-            .arg("--scale-antiring=0.7") // Reduce haloing
-            .arg("--cscale-antiring=0.7")
-            .arg("--msg-level=all=no")
-            .arg("--term-status-msg=no")
-            .arg("--hwdec=auto-safe") // Balanced Hardware Decoding
-            // Add User-Agent to masquerade as a browser (crucial for some IPTV providers)
-            .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
-            // Keep window open if playback fails to see error (optional, maybe off for prod)
-            .arg("--keep-open=no")
-            // IPC for status monitoring
-            .arg(format!("--input-ipc-server={}", pipe_name))
-            .spawn();
+        let mut cmd = Command::new("mpv");
+        cmd.arg(url)
+           .arg("--fs")        // Start in Fullscreen
+           .arg("--osc=yes");  // Enable On Screen Controller for usability
+
+        // Only apply optimizations if not using default MPV settings
+        if !use_default_mpv {
+            cmd.arg("--video-sync=display-resample") // Smooth motion sync (required for interpolation)
+               .arg("--interpolation=yes") // Frame generation / motion smoothing
+               .arg("--tscale=linear")     // Soap opera effect - smooth motion blending (GPU friendly)
+               .arg("--tscale-clamp=0.0")  // Allow full blending for maximum smoothness
+               .arg("--cache=yes")
+               .arg("--demuxer-max-bytes=256MiB") // Increased Cache
+               .arg("--demuxer-max-back-bytes=64MiB")
+               .arg("--demuxer-readahead-secs=20") // Buffer stability
+               .arg("--d3d11-flip=yes")            // Modern Windows presentation (faster)
+               .arg("--gpu-api=d3d11")              // Force D3D11 (faster than OpenGL on Windows)
+               .arg("--framedrop=vo")              // Drop frames gracefully if GPU lags
+               .arg("--vd-lavc-fast")              // Enable fast decoding optimizations
+               .arg("--vd-lavc-skiploopfilter=all") // Major CPU saver for low-end machines
+               .arg("--vd-lavc-threads=0")         // Maximize thread usage for decoding
+               // LOW-END FRIENDLY UPSCALING (catmull_rom: good quality, low GPU cost)
+               .arg("--scale=catmull_rom")         // Clean upscaling, ~25% faster than spline36
+               .arg("--cscale=catmull_rom")        // Matching chroma scaler
+               .arg("--dscale=catmull_rom")        // Consistent downscaling
+               .arg("--scale-antiring=0.7")        // Reduce haloing
+               .arg("--cscale-antiring=0.7")
+               .arg("--hwdec=auto-copy");          // More compatible hardware decoding
+        }
+
+        // Common settings for both modes
+        cmd.arg("--msg-level=all=no")
+           .arg("--term-status-msg=no")
+           // Add User-Agent to masquerade as a browser (crucial for some IPTV providers)
+           .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
+           // Keep window open if playback fails to see error (optional, maybe off for prod)
+           .arg("--keep-open=no")
+           // IPC for status monitoring
+           .arg(format!("--input-ipc-server={}", pipe_name));
+
+        let child = cmd.spawn();
 
         match child {
             Ok(child) => {
@@ -153,7 +162,7 @@ impl Player {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn play(&self, url: &str) -> Result<(), anyhow::Error> {
+    pub fn play(&self, url: &str, _use_default_mpv: bool) -> Result<(), anyhow::Error> {
         self.stop();
         if let Some(win) = window() {
             let _ = win.alert_with_message(&format!("Play stream: {}", url));

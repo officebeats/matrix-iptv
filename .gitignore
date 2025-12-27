@@ -2,7 +2,7 @@
 /target
 Cargo.lock
 
-# Config (CRITICAL: DO NOT REMOVE)
+# Config (CRITICAL: Private Data)
 config.json
 *.json
 *.json.bak
@@ -15,6 +15,8 @@ bin/*.exe
 bin/matrix-iptv
 bin/matrix-iptv-macos
 bin/matrix-iptv-linux
+/pkg/
+/dist/
 
 # Logs & Test Results
 *.log
@@ -25,7 +27,11 @@ prints.txt
 build_output*.txt
 series_info_test.txt
 build_errors.txt
-strong_test_results.txt
+build_errors_2.txt
+build_log.txt
+full_test_output.txt
+test_error.txt
+test_output.txt
 
 # OS
 .DS_Store
@@ -39,3 +45,7 @@ Thumbs.db
 
 # Setup scripts (contain private credentials)
 setup_test_playlists.ps1
+add_to_profile.ps1
+powershell_profile_snippet.ps1
+
+node_modules/

@@ -1,18 +1,22 @@
 use crate::app::{App, CurrentScreen, InputMode, LoginField};
 use crate::config::Account;
-use crate::player::Player;
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
+
+#[wasm_bindgen]
+extern "C" {
+    fn playStream(url: &str);
+}
+
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
 pub struct WasmClient {
     app: Rc<RefCell<App>>,
     terminal: Rc<RefCell<Terminal<TestBackend>>>,
-    player: Player,
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -33,7 +37,6 @@ impl WasmClient {
         Self {
             app,
             terminal: Rc::new(RefCell::new(terminal)),
-            player: Player::new(),
         }
     }
 
@@ -42,6 +45,7 @@ impl WasmClient {
         let mut term = self.terminal.borrow_mut();
 
         let _ = term.draw(|f| crate::ui::ui(f, &mut app));
+        app.loading_tick = app.loading_tick.wrapping_add(1);
 
         let buffer = term.backend().buffer();
         let mut s = String::new();
@@ -72,41 +76,70 @@ impl WasmClient {
                     "j" | "ArrowDown" => app.next_account(),
                     "k" | "ArrowUp" => app.previous_account(),
                     "Enter" => {
-                        // Mock login for UI test
-                        // Allow mock login even if empty for testing purposes
-                        if app.config.accounts.is_empty() {
-                            // If empty, just create a mock one so we can proceed
-                            app.config.accounts.push(crate::config::Account {
-                                name: "Mock Account".into(),
-                                base_url: "http://mock.local".into(),
-                                username: "mock".into(),
-                                password: "mock".into(),
-                                epg_url: None,
-                                last_refreshed: None,
-                                total_channels: None,
-                                total_movies: None,
-                                total_series: None,
-                            });
-                        }
+                        if let Some(acc) = app.get_selected_account() {
+                            let base_url = acc.base_url.clone();
+                            let username = acc.username.clone();
+                            let password = acc.password.clone();
+                            
+                            // Auto-inject localhost:8081 for POC testing if not already present
+                            let proxy_url = if !base_url.contains("localhost") {
+                                format!("http://localhost:8081/{}", base_url)
+                            } else {
+                                base_url
+                            };
 
-                        if !app.config.accounts.is_empty() {
-                            // Just switch to categories directly for test
-                            app.current_screen = CurrentScreen::Categories;
-                            app.selected_category_index = 0;
-                            app.category_list_state.select(Some(0));
-                            // Mock categories
-                            app.categories = vec![
-                                crate::api::Category {
-                                    category_id: "1".into(),
-                                    category_name: "Mock Category 1".into(),
-                                    parent_id: serde_json::Value::Number(0.into()),
-                                },
-                                crate::api::Category {
-                                    category_id: "2".into(),
-                                    category_name: "Mock Category 2".into(),
-                                    parent_id: serde_json::Value::Number(0.into()),
-                                },
-                            ];
+                            web_sys::console::log_1(&format!("[Wasm] Authenticating via proxy: {}", proxy_url).into());
+
+                            let client = crate::api::XtreamClient::new(proxy_url, username, password);
+                            app.current_client = Some(client.clone());
+                            app.state_loading = true;
+
+                            let app_rc = self.app.clone();
+                            
+                            // Spawn async login
+                            wasm_bindgen_futures::spawn_local(async move {
+                                let result = client.authenticate().await;
+                                {
+                                    let mut app = app_rc.borrow_mut();
+                                    app.state_loading = false;
+                                }
+                                
+                                match result {
+                                    Ok((true, user_info, server_info)) => {
+                                        web_sys::console::log_1(&"[Wasm] Login Successful. Fetching categories...".into());
+                                        let mut app = app_rc.borrow_mut();
+                                        app.cached_user_timezone = server_info.as_ref()
+                                            .and_then(|i| i.timezone.clone())
+                                            .unwrap_or_else(|| "UTC".into());
+                                        
+                                        let client_clone = client.clone();
+                                        let app_rc_inner = app_rc.clone();
+                                        
+                                        // Fetch categories
+                                        wasm_bindgen_futures::spawn_local(async move {
+                                             let cats_res = client_clone.get_live_categories().await;
+                                             let mut app = app_rc_inner.borrow_mut();
+                                             match cats_res {
+                                                 Ok(cats) => {
+                                                     web_sys::console::log_1(&format!("[Wasm] Loaded {} categories.", cats.len()).into());
+                                                     app.categories = cats.clone();
+                                                     app.all_categories = cats;
+                                                     app.current_screen = CurrentScreen::Categories;
+                                                 }
+                                                 Err(e) => {
+                                                     web_sys::console::error_1(&format!("[Wasm] Failed to load categories: {}", e).into());
+                                                 }
+                                             }
+                                        });
+                                    },
+                                    Ok((false, _, _)) => {
+                                         web_sys::console::error_1(&"[Wasm] Login Failed: Invalid Credentials".into());
+                                    },
+                                    Err(e) => {
+                                        web_sys::console::error_1(&format!("[Wasm] Network Error during login: {}", e).into());
+                                    }
+                                }
+                            });
                         }
                     }
                     _ => {}
@@ -160,14 +193,15 @@ impl WasmClient {
 
                         match key.as_str() {
                             "Escape" => app.toggle_input_mode(),
-                            "Enter" => {
-                                app.toggle_input_mode();
+                            "Enter" | "Tab" => {
+                                // Advance focus but STAY in editing mode
                                 app.login_field_focus = match app.login_field_focus {
                                     LoginField::Name => LoginField::Url,
                                     LoginField::Url => LoginField::Username,
                                     LoginField::Username => LoginField::Password,
                                     LoginField::Password => LoginField::EpgUrl,
                                     LoginField::EpgUrl => {
+                                        // Final field, try to save
                                         let name = app.input_name.value().to_string();
                                         let url = app.input_url.value().to_string();
                                         let user = app.input_username.value().to_string();
@@ -186,17 +220,20 @@ impl WasmClient {
                                                 total_channels: None,
                                                 total_movies: None,
                                                 total_series: None,
+                                                server_timezone: None,
                                             };
                                             app.config.add_account(acc);
+                                            app.toggle_input_mode(); // Done editing
                                             app.current_screen = CurrentScreen::Home;
                                             app.input_name = tui_input::Input::default();
                                             app.input_url = tui_input::Input::default();
                                             app.input_username = tui_input::Input::default();
                                             app.input_password = tui_input::Input::default();
                                             app.input_epg_url = tui_input::Input::default();
-                                            // Return any field
                                             LoginField::Name
                                         } else {
+                                            // Missing required fields, stay on epg or move back?
+                                            // Let's stay and highlight?
                                             LoginField::EpgUrl
                                         }
                                     }
@@ -228,25 +265,20 @@ impl WasmClient {
                     "Tab" => {
                         if app.current_screen == CurrentScreen::Categories {
                             app.current_screen = CurrentScreen::VodCategories;
-                            app.selected_vod_category_index = 0;
-                            app.vod_category_list_state.select(Some(0));
-                            // Mock VOD categories
-                            app.vod_categories = vec![
-                                crate::api::Category {
-                                    category_id: "v1".into(),
-                                    category_name: "Action Movies".into(),
-                                    parent_id: serde_json::Value::Number(0.into()),
-                                },
-                                crate::api::Category {
-                                    category_id: "v2".into(),
-                                    category_name: "Comedy Movies".into(),
-                                    parent_id: serde_json::Value::Number(0.into()),
-                                },
-                            ];
+                             // Fetch VOD categories async?
+                             if let Some(client) = &app.current_client {
+                                 let client = client.clone();
+                                 let app_rc = self.app.clone();
+                                 wasm_bindgen_futures::spawn_local(async move {
+                                     if let Ok(cats) = client.get_vod_categories().await {
+                                         let mut app = app_rc.borrow_mut();
+                                         app.vod_categories = cats;
+                                     }
+                                 });
+                             }
+
                         } else if app.current_screen == CurrentScreen::VodCategories {
                             app.current_screen = CurrentScreen::Categories;
-                            app.selected_category_index = 0;
-                            app.category_list_state.select(Some(0));
                         }
                     }
                     "j" | "ArrowDown" => match app.current_screen {
@@ -265,6 +297,47 @@ impl WasmClient {
                         CurrentScreen::Settings => app.previous_setting(),
                         _ => {}
                     },
+                    "Enter" => {
+                        match app.current_screen {
+                            CurrentScreen::Categories => {
+                                if let Some(cat) = app.get_selected_category() {
+                                    let id = cat.category_id.clone();
+                                    if let Some(client) = &app.current_client {
+                                         let client = client.clone();
+                                         let app_rc = self.app.clone();
+                                         // Show loading?
+                                         wasm_bindgen_futures::spawn_local(async move {
+                                             if let Ok(streams) = client.get_live_streams(&id).await {
+                                                 let mut app = app_rc.borrow_mut();
+                                                 app.streams = streams.clone();
+                                                 app.all_streams = streams;
+                                                 app.current_screen = CurrentScreen::Streams; 
+                                             }
+                                         });
+                                    }
+                                }
+                            }
+                            CurrentScreen::Streams => {
+                                if let Some(stream) = app.get_selected_stream() {
+                                     let stream_id = match &stream.stream_id {
+                                         serde_json::Value::String(s) => s.clone(),
+                                         serde_json::Value::Number(n) => n.to_string(),
+                                         _ => stream.stream_id.to_string(),
+                                     };
+                                     let ext = stream.container_extension.clone().unwrap_or_else(|| "m3u8".to_string());
+                                     
+                                     if let Some(client) = &app.current_client {
+                                         let url = client.get_stream_url(&stream_id, &ext);
+                                         web_sys::console::log_1(&format!("[Wasm] Playing Stream: {} (URL: {})", stream.name, url).into());
+                                         
+                                         // Trigger JS playback
+                                         playStream(&url);
+                                     }
+                                }
+                            }
+                             _ => {}
+                        }
+                    }
                     _ => {}
                 }
             }

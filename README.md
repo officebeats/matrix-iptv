@@ -27,7 +27,7 @@ This project is being actively optimized by **Ernesto "Beats"** with a primary f
 
 #### **Don't have MPV Player?**
 
-- **Windows:** `winget install info.mpv.mpv`
+- **Windows:** `winget install mpv`
 - **Mac:** `brew install mpv`
 - **Linux:** `sudo apt install mpv`
 

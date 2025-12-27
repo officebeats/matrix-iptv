@@ -85,7 +85,7 @@
     </script>
 
     <script type="module">
-      import init, { WasmClient } from "./pkg/matrix_iptv.js";
+      import init, { WasmClient } from "./pkg/matrix_iptv_lib.js";
 
       async function run() {
         try {
@@ -110,7 +110,17 @@
                 "ArrowLeft",
                 "ArrowRight",
                 "Space",
-              ].includes(event.code)
+                "Tab",
+                "Shift",
+              ].includes(event.code) ||
+              [
+                "ArrowUp",
+                "ArrowDown",
+                "ArrowLeft",
+                "ArrowRight",
+                "Space",
+                "Tab",
+              ].includes(event.key)
             ) {
               event.preventDefault();
             }

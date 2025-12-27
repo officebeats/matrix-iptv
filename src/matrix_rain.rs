@@ -10,53 +10,97 @@ use ratatui::{
 use rand::Rng;
 
 const MATRIX_CHARS: &[char] = &[
-    // Half-width Katakana (classic Matrix look)
+    // Mixed set: Katakana, Numbers, Roman, Symbols
     'ｦ', 'ｧ', 'ｨ', 'ｩ', 'ｪ', 'ｫ', 'ｬ', 'ｭ', 'ｮ', 'ｯ',
     'ｰ', 'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ｶ', 'ｷ', 'ｸ', 'ｹ',
     'ｺ', 'ｻ', 'ｼ', 'ｽ', 'ｾ', 'ｿ', 'ﾀ', 'ﾁ', 'ﾂ', 'ﾃ',
     'ﾄ', 'ﾅ', 'ﾆ', 'ﾇ', 'ﾈ', 'ﾉ', 'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ',
     'ﾎ', 'ﾏ', 'ﾐ', 'ﾑ', 'ﾒ', 'ﾓ', 'ﾔ', 'ﾕ', 'ﾖ', 'ﾗ',
     'ﾘ', 'ﾙ', 'ﾚ', 'ﾛ', 'ﾜ', 'ﾝ',
-    // Some numbers for variety
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+    'A', 'B', 'C', 'D', 'E', 'F', 'Z', 'M', 'X', 'Q',
+    'Ω', 'π', 'Ψ', 'Δ', '⚡',
 ];
 
 pub fn init_matrix_rain(area: Rect) -> Vec<MatrixColumn> {
     let mut rng = rand::thread_rng();
     let mut columns = Vec::new();
     
-    // Create columns across the width - MORE RAIN!
+    // Logo boundaries for guaranteed density
+    let logo_width = 101;
+    let logo_x_start = area.width.saturating_sub(logo_width) / 2;
+    let logo_x_end = logo_x_start + logo_width;
+
+    // Create columns across the width - ULTRA DENSE RAIN
     for x in 0..area.width {
-        if rng.gen_bool(0.7) { // 70% chance for each column (was 30%)
-            let length = rng.gen_range(8..30); // Longer columns (was 5..20)
-            let speed = 1; // Faster speed - 10% faster (was 1..3, now always 1)
-            let y = rng.gen_range(0..area.height);
-            
-            let mut chars = Vec::new();
-            for _ in 0..length {
-                chars.push(MATRIX_CHARS[rng.gen_range(0..MATRIX_CHARS.len())]);
+        let is_logo_x = x >= logo_x_start && x < logo_x_end;
+        // Boost density in logo area (multiple streams per column)
+        let streams = if is_logo_x { 2 } else { 1 };
+        
+        for _ in 0..streams {
+            // Halved density: 0.90 -> 0.45
+            // But KEEP logo area guaranteed (is_logo_x) so the logo still builds properly
+            if is_logo_x || rng.gen_bool(0.45) { 
+                let length = rng.gen_range(10..40); // varied length
+                let speed = rng.gen_range(1..4); // Varied speed (1=fastest, 3=slower)
+                // Offset Y start to stagger particles in double streams
+                let y = rng.gen_range(0..area.height + length);
+                
+                let mut chars = Vec::new();
+                for _ in 0..length {
+                    chars.push(MATRIX_CHARS[rng.gen_range(0..MATRIX_CHARS.len())]);
+                }
+                
+                columns.push(MatrixColumn {
+                    x,
+                    y: y.saturating_sub(length), // Start offscreen or staggered
+                    length,
+                    speed,
+                    chars,
+                });
             }
-            
-            columns.push(MatrixColumn {
-                x,
-                y,
-                length,
-                speed,
-                chars,
-            });
         }
     }
     
     columns
 }
 
-pub fn update_matrix_rain(columns: &mut Vec<MatrixColumn>, area: Rect, tick: u64) {
+pub fn update_matrix_rain(columns: &mut Vec<MatrixColumn>, area: Rect, tick: u64, logo_hits: &mut Vec<bool>, show_logo: bool) {
     let mut rng = rand::thread_rng();
     
+    let logo_width = 101;
+    let logo_height = LOGO_LINES.len() as u16;
+    let logo_x = area.x + area.width.saturating_sub(logo_width) / 2;
+    let logo_y = area.y + area.height.saturating_sub(logo_height) / 2;
+
     for column in columns.iter_mut() {
         // Update position based on speed
         if tick % column.speed as u64 == 0 {
             column.y += 1;
+
+            // Hit detection for building logo: Check the head AND the immediate trail segment
+            if show_logo {
+                if column.x >= logo_x && column.x < logo_x + logo_width {
+                    let lx = (column.x - logo_x) as usize;
+                    // Check the head and a few pixels of the tail to "paint" the logo in more solidly
+                    for i in 0..6 { // Check top 6 chars of the falling column
+                        let py = column.y.saturating_sub(i);
+                        if py >= logo_y && py < logo_y + logo_height {
+                            let ly = (py - logo_y) as usize;
+                            if let Some(line) = LOGO_LINES.get(ly) {
+                                if let Some(c) = line.chars().nth(lx) {
+                                    if c != ' ' {
+                                        let idx = ly * (logo_width as usize) + lx;
+                                        if idx < logo_hits.len() {
+                                            logo_hits[idx] = true;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             
             // Reset column if it goes off screen
             if column.y > area.height + column.length {
@@ -67,87 +111,133 @@ pub fn update_matrix_rain(columns: &mut Vec<MatrixColumn>, area: Rect, tick: u64
                 for i in 0..column.chars.len() {
                     column.chars[i] = MATRIX_CHARS[rng.gen_range(0..MATRIX_CHARS.len())];
                 }
+            } else {
+                // Occasional "decryption" shift: change a random character in the column
+                if rng.gen_bool(0.05) { // 5% chance per frame per column
+                     let idx = rng.gen_range(0..column.chars.len());
+                     column.chars[idx] = MATRIX_CHARS[rng.gen_range(0..MATRIX_CHARS.len())];
+                }
             }
         }
     }
 }
 
+const LOGO_LINES: &[&str] = &[
+    "███╗   ███╗ █████╗ ████████╗██████╗ ██╗██╗  ██╗    ██╗██████╗ ████████╗██╗   ██╗     ██████╗██╗     ██╗",
+    "████╗ ████║██╔══██╗╚══██╔══╝██╔══██╗██║╚██╗██╔╝    ██║██╔══██╗╚══██╔══╝██║   ██║    ██╔════╝██║     ██║",
+    "██╔████╔██║███████║   ██║   ██████╔╝██║ ╚███╔╝     ██║██████╔╝   ██║   ██║   ██║    ██║     ██║     ██║",
+    "██║╚██╔╝██║██╔══██║   ██║   ██╔══██╗██║ ██╔██╗     ██║██╔═══╝    ██║   ╚██╗ ██╔╝    ██║     ██║     ██║",
+    "██║ ╚═╝ ██║██║  ██║   ██║   ██║  ██║██║██╔╝ ██╗    ██║██║        ██║    ╚████╔╝     ╚██████╗███████╗██║",
+    "╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝    ╚═╝╚═╝        ╚═╝     ╚═══╝       ╚═════╝╚══════╝╚═╝",
+];
+
 pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
-    // Matrix green color to match home screen
-    const MATRIX_GREEN: Color = Color::Rgb(0, 255, 70);
+    // Clear background to hide UI completely (Startup and Screensaver)
+    f.render_widget(Clear, area);
+    let block = Block::default().style(Style::default().bg(Color::Black));
+    f.render_widget(block, area);
+
+    // Calculate logo position for hit detection
+    let logo_width = 101;
+    let logo_height = LOGO_LINES.len() as u16;
+    let logo_x = area.x + area.width.saturating_sub(logo_width) / 2;
+    let logo_y = area.y + area.height.saturating_sub(logo_height) / 2;
     
-    // ASCII Logo for "MATRIX IPTV CLI"
-    let logo_lines = vec![
-        "███╗   ███╗ █████╗ ████████╗██████╗ ██╗██╗  ██╗    ██╗██████╗ ████████╗██╗   ██╗     ██████╗██╗     ██╗",
-        "████╗ ████║██╔══██╗╚══██╔══╝██╔══██╗██║╚██╗██╔╝    ██║██╔══██╗╚══██╔══╝██║   ██║    ██╔════╝██║     ██║",
-        "██╔████╔██║███████║   ██║   ██████╔╝██║ ╚███╔╝     ██║██████╔╝   ██║   ██║   ██║    ██║     ██║     ██║",
-        "██║╚██╔╝██║██╔══██║   ██║   ██╔══██╗██║ ██╔██╗     ██║██╔═══╝    ██║   ╚██╗ ██╔╝    ██║     ██║     ██║",
-        "██║ ╚═╝ ██║██║  ██║   ██║   ██║  ██║██║██╔╝ ██╗    ██║██║        ██║    ╚████╔╝     ╚██████╗███████╗██║",
-        "╚═╝     ╚═╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝╚═╝  ╚═╝    ╚═╝╚═╝        ╚═╝     ╚═══╝       ╚═════╝╚══════╝╚═╝",
-    ];
-    
-    // Calculate reveal progress based on elapsed time (0.0 to 1.0)
-    let elapsed = if let Some(start) = app.matrix_rain_start_time {
-        start.elapsed().as_millis() as f32 / 3000.0 // 3 seconds total
-    } else {
-        0.0
-    };
-    let reveal_progress = elapsed.min(1.0);
-    
-    // Render Matrix rain columns (background)
+    // 1. Draw the "trace" (activated logo pixels)
+    // This builds up the static logo as rain passes through it
+    for ly in 0..logo_height {
+        for lx in 0..logo_width {
+            let idx = (ly as usize) * (logo_width as usize) + (lx as usize);
+            if let Some(true) = app.matrix_rain_logo_hits.get(idx) {
+                let gx = logo_x + lx;
+                let gy = logo_y + ly;
+                if gx < area.width && gy < area.height {
+                    if let Some(line) = LOGO_LINES.get(ly as usize) {
+                        if let Some(c) = line.chars().nth(lx as usize) {
+                            if c != ' ' {
+                                // Super bright neon green for activated pixels
+                                let style = Style::default().fg(Color::Rgb(0, 255, 120)).add_modifier(Modifier::BOLD);
+                                f.render_widget(Paragraph::new(c.to_string()).style(style), Rect::new(gx, gy, 1, 1));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Draw a VERY dim version of the remaining logo (ghosting)
+    for (ly, line) in LOGO_LINES.iter().enumerate() {
+        let gy = logo_y + ly as u16;
+        if gy < area.height {
+            // Slightly brighter ghost so it's easier to see structure early on
+            let trace_style = Style::default().fg(Color::Rgb(0, 60, 0)); 
+            let span = Span::styled(*line, trace_style);
+            f.render_widget(
+                Paragraph::new(vec![Line::from(span)]),
+                Rect::new(logo_x, gy, logo_width, 1)
+            );
+        }
+    }
+
+    // Render Matrix rain columns
     for column in &app.matrix_rain_columns {
         for (i, &ch) in column.chars.iter().enumerate() {
             let y = column.y.saturating_sub(i as u16);
             
             if y < area.height && column.x < area.width {
-                let brightness = if i == 0 {
-                    Color::White // Head of the column is brightest
-                } else if i < 3 {
-                    Color::Rgb(0, 255, 0) // Bright green
+                let gx = area.x + column.x;
+                let gy = area.y + y;
+
+                // Check if this rain character overlaps with a non-empty pixel of our logo
+                let mut logo_char = None;
+                if gx >= logo_x && gx < logo_x + logo_width &&
+                   gy >= logo_y && gy < logo_y + logo_height
+                {
+                    let lx = (gx - logo_x) as usize;
+                    let ly = (gy - logo_y) as usize;
+                    if let Some(line) = LOGO_LINES.get(ly) {
+                        if let Some(c) = line.chars().nth(lx) {
+                            if c != ' ' {
+                                logo_char = Some(c);
+                            }
+                        }
+                    }
+                }
+
+                // Occasional random bright glitch
+                let is_glitch = rand::thread_rng().gen_bool(0.01);
+                
+                let (draw_ch, style) = if let Some(lc) = logo_char {
+                    // Logo pixels "ignite" - use the logo character itself and make it very bright
+                    let color = if i == 0 {
+                        Color::White 
+                    } else if i < 15 { // Longer highlight tail for logo
+                        Color::Rgb(180, 255, 180)
+                    } else {
+                        Color::Rgb(0, 200, 0)
+                    };
+                    (lc.to_string(), Style::default().fg(color).add_modifier(Modifier::BOLD))
                 } else {
-                    Color::Rgb(0, (200 - (i * 20).min(180)) as u8, 0) // Fading green
+                    let color = if i == 0 || is_glitch {
+                        Color::White // Head or glitch
+                    } else if i < 6 {
+                        Color::Rgb(0, 255, 100) // Bright green top
+                    } else {
+                        Color::Rgb(0, 160, 0) // Deep green body
+                    };
+                    (ch.to_string(), Style::default().fg(color).add_modifier(Modifier::BOLD))
                 };
                 
                 let cell_area = Rect {
-                    x: area.x + column.x,
-                    y: area.y + y,
+                    x: gx,
+                    y: gy,
                     width: 1,
                     height: 1,
                 };
                 
-                let span = Span::styled(
-                    ch.to_string(),
-                    Style::default().fg(brightness).add_modifier(Modifier::BOLD),
-                );
-                
-                f.render_widget(Paragraph::new(span), cell_area);
+                f.render_widget(Paragraph::new(Span::styled(draw_ch, style)), cell_area);
             }
-        }
-    }
-    
-    // Only show logo in startup mode (not screensaver mode)
-    if !app.matrix_rain_screensaver_mode {
-        // Logo appears immediately and stays for full 3 seconds
-        if reveal_progress < 1.0 {
-            // Calculate logo area (centered)
-            let logo_height = logo_lines.len() as u16;
-            let logo_y = (area.height / 2).saturating_sub(logo_height / 2);
-            
-            let logo_area = Rect {
-                x: area.x,
-                y: area.y + logo_y,
-                width: area.width,
-                height: logo_height.min(area.height.saturating_sub(logo_y)),
-            };
-            
-            let logo_text = logo_lines.join("\n");
-            let logo_widget = Paragraph::new(logo_text)
-                .style(Style::default()
-                    .fg(MATRIX_GREEN)
-                    .add_modifier(Modifier::BOLD))
-                .alignment(Alignment::Center);
-            
-            f.render_widget(logo_widget, logo_area);
         }
     }
 }

@@ -3,7 +3,6 @@ use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
-#[cfg(not(target_arch = "wasm32"))]
 
 
 /// DNS-over-HTTPS provider options
@@ -73,6 +72,8 @@ pub struct AppConfig {
     pub american_mode: bool,
     #[serde(default)]
     pub dns_provider: DnsProvider,
+    #[serde(default)]
+    pub use_default_mpv: bool,  // Use default MPV settings instead of optimized
 }
 
 impl AppConfig {
