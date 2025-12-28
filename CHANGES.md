@@ -1,5 +1,29 @@
 # IPTV App Changes Summary
 
+## Date: 2025-12-27 (v3.0.8)
+
+### Changes Implemented
+
+#### ✅ 1. Fixed Critical Out-of-Bounds Panic
+
+**Issue:** Application crashed with `index outside of buffer` error on Mac/Windows when the terminal window was small (e.g., 80 columns).
+**Files Modified:**
+
+- `src/matrix_rain.rs`
+- `src/ui/loading.rs`
+- `src/ui/groups.rs`
+
+**Changes:**
+
+- Updated Matrix logo width to correct value (103).
+- Added defensive bounds checking and clipping to all manual coordinate drawing.
+- Clamped popup heights to terminal height.
+- Implemented `intersection` clipping for large UI elements.
+
+**Rationale:** Ensures application stability across all terminal sizes and operating systems.
+
+---
+
 ## Date: 2025-12-21
 
 ### Changes Implemented
@@ -7,9 +31,11 @@
 #### ✅ 1. Renamed "ARCHIVE_DATA" to "MOVIE_DATA"
 
 **Files Modified:**
+
 - `src/ui.rs`
 
 **Changes:**
+
 - **Line 167-169**: Changed header tab from `ARCHIVE_ACCESS` to `MOVIE_ACCESS`
 - **Line 799-801**: Changed VOD streams pane title from `ARCHIVE_DATA` to `MOVIE_DATA`
 
@@ -20,9 +46,11 @@
 #### ✅ 2. Added "All Movies" Category for VOD
 
 **Files Modified:**
+
 - `src/main.rs`
 
 **Changes:**
+
 - **Line 237-253**: Injected "All Movies" category at index 0 of VOD categories list
   - Category ID: "ALL"
   - Category Name: "All Movies"
@@ -35,15 +63,18 @@
 #### ✅ 3. Implemented "All Movies" Stream Loading
 
 **Files Modified:**
+
 - `src/main.rs`
 
 **Changes:**
+
 - **Line 1362-1403**: Modified VOD stream loading logic to handle "ALL" category
   - When "ALL" category is selected, calls `client.get_vod_streams_all().await`
   - Otherwise, calls `client.get_vod_streams(&cat_id).await` for specific category
   - Properly formatted with consistent indentation and error handling
 
 **Code Structure:**
+
 ```rust
 tokio::spawn(async move {
     // Handle "All Movies" category
@@ -66,16 +97,19 @@ tokio::spawn(async move {
 ### Performance Considerations
 
 **Existing Optimizations:**
+
 - Windowed rendering is already implemented in `src/ui.rs` (lines 608-702)
 - Only visible items are parsed and rendered, not the entire list
 - This should provide good scrolling performance even with large datasets
 
 **Potential Performance Issues:**
+
 1. Network latency when loading large "All Movies" list
 2. Parsing overhead in `parse_movie()` and `parse_stream()` functions
 3. The windowed rendering uses a half-window buffer which should be optimal
 
-**Recommendation:** 
+**Recommendation:**
+
 - Monitor performance with real-world data
 - If issues persist, consider:
   - Caching parsed results
@@ -89,11 +123,13 @@ tokio::spawn(async move {
 **Status:** ✅ App compiles and runs successfully
 
 **Test Command:**
+
 ```bash
 cargo run --bin matrix-iptv
 ```
 
 **Expected Behavior:**
+
 1. Navigate to VOD section (press 'v' from live channels)
 2. "All Movies" should appear as the first category
 3. Selecting "All Movies" should load all VOD streams across all categories

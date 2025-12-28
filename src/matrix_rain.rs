@@ -27,7 +27,7 @@ pub fn init_matrix_rain(area: Rect) -> Vec<MatrixColumn> {
     let mut columns = Vec::new();
     
     // Logo boundaries for guaranteed density
-    let logo_width = 101;
+    let logo_width = 103;
     let logo_x_start = area.width.saturating_sub(logo_width) / 2;
     let logo_x_end = logo_x_start + logo_width;
 
@@ -68,7 +68,7 @@ pub fn init_matrix_rain(area: Rect) -> Vec<MatrixColumn> {
 pub fn update_matrix_rain(columns: &mut Vec<MatrixColumn>, area: Rect, tick: u64, logo_hits: &mut Vec<bool>, show_logo: bool) {
     let mut rng = rand::thread_rng();
     
-    let logo_width = 101;
+    let logo_width = 103;
     let logo_height = LOGO_LINES.len() as u16;
     let logo_x = area.x + area.width.saturating_sub(logo_width) / 2;
     let logo_y = area.y + area.height.saturating_sub(logo_height) / 2;
@@ -138,7 +138,7 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(block, area);
 
     // Calculate logo position for hit detection
-    let logo_width = 101;
+    let logo_width = 103;
     let logo_height = LOGO_LINES.len() as u16;
     let logo_x = area.x + area.width.saturating_sub(logo_width) / 2;
     let logo_y = area.y + area.height.saturating_sub(logo_height) / 2;
@@ -151,7 +151,9 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
             if let Some(true) = app.matrix_rain_logo_hits.get(idx) {
                 let gx = logo_x + lx;
                 let gy = logo_y + ly;
-                if gx < area.width && gy < area.height {
+                
+                // CRITICAL FIX: Robust bounds check for the specific cell
+                if gx >= area.left() && gx < area.right() && gy >= area.top() && gy < area.bottom() {
                     if let Some(line) = LOGO_LINES.get(ly as usize) {
                         if let Some(c) = line.chars().nth(lx as usize) {
                             if c != ' ' {
@@ -169,14 +171,21 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
     // 2. Draw a VERY dim version of the remaining logo (ghosting)
     for (ly, line) in LOGO_LINES.iter().enumerate() {
         let gy = logo_y + ly as u16;
-        if gy < area.height {
+        if gy >= area.top() && gy < area.bottom() {
             // Slightly brighter ghost so it's easier to see structure early on
             let trace_style = Style::default().fg(Color::Rgb(0, 60, 0)); 
             let span = Span::styled(*line, trace_style);
-            f.render_widget(
-                Paragraph::new(vec![Line::from(span)]),
-                Rect::new(logo_x, gy, logo_width, 1)
-            );
+            
+            // CRITICAL FIX: Clip the logo width to the terminal width to prevent out-of-bounds panics
+            let logo_area = Rect::new(logo_x, gy, logo_width, 1);
+            let clipped_area = area.intersection(logo_area);
+            
+            if clipped_area.width > 0 {
+                f.render_widget(
+                    Paragraph::new(vec![Line::from(span)]),
+                    clipped_area
+                );
+            }
         }
     }
 
@@ -185,10 +194,11 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
         for (i, &ch) in column.chars.iter().enumerate() {
             let y = column.y.saturating_sub(i as u16);
             
-            if y < area.height && column.x < area.width {
-                let gx = area.x + column.x;
-                let gy = area.y + y;
+            let gx = area.x + column.x;
+            let gy = area.y + y;
 
+            // CRITICAL FIX: Ensure coordinate is within the rendered area
+            if gx >= area.left() && gx < area.right() && gy >= area.top() && gy < area.bottom() {
                 // Check if this rain character overlaps with a non-empty pixel of our logo
                 let mut logo_char = None;
                 if gx >= logo_x && gx < logo_x + logo_width &&
@@ -205,6 +215,7 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
                     }
                 }
 
+                // ... rest of rendering logic ...
                 // Occasional random bright glitch
                 let is_glitch = rand::thread_rng().gen_bool(0.01);
                 
@@ -229,14 +240,7 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
                     (ch.to_string(), Style::default().fg(color).add_modifier(Modifier::BOLD))
                 };
                 
-                let cell_area = Rect {
-                    x: gx,
-                    y: gy,
-                    width: 1,
-                    height: 1,
-                };
-                
-                f.render_widget(Paragraph::new(Span::styled(draw_ch, style)), cell_area);
+                f.render_widget(Paragraph::new(Span::styled(draw_ch, style)), Rect::new(gx, gy, 1, 1));
             }
         }
     }

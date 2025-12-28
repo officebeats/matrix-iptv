@@ -59,7 +59,14 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
 
     f.render_widget(loading_text, layout[2]);
     
-    // Add a small footer at the very bottom of the popup
-    let footer_rect = Rect::new(popup_area.x + 1, popup_area.y + popup_area.height - 2, popup_area.width - 2, 1);
-    f.render_widget(status_footer, footer_rect);
+    // Add a small footer at the very bottom of the popup - with robust bounds safety
+    if popup_area.height >= 3 && popup_area.width >= 4 {
+        let footer_rect = Rect::new(
+            popup_area.x.saturating_add(1), 
+            popup_area.y.saturating_add(popup_area.height.saturating_sub(2)), 
+            popup_area.width.saturating_sub(2), 
+            1
+        );
+        f.render_widget(status_footer, footer_rect);
+    }
 }
