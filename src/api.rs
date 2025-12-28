@@ -91,6 +91,23 @@ pub struct SeriesInfo {
     pub episodes: serde_json::Value,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct MovieData {
+    pub stream_id: serde_json::Value,
+    pub name: Option<String>,
+    pub added: Option<String>,
+    pub category_id: Option<String>,
+    pub container_extension: Option<String>,
+    pub custom_sid: Option<serde_json::Value>,
+    pub direct_source: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+pub struct VodInfo {
+    pub info: Option<serde_json::Value>,
+    pub movie_data: Option<MovieData>,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct EpgListing {
     pub id: Option<String>,
@@ -579,6 +596,29 @@ impl XtreamClient {
             "{}/series/{}/{}/{}.{}",
             self.base_url, self.username, self.password, stream_id, extension
         )
+    }
+
+    pub async fn get_vod_info(&self, vod_id: &str) -> Result<VodInfo, anyhow::Error> {
+        let url = format!(
+            "{}/player_api.php?username={}&password={}&action=get_vod_info&vod_id={}",
+            self.base_url, self.username, self.password, vod_id
+        );
+        let resp = self.client.get(&url).send().await
+            .map_err(|e| anyhow::anyhow!("Failed to fetch VOD info (VOD {}): {}", vod_id, e))?;
+        
+        let bytes = resp.bytes().await
+            .map_err(|e| anyhow::anyhow!("Failed to read VOD info body (VOD {}): {}", vod_id, e))?;
+
+        if bytes.is_empty() || bytes == "{}" || bytes == "null" {
+            return Ok(VodInfo::default());
+        }
+
+        let info = tokio::task::spawn_blocking(move || {
+            serde_json::from_slice::<VodInfo>(&bytes)
+        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
+          .map_err(|e| anyhow::anyhow!("Failed to parse VOD info JSON (VOD {}): {}", vod_id, e))?;
+
+        Ok(info)
     }
 
     pub async fn get_short_epg(&self, stream_id: &str) -> Result<EpgResponse, anyhow::Error> {

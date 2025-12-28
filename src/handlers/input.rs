@@ -113,7 +113,44 @@ pub async fn handle_key_event(
         return Ok(InputResult::Continue);
     }
     
-    // Priority 4: Welcome Popup (FTUE)
+    // Priority 5: Play Details Popup
+    if app.show_play_details {
+        match key.code {
+            KeyCode::Enter => {
+                if let Some(url) = app.pending_play_url.take() {
+                    let title = app.pending_play_title.take().unwrap_or_default();
+                    app.state_loading = true;
+                    app.player_error = None;
+                    app.loading_message = Some(format!("Preparing: {}...", title));
+                    let tx = tx.clone();
+                    let player = player.clone();
+                    let use_default = app.config.use_default_mpv;
+                    tokio::spawn(async move {
+                        let _ = tx.send(AsyncAction::LoadingMessage("Connecting...".to_string())).await;
+                        match player.play(&url, use_default) {
+                            Ok(_) => {
+                                match player.wait_for_playback(10000).await {
+                                    Ok(true) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
+                                    _ => { let _ = tx.send(AsyncAction::PlayerFailed("Failed to start".to_string())).await; }
+                                }
+                            }
+                            Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(e.to_string())).await; }
+                        }
+                    });
+                }
+                app.show_play_details = false;
+            }
+            KeyCode::Esc | KeyCode::Backspace => {
+                app.show_play_details = false;
+                app.pending_play_url = None;
+                app.pending_play_title = None;
+            }
+            _ => {}
+        }
+        return Ok(InputResult::Continue);
+    }
+
+    // Priority 6: Welcome Popup (FTUE)
     if app.show_welcome_popup {
         app.show_welcome_popup = false;
         return Ok(InputResult::Continue);
@@ -918,27 +955,9 @@ pub async fn handle_key_event(
                                 let id = get_id_str(&stream.stream_id);
                                 let extension = stream.container_extension.as_deref().unwrap_or("mp4");
                                 let url = client.get_vod_url(&id, extension);
-                                app.state_loading = true;
-                                app.player_error = None;
-                                app.loading_message = Some(format!("Preparing Movie: {}...", stream.name));
-                                let tx = tx.clone();
-                                let player = player.clone();
-                                let stream_url = url.clone();
-                                let use_default = app.config.use_default_mpv;
-                                tokio::spawn(async move {
-                                    let _ = tx.send(AsyncAction::LoadingMessage("Resolving video source...".to_string())).await;
-                                    match player.play(&stream_url, use_default) {
-                                        Ok(_) => {
-                                            let _ = tx.send(AsyncAction::LoadingMessage("Buffering movie...".to_string())).await;
-                                            match player.wait_for_playback(10000).await {
-                                                Ok(true) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
-                                                Ok(false) => { let _ = tx.send(AsyncAction::PlayerFailed("Movie failed to start - MPV exited unexpectedly".to_string())).await; }
-                                                Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(format!("Playback error: {}", e))).await; }
-                                            }
-                                        }
-                                        Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(e.to_string())).await; }
-                                    }
-                                });
+                                app.pending_play_url = Some(url);
+                                app.pending_play_title = Some(stream.name.clone());
+                                app.show_play_details = true;
                             }
                         }
                     }
@@ -1092,22 +1111,9 @@ pub async fn handle_key_event(
                                     if !id.is_empty() {
                                         let ext = episode.container_extension.as_deref().unwrap_or("mp4");
                                         let url = client.get_series_url(&id, ext);
-                                        app.state_loading = true;
-                                        app.player_error = None;
-                                        app.loading_message = Some(format!("Preparing Episode: {}...", episode.title.as_deref().unwrap_or("Untitled")));
-                                        let tx = tx.clone();
-                                        let player = player.clone();
-                                        let stream_url = url.clone();
-                                        let use_default = app.config.use_default_mpv;
-                                        tokio::spawn(async move {
-                                            match player.play(&stream_url, use_default) {
-                                                Ok(_) => { match player.wait_for_playback(10000).await {
-                                                    Ok(true) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
-                                                    _ => { let _ = tx.send(AsyncAction::PlayerFailed("Failed to start playback".to_string())).await; }
-                                                } }
-                                                Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(e.to_string())).await; }
-                                            }
-                                        });
+                                        app.pending_play_url = Some(url);
+                                        app.pending_play_title = episode.title.clone();
+                                        app.show_play_details = true;
                                     }
                                 }
                             }
@@ -1155,19 +1161,33 @@ pub async fn handle_key_event(
                                     _ => client.get_stream_url(&id, extension),
                                 };
 
-                                app.state_loading = true;
-                                app.player_error = None;
-                                app.loading_message = Some(format!("Preparing: {}...", stream.name));
-                                let tx = tx.clone();
-                                let player = player.clone();
-                                let stream_url = url.clone();
-                                let use_default = app.config.use_default_mpv;
-                                tokio::spawn(async move {
-                                    match player.play(&stream_url, use_default) {
-                                        Ok(_) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
-                                        Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(e.to_string())).await; }
-                                    }
-                                });
+                                if stream.stream_type == "movie" || stream.stream_type == "series" {
+                                    app.pending_play_url = Some(url);
+                                    app.pending_play_title = Some(stream.name.clone());
+                                    app.show_play_details = true;
+                                } else {
+                                    app.state_loading = true;
+                                    app.player_error = None;
+                                    app.loading_message = Some(format!("Preparing: {}...", stream.name));
+                                    let tx = tx.clone();
+                                    let player = player.clone();
+                                    let stream_url = url.clone();
+                                    let use_default = app.config.use_default_mpv;
+                                    tokio::spawn(async move {
+                                        let _ = tx.send(AsyncAction::LoadingMessage("Connecting to stream...".to_string())).await;
+                                        match player.play(&stream_url, use_default) {
+                                            Ok(_) => {
+                                                let _ = tx.send(AsyncAction::LoadingMessage("Buffering...".to_string())).await;
+                                                match player.wait_for_playback(10000).await {
+                                                    Ok(true) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
+                                                    Ok(false) => { let _ = tx.send(AsyncAction::PlayerFailed("Failed to start - MPV exited unexpectedly".to_string())).await; }
+                                                    Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(format!("Playback error: {}", e))).await; }
+                                                }
+                                            }
+                                            Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(e.to_string())).await; }
+                                        }
+                                    });
+                                }
                             }
                         }
                     }

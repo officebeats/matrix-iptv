@@ -78,6 +78,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         popups::render_guide_popup(f, app, area);
     }
 
+    if app.show_play_details {
+        popups::render_play_details_popup(f, app, area);
+    }
+
     if let Some(error) = &app.login_error {
         if app.current_screen != CurrentScreen::Login {
             popups::render_error_popup(f, area, error);
@@ -115,17 +119,7 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
             panes::render_streams_pane(f, app, content_chunks[1], MATRIX_GREEN);
         }
         CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
-            let (cat_width, stream_width) = (30, 70); // Update with dynamic if needed
-            let content_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Percentage(cat_width),
-                    Constraint::Min(stream_width),
-                ])
-                .split(content_area);
-
-            vod::render_vod_categories_pane(f, app, content_chunks[0], MATRIX_GREEN);
-            vod::render_vod_streams_pane(f, app, content_chunks[1], MATRIX_GREEN);
+            vod::render_vod_view(f, app, content_area);
         }
         CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
             series::render_series_view(f, app, content_area);

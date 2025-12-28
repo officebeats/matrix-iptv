@@ -1,6 +1,6 @@
 use ratatui::style::{Color, Modifier, Style};
 use crate::parser::{Quality, ContentType};
-use crate::ui::colors::CP_GREEN;
+use crate::ui::colors::{CP_GREEN, MATRIX_GREEN};
 use crate::sports::SportsEvent;
 use ratatui::text::Span;
 
@@ -76,6 +76,10 @@ pub fn stylize_channel_name(
                 let check_word = upper.as_str();
 
                 match check_word {
+                    "MULTI-SUB" | "MULTISUB" | "MULTI-AUDIO" | "MULTIAUDIO" | "MULTILANG" | "MULTI-LANG" | "MULTI" => {
+                        // Skip these tags
+                        continue;
+                    }
                     "PPV" => {
                         found_ppv = true;
                         spans.push(Span::styled("(PPV)", base_style.fg(ppv_color).add_modifier(Modifier::BOLD)));
@@ -103,11 +107,11 @@ pub fn stylize_channel_name(
                         spans.push(Span::styled(format!("({})", val.to_lowercase()), base_style.fg(fps_color).add_modifier(Modifier::BOLD)));
                     }
                     _ => {
-                        // Check if this sub-part is a year in parentheses (YYYY)
-                        let is_year = sub.starts_with('(') && sub.ends_with(')') && sub.len() == 6 && sub[1..5].chars().all(|c| c.is_digit(10));
+                        // Check if this sub-part is a year in parentheses (YYYY) or brackets [YYYY]
+                        let is_year = ((sub.starts_with('(') && sub.ends_with(')')) || (sub.starts_with('[') && sub.ends_with(']'))) && sub.len() == 6 && sub[1..5].chars().all(|c| c.is_digit(10));
                         
                         if is_year {
-                            spans.push(Span::styled(format!("{}", sub), Style::default().fg(Color::White)));
+                            spans.push(Span::styled(format!("{}", sub), Style::default().fg(MATRIX_GREEN)));
                         } else {
                             if detected_sport_icon.is_empty() {
                                 detected_sport_icon = match check_word {

@@ -16,6 +16,7 @@ pub enum AsyncAction {
     SeriesCategoriesLoaded(Vec<Category>),
     SeriesStreamsLoaded(Vec<Stream>, String),
     SeriesInfoLoaded(crate::api::SeriesInfo),
+    VodInfoLoaded(crate::api::VodInfo),
     PlayerStarted,
     PlayerFailed(String),
     LoadingMessage(String),
@@ -142,6 +143,7 @@ pub struct App {
     pub selected_series_episode_index: usize,
     pub series_episode_list_state: ListState,
     pub current_series_info: Option<crate::api::SeriesInfo>,
+    pub current_vod_info: Option<crate::api::VodInfo>,
     
     // Global caches for "ALL" categories
     pub global_all_streams: Vec<Stream>,
@@ -237,6 +239,9 @@ pub struct App {
     pub group_list_state: ListState,
     pub pending_stream_for_group: Option<String>,  // Stream ID waiting to be added to a group
     pub group_name_input: String,  // For creating/renaming groups
+    pub pending_play_url: Option<String>,
+    pub pending_play_title: Option<String>,
+    pub show_play_details: bool,
 }
 
 #[derive(Clone)]
@@ -343,6 +348,7 @@ impl App {
             selected_series_episode_index: 0,
             series_episode_list_state: ListState::default(),
             current_series_info: None,
+            current_vod_info: None,
             
             // Global Caches
             global_all_streams: vec![],
@@ -418,6 +424,9 @@ impl App {
             group_list_state: ListState::default(),
             pending_stream_for_group: None,
             group_name_input: String::new(),
+            pending_play_url: None,
+            pending_play_title: None,
+            show_play_details: false,
         };
 
         app.refresh_settings_options();

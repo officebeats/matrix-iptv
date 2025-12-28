@@ -81,6 +81,40 @@ pub fn calculate_three_column_split(
     }
 }
 
+pub fn calculate_vod_three_column_split(
+    categories: &[Category],
+    streams: &[Stream],
+    total_width: u16,
+) -> (u16, u16, u16) {
+    let cat_width = calculate_max_category_width(categories, total_width);
+    
+    let stream_max_content = if streams.is_empty() {
+        35
+    } else {
+        streams
+            .iter()
+            .map(|s| {
+                (s.name.len() as u16) + 13
+            })
+            .max()
+            .unwrap_or(35)
+    };
+    
+    let stream_dynamic_max = (total_width * 35 / 100).max(45);
+    let stream_width = stream_max_content.max(35).min(stream_dynamic_max);
+    
+    let details_width = 50; 
+    
+    let total_needed = cat_width + stream_width + details_width;
+    
+    if total_needed > total_width {
+        (total_width * 25 / 100, total_width * 35 / 100, total_width * 40 / 100)
+    } else {
+        let remaining = total_width - cat_width - stream_width;
+        (cat_width, stream_width, remaining)
+    }
+}
+
 pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
@@ -99,4 +133,19 @@ pub fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
             Constraint::Percentage((100 - percent_x) / 2),
         ])
         .split(popup_layout[1])[1]
+}
+pub fn get_rating_color(rating: &str) -> ratatui::style::Color {
+    if let Ok(r) = rating.parse::<f32>() {
+        if r >= 8.0 {
+            ratatui::style::Color::Green
+        } else if r >= 6.0 {
+            ratatui::style::Color::White
+        } else if r >= 4.0 {
+            ratatui::style::Color::LightYellow
+        } else {
+            ratatui::style::Color::Red
+        }
+    } else {
+        ratatui::style::Color::White
+    }
 }

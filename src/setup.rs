@@ -18,13 +18,23 @@ pub fn check_and_install_dependencies() -> Result<(), anyhow::Error> {
     if cfg!(target_os = "windows") {
         println!("Attempting to install mpv using winget...");
         install_mpv_windows()?;
+    } else if cfg!(target_os = "macos") {
+        println!("Attempting to install mpv using homebrew...");
+        install_mpv_macos()?;
     } else {
         println!(
-            "Please install mpv manually (e.g., 'brew install mpv' or 'sudo apt install mpv')."
+            "Please install mpv manually (e.g., 'sudo apt install mpv')."
         );
+        return Err(anyhow::anyhow!("mpv is required but not found in PATH."));
     }
 
-    Ok(())
+    // Double check after installation
+    if check_mpv_installed() {
+        println!("✓ mpv install verified.");
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("mpv was installed but still not found in PATH. You may need to restart your terminal or add it to PATH manually."))
+    }
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -35,11 +45,47 @@ pub fn check_and_install_dependencies() -> Result<(), anyhow::Error> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn check_mpv_installed() -> bool {
+    // We check --version to ensure it's not just a broken symlink or non-runnable file
     Command::new("mpv")
         .arg("--version")
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn install_mpv_macos() -> Result<(), anyhow::Error> {
+    // Check if brew is installed
+    let brew_check = Command::new("brew")
+        .arg("--version")
+        .output()
+        .is_ok();
+
+    if !brew_check {
+        return Err(anyhow::anyhow!("Homebrew ('brew') is required for headless installation on macOS. Please install it first from https://brew.sh/"));
+    }
+
+    println!("Running: brew install mpv");
+    let status = Command::new("brew")
+        .args(&["install", "mpv"])
+        .status()?;
+
+    if status.success() {
+        println!("✓ mpv installed successfully via brew.");
+        Ok(())
+    } else {
+        println!("brew install mpv failed, trying cask...");
+        let status_cask = Command::new("brew")
+            .args(&["install", "--cask", "mpv"])
+            .status()?;
+        
+        if status_cask.success() {
+            println!("✓ mpv installed successfully via brew cask.");
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Failed to install mpv via homebrew."))
+        }
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]

@@ -865,6 +865,13 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         .replace("RAW", "")
         .replace("[LIVE]", "") // Remove these after parsing
         .replace("LIVE-EVENT", "")
+        .replace("[MULTI-SUB]", "")
+        .replace("[MULTISUB]", "")
+        .replace("[MULTI-AUDIO]", "")
+        .replace("[MULTIAUDIO]", "")
+        .replace("[MULTI-LANG]", "")
+        .replace("[MULTILANG]", "")
+        .replace("[MULTI]", "")
         .replace("[]", "")
         .replace("()", "")
         .replace("  ", " ") // Quick double space fix

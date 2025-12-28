@@ -123,16 +123,44 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
                 ratatui::text::Span::styled("📺 ", Style::default().fg(MATRIX_GREEN)),
             ];
             
+            let mut name = parsed.display_name.clone();
+            // Standardized Year Restoration (force (YYYY) format)
+            let re_year = regex::Regex::new(r"[\(\[](19|20)\d{2}[\)\]]").unwrap();
+            if let Some(mat) = re_year.find(&s.name) {
+                let year_clean = mat.as_str().replace('[', "(").replace(']', ")");
+                if !name.contains(&year_clean) {
+                    name.push_str(" ");
+                    name.push_str(&year_clean);
+                }
+            }
+
             let (styled_name, _) = stylize_channel_name(
-                &parsed.display_name,
+                &name,
                 false,
                 false,
                 parsed.quality,
                 None,
                 None,
-                Style::default().fg(MATRIX_GREEN),
+                Style::default().fg(Color::White),
             );
             spans.extend(styled_name);
+
+            // Add rating in brackets (color-coded, 1 decimal)
+            if let Some(rating_val) = &s.rating {
+                let rating_str = match rating_val {
+                    serde_json::Value::String(s) => s.clone(),
+                    serde_json::Value::Number(n) => n.to_string(),
+                    _ => String::new(),
+                };
+                let rating_f = rating_str.parse::<f32>().unwrap_or(0.0);
+                if rating_f > 0.0 {
+                    let rating_color = crate::ui::utils::get_rating_color(&rating_str);
+                    spans.push(ratatui::text::Span::styled(
+                        format!(" [{:.1}]", rating_f),
+                        Style::default().fg(rating_color).add_modifier(Modifier::BOLD),
+                    ));
+                }
+            }
 
             ListItem::new(Line::from(spans))
         }).collect();

@@ -5,7 +5,7 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
-use crate::app::{App, Guide};
+use crate::app::{App, CurrentScreen, Guide, Pane};
 use crate::ui::colors::{MATRIX_GREEN, DARK_GREEN, BRIGHT_GREEN};
 use crate::ui::utils::centered_rect;
 
@@ -170,4 +170,175 @@ pub fn render_error_popup(f: &mut Frame, area: Rect, error: &str) {
 
     f.render_widget(error_text, layout[0]);
     f.render_widget(dismiss_text, layout[1]);
+}
+
+pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
+    let block = Block::default()
+        .title(Span::styled(" // CONTENT_CONFIRMATION ", Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)))
+        .borders(Borders::ALL)
+        .border_type(BorderType::Thick)
+        .border_style(Style::default().fg(MATRIX_GREEN));
+
+    let area = centered_rect(75, 80, area);
+    f.render_widget(Clear, area);
+    f.render_widget(block.clone(), area);
+
+    let inner = block.inner(area);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(1), // Title
+            Constraint::Min(0),    // Details
+            Constraint::Length(3), // Controls
+        ])
+        .split(inner);
+
+    if let Some(title) = &app.pending_play_title {
+        let display_title = if app.current_screen == CurrentScreen::SeriesStreams && app.active_pane == Pane::Episodes {
+            if let Some(stream) = app.series_streams.get(app.selected_series_stream_index) {
+                format!("{} - {}", stream.name, title)
+            } else {
+                title.clone()
+            }
+        } else {
+            title.clone()
+        };
+
+        f.render_widget(
+            Paragraph::new(Span::styled(display_title.to_uppercase(), Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD)))
+                .alignment(Alignment::Center),
+            chunks[0]
+        );
+    }
+
+    let mut details = Vec::new();
+
+    // 1. Try episode-specific info if in series/episodes view
+    let mut metadata_found = false;
+    if app.current_screen == CurrentScreen::SeriesStreams && app.active_pane == Pane::Episodes {
+        if !app.series_episodes.is_empty() {
+            let ep = &app.series_episodes[app.selected_series_episode_index.min(app.series_episodes.len() - 1)];
+            if let Some(info) = &ep.info {
+                if let Some(map) = info.as_object() {
+                    add_metadata_lines(&mut details, map);
+                    metadata_found = true;
+                }
+            }
+        }
+    }
+
+    // 2. Fallback/Complement with VOD or Series level info
+    if let Some(vod_info) = &app.current_vod_info {
+        if let Some(info) = &vod_info.info {
+            if let Some(map) = info.as_object() {
+                if !metadata_found {
+                    add_metadata_lines(&mut details, map);
+                    metadata_found = true;
+                }
+            }
+        }
+    } else if let Some(series_info) = &app.current_series_info {
+        if let Some(info) = &series_info.info {
+            if let Some(map) = info.as_object() {
+                // For episodes, we might want to append series cast/rating if not already found in episode info
+                if !metadata_found {
+                    add_metadata_lines(&mut details, map);
+                    metadata_found = true;
+                } else {
+                    // Just add cast if missing from episode info
+                    if !details.iter().any(|l| l.spans.iter().any(|s| s.content.contains("CAST:"))) {
+                        if let Some(cast) = map.get("cast").and_then(|v| v.as_str()).or_else(|| map.get("actors").and_then(|v| v.as_str())) {
+                            details.push(Line::from(vec![
+                                Span::styled("CAST:    ", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
+                                Span::styled(cast, Style::default().fg(MATRIX_GREEN)),
+                            ]));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if !metadata_found {
+        details.push(Line::from(vec![
+            Span::styled("No additional metadata available.", Style::default().fg(DARK_GREEN).add_modifier(Modifier::ITALIC))
+        ]));
+    }
+
+    f.render_widget(
+        Paragraph::new(details)
+            .wrap(Wrap { trim: true })
+            .block(Block::default().borders(Borders::NONE)),
+        chunks[1]
+    );
+
+    let controls = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(" [Enter] ", Style::default().fg(ratatui::style::Color::Black).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(" PLAY NOW   ", Style::default().fg(ratatui::style::Color::White)),
+            Span::styled(" [Esc] ", Style::default().fg(ratatui::style::Color::Black).bg(ratatui::style::Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(" ABORT MISSION ", Style::default().fg(ratatui::style::Color::White)),
+        ])
+    ]).alignment(Alignment::Center);
+
+    f.render_widget(controls, chunks[2]);
+}
+
+fn add_metadata_lines(details: &mut Vec<Line>, info: &serde_json::Map<String, serde_json::Value>) {
+    // Rating
+    if let Some(rating) = info.get("rating").and_then(|v| {
+        match v {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        }
+    }) {
+        details.push(Line::from(vec![
+            Span::styled("RATING:  ", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("⭐ {} / 10", rating), Style::default().fg(ratatui::style::Color::Cyan)),
+        ]));
+    }
+
+    // Runtime
+    if let Some(runtime) = info.get("runtime").and_then(|v| {
+        match v {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        }
+    }) {
+        details.push(Line::from(vec![
+            Span::styled("RUNTIME: ", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("{} min", runtime), Style::default().fg(ratatui::style::Color::White)),
+        ]));
+    }
+
+    // Release Date
+    if let Some(date) = info.get("releasedate").and_then(|v| v.as_str()) {
+        details.push(Line::from(vec![
+            Span::styled("RELEASE: ", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(date.to_string(), Style::default().fg(ratatui::style::Color::LightYellow)),
+        ]));
+    }
+
+    // Cast
+    if let Some(cast) = info.get("cast").and_then(|v| v.as_str()).or_else(|| info.get("actors").and_then(|v| v.as_str())) {
+        details.push(Line::from(vec![
+            Span::styled("CAST:    ", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(cast.to_string(), Style::default().fg(MATRIX_GREEN)),
+        ]));
+    }
+
+    details.push(Line::from(""));
+
+    // Synopsis
+    if let Some(plot) = info.get("plot").and_then(|v| v.as_str()).or_else(|| info.get("description").and_then(|v| v.as_str())) {
+        details.push(Line::from(vec![
+            Span::styled("SYNOPSIS:", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
+        ]));
+        details.push(Line::from(vec![
+            Span::styled(plot.to_string(), Style::default().fg(MATRIX_GREEN)),
+        ]));
+    }
 }

@@ -442,6 +442,10 @@ pub async fn handle_async_action(
             }
             app.state_loading = false;
         }
+        AsyncAction::VodInfoLoaded(info) => {
+            app.current_vod_info = Some(info);
+            app.state_loading = false;
+        }
         AsyncAction::EpgLoaded(stream_id, program_title) => {
             app.epg_cache.insert(stream_id.clone(), program_title.clone());
             let update_stream = |s: &mut Stream| {

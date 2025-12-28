@@ -187,6 +187,62 @@ async fn run_app<B: ratatui::backend::Backend>(
             }
         }
         
+        // 1.7 Debounced VOD Info Fetching
+        if app.current_screen == CurrentScreen::VodStreams && app.active_pane == Pane::Streams && !app.vod_streams.is_empty() {
+            let focused_id = get_id_str(&app.vod_streams[app.selected_vod_stream_index].stream_id);
+            if app.last_focused_stream_id.as_ref() != Some(&focused_id) {
+                app.last_focused_stream_id = Some(focused_id.clone());
+                app.focus_timestamp = Some(std::time::Instant::now());
+            } else if let Some(ts) = app.focus_timestamp {
+                if ts.elapsed().as_millis() >= 500 {
+                    app.focus_timestamp = None;
+                    if let Some(client) = &app.current_client {
+                        let client = client.clone();
+                        let tx = tx.clone();
+                        let fid = focused_id.clone();
+                        tokio::spawn(async move {
+                            if let Ok(info) = client.get_vod_info(&fid).await {
+                                let _ = tx.send(AsyncAction::VodInfoLoaded(info)).await;
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        // 1.8 Debounced Info Fetching for Global Search
+        if app.current_screen == CurrentScreen::GlobalSearch && !app.global_search_results.is_empty() {
+            let stream = &app.global_search_results[app.selected_stream_index];
+            if stream.stream_type == "movie" || stream.stream_type == "series" {
+                let focused_id = get_id_str(&stream.stream_id);
+                if app.last_focused_stream_id.as_ref() != Some(&focused_id) {
+                    app.last_focused_stream_id = Some(focused_id.clone());
+                    app.focus_timestamp = Some(std::time::Instant::now());
+                } else if let Some(ts) = app.focus_timestamp {
+                    if ts.elapsed().as_millis() >= 500 {
+                        app.focus_timestamp = None;
+                        if let Some(client) = &app.current_client {
+                            let client = client.clone();
+                            let tx = tx.clone();
+                            let fid = focused_id.clone();
+                            let is_series = stream.stream_type == "series";
+                            tokio::spawn(async move {
+                                if is_series {
+                                    if let Ok(info) = client.get_series_info(&fid).await {
+                                        let _ = tx.send(AsyncAction::SeriesInfoLoaded(info)).await;
+                                    }
+                                } else {
+                                    if let Ok(info) = client.get_vod_info(&fid).await {
+                                        let _ = tx.send(AsyncAction::VodInfoLoaded(info)).await;
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        
         // FTUE: Handle Matrix rain animation
         if app.show_matrix_rain {
             if let Ok(size) = terminal.size() {

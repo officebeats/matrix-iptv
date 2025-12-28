@@ -42,8 +42,12 @@ impl Player {
     pub fn play(&self, url: &str, use_default_mpv: bool) -> Result<(), anyhow::Error> {
         self.stop();
 
-        // Create a unique named pipe path for this session
-        let pipe_name = format!("\\\\.\\pipe\\mpv_ipc_{}", std::process::id());
+        // Create a unique IPC path for this session
+        let pipe_name = if cfg!(target_os = "windows") {
+            format!("\\\\.\\pipe\\mpv_ipc_{}", std::process::id())
+        } else {
+            format!("/tmp/mpv_ipc_{}", std::process::id())
+        };
 
         let mut cmd = Command::new("mpv");
         cmd.arg(url)
@@ -60,8 +64,6 @@ impl Player {
                .arg("--demuxer-max-bytes=256MiB") // Increased Cache
                .arg("--demuxer-max-back-bytes=64MiB")
                .arg("--demuxer-readahead-secs=20") // Buffer stability
-               .arg("--d3d11-flip=yes")            // Modern Windows presentation (faster)
-               .arg("--gpu-api=d3d11")              // Force D3D11 (faster than OpenGL on Windows)
                .arg("--framedrop=vo")              // Drop frames gracefully if GPU lags
                .arg("--vd-lavc-fast")              // Enable fast decoding optimizations
                .arg("--vd-lavc-skiploopfilter=all") // Major CPU saver for low-end machines
@@ -73,6 +75,13 @@ impl Player {
                .arg("--scale-antiring=0.7")        // Reduce haloing
                .arg("--cscale-antiring=0.7")
                .arg("--hwdec=auto-copy");          // More compatible hardware decoding
+
+            if cfg!(target_os = "windows") {
+                cmd.arg("--d3d11-flip=yes")            // Modern Windows presentation (faster)
+                   .arg("--gpu-api=d3d11");             // Force D3D11 (faster than OpenGL on Windows)
+            } else if cfg!(target_os = "macos") {
+                cmd.arg("--gpu-api=opengl");            // Generally safe default for macOS mpv
+            }
         }
 
         // Common settings for both modes
