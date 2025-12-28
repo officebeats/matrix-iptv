@@ -1,8 +1,13 @@
-use ratatui::style::{Color, Modifier, Style};
+use ratatui::{
+    layout::Rect,
+    style::{Color, Modifier, Style},
+    text::Span,
+    widgets::{Block, BorderType, Borders},
+    Frame,
+};
 use crate::parser::{Quality, ContentType};
 use crate::ui::colors::{CP_GREEN, MATRIX_GREEN};
 use crate::sports::SportsEvent;
-use ratatui::text::Span;
 
 pub fn stylize_channel_name(
     name: &str,
@@ -162,4 +167,50 @@ pub fn stylize_channel_name(
 
     let icon_ret = if detected_sport_icon.is_empty() { None } else { Some(detected_sport_icon) };
     (spans, icon_ret)
+}
+
+/// Renders a "Composite" double border: Outer line is White, Inner line is Matrix Green.
+/// Since a single terminal cell cannot have two colors, we simulate this by nesting blocks.
+pub fn render_composite_block(f: &mut Frame, area: Rect, title: Option<&str>) -> Rect {
+    // 1. Draw outer White border (The "Outer" line of the double effect)
+    let outer_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::White));
+    
+    let inner_area = outer_block.inner(area);
+    f.render_widget(outer_block, area);
+
+    // 2. Draw inner Matrix Green border (The "Inner" line of the double effect)
+    let mut inner_block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Plain)
+        .border_style(Style::default().fg(MATRIX_GREEN));
+
+    if let Some(t) = title {
+        inner_block = inner_block.title(t);
+    }
+
+    let final_content_area = inner_block.inner(inner_area);
+    f.render_widget(inner_block, inner_area);
+
+    final_content_area
+}
+
+/// A specialized version for the main layout borders that uses the composite style.
+pub fn render_matrix_box(f: &mut Frame, area: Rect, title: &str, border_color: Color) -> Rect {
+    // If border_color is MATRIX_GREEN, we use the composite style.
+    // Otherwise, we fall back to standard block to avoid breaking other themes (if any).
+    if border_color == MATRIX_GREEN {
+        render_composite_block(f, area, Some(title))
+    } else {
+        let block = Block::default()
+            .title(title)
+            .borders(Borders::ALL)
+            .border_type(BorderType::Double)
+            .border_style(Style::default().fg(border_color));
+        let inner = block.inner(area);
+        f.render_widget(block, area);
+        inner
+    }
 }

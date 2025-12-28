@@ -469,6 +469,15 @@ pub async fn handle_async_action(
             app.all_streams.iter_mut().for_each(&update_health);
             app.global_search_results.iter_mut().for_each(&update_health);
         }
+        AsyncAction::UpdateAvailable(v) => {
+            app.new_version_available = Some(v);
+            app.current_screen = CurrentScreen::UpdatePrompt;
+        }
+        AsyncAction::NoUpdateFound => {
+            app.state_loading = false;
+            app.loading_message = None;
+            app.login_error = Some("System Protocol: You are running the latest version.".to_string());
+        }
         AsyncAction::Error(e) => {
             app.login_error = Some(e);
             app.state_loading = false;

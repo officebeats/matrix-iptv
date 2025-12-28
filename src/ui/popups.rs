@@ -10,15 +10,9 @@ use crate::ui::colors::{MATRIX_GREEN, DARK_GREEN, BRIGHT_GREEN};
 use crate::ui::utils::centered_rect;
 
 pub fn render_help_popup(f: &mut Frame, area: Rect) {
-    let block = Block::default()
-        .title(" // COMMAND_LEGEND ")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Thick)
-        .border_style(Style::default().fg(DARK_GREEN));
-
     let area = centered_rect(60, 60, area);
     f.render_widget(Clear, area);
-    f.render_widget(block, area);
+    let inner_area = crate::ui::common::render_composite_block(f, area, Some(" // COMMAND_LEGEND "));
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -27,7 +21,7 @@ pub fn render_help_popup(f: &mut Frame, area: Rect) {
             Constraint::Length(8),
             Constraint::Min(0),
         ])
-        .split(area);
+        .split(inner_area);
 
     let shortcuts = vec![
         "Keyboard Shortcuts:",
@@ -55,44 +49,143 @@ pub fn render_guide_popup(f: &mut Frame, app: &App, area: Rect) {
         let lines: Vec<Line> = content
             .lines()
             .map(|l| {
-                if l.starts_with("# ") {
-                    Line::from(Span::styled(l.trim_start_matches("# ").to_uppercase(), Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)))
-                } else {
-                    Line::from(l.to_string())
+                if l.is_empty() {
+                    return Line::from("");
                 }
+
+                if l.starts_with("---") {
+                    return Line::from(Span::styled(
+                        "─".repeat(area.width as usize),
+                        Style::default().fg(DARK_GREEN)
+                    ));
+                }
+
+                if l.starts_with("# ") {
+                    return Line::from(Span::styled(
+                        l.trim_start_matches("# ").to_uppercase(),
+                        Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)
+                    ));
+                }
+                
+                if l.starts_with("## ") {
+                    return Line::from(Span::styled(
+                        l.trim_start_matches("## ").to_uppercase(),
+                        Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
+                    ));
+                }
+
+                if l.starts_with("### ") {
+                    return Line::from(Span::styled(
+                        l.trim_start_matches("### ").to_uppercase(),
+                        Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD).add_modifier(Modifier::UNDERLINED)
+                    ));
+                }
+
+                // Robust state-machine based character parser (UTF-8 safe)
+                let mut spans = Vec::new();
+                let mut chars = l.chars().peekable();
+                let mut current_text = String::new();
+
+                while let Some(c) = chars.next() {
+                    match c {
+                        // Check for bold ** or italic *
+                        '*' => {
+                            if chars.peek() == Some(&'*') {
+                                // Bold detected
+                                chars.next(); // Consume second '*'
+                                if !current_text.is_empty() {
+                                    spans.push(Span::raw(current_text.clone()));
+                                    current_text.clear();
+                                }
+                                let mut bold_content = String::new();
+                                while let Some(&nc) = chars.peek() {
+                                    if nc == '*' {
+                                        chars.next();
+                                        if chars.peek() == Some(&'*') {
+                                            chars.next();
+                                            break;
+                                        } else {
+                                            bold_content.push('*');
+                                        }
+                                    } else {
+                                        bold_content.push(chars.next().unwrap());
+                                    }
+                                }
+                                spans.push(Span::styled(
+                                    bold_content,
+                                    Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
+                                ));
+                            } else {
+                                // Italic detected (single *)
+                                if !current_text.is_empty() {
+                                    spans.push(Span::raw(current_text.clone()));
+                                    current_text.clear();
+                                }
+                                let mut italic_content = String::new();
+                                while let Some(&nc) = chars.peek() {
+                                    if nc == '*' {
+                                        chars.next();
+                                        break;
+                                    } else {
+                                        italic_content.push(chars.next().unwrap());
+                                    }
+                                }
+                                spans.push(Span::styled(
+                                    italic_content,
+                                    Style::default().fg(ratatui::style::Color::DarkGray).add_modifier(Modifier::ITALIC)
+                                ));
+                            }
+                        }
+                        // Check for inline code `
+                        '`' => {
+                            if !current_text.is_empty() {
+                                spans.push(Span::raw(current_text.clone()));
+                                current_text.clear();
+                            }
+                            let mut code_content = String::new();
+                            while let Some(&nc) = chars.peek() {
+                                if nc == '`' {
+                                    chars.next();
+                                    break;
+                                } else {
+                                    code_content.push(chars.next().unwrap());
+                                }
+                            }
+                            spans.push(Span::styled(
+                                code_content,
+                                Style::default().fg(ratatui::style::Color::Cyan).bg(ratatui::style::Color::Rgb(20, 20, 20))
+                            ));
+                        }
+                        _ => {
+                            current_text.push(c);
+                        }
+                    }
+                }
+                
+                if !current_text.is_empty() {
+                    spans.push(Span::raw(current_text));
+                }
+
+                Line::from(spans)
             })
             .collect();
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Thick)
-            .border_style(Style::default().fg(DARK_GREEN))
-            .title(Span::styled(" // SYSTEM_PROTOCOLS ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
-
         let area = centered_rect(80, 80, area);
         f.render_widget(Clear, area);
+        let inner_area = crate::ui::common::render_composite_block(f, area, Some(" // SYSTEM_PROTOCOLS "));
 
         let p = Paragraph::new(lines)
-            .block(block)
             .wrap(Wrap { trim: true })
             .scroll((app.guide_scroll, 0));
 
-        f.render_widget(p, area);
+        f.render_widget(p, inner_area);
     }
 }
 
 pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
-    let block = Block::default()
-        .title(" // CHOOSE_PATH ")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(MATRIX_GREEN));
-
     let area = centered_rect(70, 50, area);
     f.render_widget(Clear, area);
-    f.render_widget(block.clone(), area);
-
-    let inner = block.inner(area);
+    let inner = crate::ui::common::render_composite_block(f, area, Some(" // CHOOSE_PATH "));
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -173,17 +266,9 @@ pub fn render_error_popup(f: &mut Frame, area: Rect, error: &str) {
 }
 
 pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
-    let block = Block::default()
-        .title(Span::styled(" // CONTENT_CONFIRMATION ", Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Thick)
-        .border_style(Style::default().fg(MATRIX_GREEN));
-
     let area = centered_rect(75, 80, area);
     f.render_widget(Clear, area);
-    f.render_widget(block.clone(), area);
-
-    let inner = block.inner(area);
+    let inner = crate::ui::common::render_composite_block(f, area, Some(" // CONTENT_CONFIRMATION "));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -341,4 +426,56 @@ fn add_metadata_lines(details: &mut Vec<Line>, info: &serde_json::Map<String, se
             Span::styled(plot.to_string(), Style::default().fg(MATRIX_GREEN)),
         ]));
     }
+}
+
+pub fn render_update_prompt(f: &mut Frame, app: &App, area: Rect) {
+    let area_rect = centered_rect(65, 45, area);
+    f.render_widget(Clear, area_rect);
+    let inner = crate::ui::common::render_composite_block(f, area_rect, Some(" // SYSTEM_UPDATE_DETECTED "));
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints([
+            Constraint::Min(0),
+            Constraint::Length(3),
+        ])
+        .split(inner);
+
+    let new_version = app.new_version_available.as_deref().unwrap_or("Unknown");
+    let current_version = env!("CARGO_PKG_VERSION");
+
+    let text = vec![
+        Line::from(vec![
+            Span::styled("A newer version of Matrix IPTV is available!", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Current Version: ", Style::default().fg(DARK_GREEN)),
+            Span::styled(current_version, Style::default().fg(ratatui::style::Color::White)),
+        ]),
+        Line::from(vec![
+            Span::styled("  New Version:     ", Style::default().fg(DARK_GREEN)),
+            Span::styled(new_version, Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("The update will be downloaded and installed automatically.", Style::default().fg(ratatui::style::Color::Gray)),
+        ]),
+        Line::from(vec![
+            Span::styled("You will be returned to the app once the update is complete.", Style::default().fg(ratatui::style::Color::Gray)),
+        ]),
+    ];
+
+    f.render_widget(Paragraph::new(text).alignment(Alignment::Center).wrap(Wrap { trim: true }), chunks[0]);
+
+    let controls = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(" [Enter/U] ", Style::default().fg(ratatui::style::Color::Black).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(" UPDATE NOW   ", Style::default().fg(ratatui::style::Color::White)),
+            Span::styled(" [Esc/L] ", Style::default().fg(ratatui::style::Color::Black).bg(ratatui::style::Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(" LATER ", Style::default().fg(ratatui::style::Color::White)),
+        ])
+    ]).alignment(Alignment::Center);
+
+    f.render_widget(controls, chunks[1]);
 }

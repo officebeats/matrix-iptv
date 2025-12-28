@@ -150,18 +150,13 @@ pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
         .collect();
 
     let title = if app.categories.is_empty() {
-        " // LIVE_CATEGORIES / [NULL] ".to_string()
+        " // CATEGORIES / [NULL] ".to_string()
     } else {
-        format!(" // LIVE_CATEGORIES ({}) ", app.categories.len())
+        format!(" // CATEGORIES ({}) ", app.categories.len())
     };
+    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
+    
     let list = List::new(items)
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_type(BorderType::Double)
-                .border_style(Style::default().fg(border_color)),
-        )
         .highlight_style(
             Style::default()
                 .bg(MATRIX_GREEN)
@@ -175,7 +170,7 @@ pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
         adjusted_state.select(Some(selected - adjusted_start));
     }
 
-    f.render_stateful_widget(list, area, &mut adjusted_state);
+    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }
 
 pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
@@ -333,15 +328,10 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         })
         .collect();
 
-    let title = format!(" // LIVE_STREAMS ({}) / TZ: {} ", app.streams.len(), tz_display);
+    let title = format!(" // STREAMS ({}) / TZ: {} ", app.streams.len(), tz_display);
+    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
+
     let list = List::new(items)
-        .block(
-            Block::default()
-                .title(title)
-                .borders(Borders::ALL)
-                .border_type(BorderType::Double)
-                .border_style(Style::default().fg(border_color)),
-        )
         .highlight_style(
             Style::default()
                 .bg(MATRIX_GREEN)
@@ -355,7 +345,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         adjusted_state.select(Some(selected - adjusted_start));
     }
 
-    f.render_stateful_widget(list, area, &mut adjusted_state);
+    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }
 
 pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {

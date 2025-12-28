@@ -158,7 +158,7 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
                         if let Some(c) = line.chars().nth(lx as usize) {
                             if c != ' ' {
                                 // Super bright neon green for activated pixels
-                                let style = Style::default().fg(Color::Rgb(0, 255, 120)).add_modifier(Modifier::BOLD);
+                                let style = Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::BOLD);
                                 f.render_widget(Paragraph::new(c.to_string()).style(style), Rect::new(gx, gy, 1, 1));
                             }
                         }
@@ -173,7 +173,7 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
         let gy = logo_y + ly as u16;
         if gy >= area.top() && gy < area.bottom() {
             // Slightly brighter ghost so it's easier to see structure early on
-            let trace_style = Style::default().fg(Color::Rgb(0, 60, 0)); 
+            let trace_style = Style::default().fg(Color::Rgb(0, 40, 0)); 
             let span = Span::styled(*line, trace_style);
             
             // CRITICAL FIX: Clip the logo width to the terminal width to prevent out-of-bounds panics
@@ -226,16 +226,16 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
                     } else if i < 15 { // Longer highlight tail for logo
                         Color::Rgb(180, 255, 180)
                     } else {
-                        Color::Rgb(0, 200, 0)
+                        crate::ui::colors::MATRIX_GREEN
                     };
                     (lc.to_string(), Style::default().fg(color).add_modifier(Modifier::BOLD))
                 } else {
                     let color = if i == 0 || is_glitch {
                         Color::White // Head or glitch
                     } else if i < 6 {
-                        Color::Rgb(0, 255, 100) // Bright green top
+                        Color::Rgb(150, 255, 150) // Bright white-green top
                     } else {
-                        Color::Rgb(0, 160, 0) // Deep green body
+                        crate::ui::colors::MATRIX_GREEN // Deep green body
                     };
                     (ch.to_string(), Style::default().fg(color).add_modifier(Modifier::BOLD))
                 };
@@ -255,7 +255,7 @@ pub fn render_welcome_popup(f: &mut Frame, app: &App, area: Rect) {
         .title(" // SYSTEM_INITIALIZATION // ")
         .borders(Borders::ALL)
         .border_type(BorderType::Double)
-        .border_style(Style::default().fg(Color::Rgb(0, 255, 0)).add_modifier(Modifier::BOLD));
+        .border_style(Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::BOLD));
     
     f.render_widget(block.clone(), popup_area);
     
@@ -265,7 +265,7 @@ pub fn render_welcome_popup(f: &mut Frame, app: &App, area: Rect) {
         Line::from(""),
         Line::from(Span::styled(
             "WELCOME TO MATRIX IPTV",
-            Style::default().fg(Color::Rgb(0, 255, 0)).add_modifier(Modifier::BOLD),
+            Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
         Line::from(Span::styled(
@@ -287,7 +287,7 @@ pub fn render_welcome_popup(f: &mut Frame, app: &App, area: Rect) {
             Line::from(vec![
                 Span::styled("1. ", Style::default().fg(Color::White)),
                 Span::styled("Press ", Style::default().fg(Color::White)),
-                Span::styled("[n]", Style::default().fg(Color::Rgb(0, 255, 0)).add_modifier(Modifier::BOLD)),
+                Span::styled("[n]", Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled(" to add your first IPTV playlist", Style::default().fg(Color::White)),
             ]),
             Line::from(""),
@@ -323,7 +323,7 @@ pub fn render_welcome_popup(f: &mut Frame, app: &App, area: Rect) {
         Line::from(""),
         Line::from(Span::styled(
             "Press any key to continue...",
-            Style::default().fg(Color::Rgb(0, 200, 0)).add_modifier(Modifier::ITALIC),
+            Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::ITALIC),
         )),
     ]);
     

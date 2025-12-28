@@ -11,6 +11,7 @@ pub enum InputResult {
     Ok,
     Quit,
     Continue,
+    UpdateRequested,
 }
 
 pub async fn handle_key_event(
@@ -1262,7 +1263,15 @@ pub async fn handle_key_event(
                                 app.matrix_rain_start_time = None;
                                 app.matrix_rain_columns.clear();
                             }
-                            7 => { app.settings_state = SettingsState::About; }
+                            7 => { 
+                                app.state_loading = true;
+                                app.loading_message = Some("Checking for updates...".to_string());
+                                let tx = tx.clone();
+                                tokio::spawn(async move {
+                                    crate::setup::check_for_updates(tx, true).await;
+                                });
+                            }
+                            8 => { app.settings_state = SettingsState::About; }
                             _ => {}
                         }
                     }
@@ -1573,6 +1582,17 @@ pub async fn handle_key_event(
                         }
                     }
                     app.current_screen = app.previous_screen.take().unwrap_or(CurrentScreen::Streams);
+                }
+                _ => {}
+            }
+        }
+        CurrentScreen::UpdatePrompt => {
+            match key.code {
+                KeyCode::Enter | KeyCode::Char('u') | KeyCode::Char('U') => {
+                    return Ok(InputResult::UpdateRequested);
+                }
+                KeyCode::Esc | KeyCode::Char('l') | KeyCode::Char('L') | KeyCode::Char('q') => {
+                    app.current_screen = CurrentScreen::Home;
                 }
                 _ => {}
             }

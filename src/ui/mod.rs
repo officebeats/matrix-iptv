@@ -59,6 +59,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
             // Placeholder or actual play info screen
             render_main_layout(f, app, area);
         }
+        CurrentScreen::UpdatePrompt => {
+            popups::render_update_prompt(f, app, area);
+        }
     }
 
     // Overlays

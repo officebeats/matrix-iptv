@@ -160,23 +160,20 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             ListItem::new(format!("{}{}", prefix, tz))
         }).collect();
         
+        let inner_list_area = crate::ui::common::render_composite_block(f, chunks[0], Some(" SELECT TIMEZONE "));
+        
         let list = List::new(items)
-            .block(Block::default()
-                .title(" SELECT TIMEZONE ")
-                .borders(Borders::ALL)
-                .border_type(BorderType::Double)
-                .border_style(Style::default().fg(Color::Cyan)))
-            .highlight_style(Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD))
+            .highlight_style(Style::default().bg(MATRIX_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD))
             .highlight_symbol(" > ");
-        f.render_stateful_widget(list, chunks[0], &mut app.timezone_list_state);
+        f.render_stateful_widget(list, inner_list_area, &mut app.timezone_list_state);
 
         // Navigation hints
         let hints = Line::from(vec![
-            Span::styled(" ↑↓ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(" ↑↓ ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
             Span::styled("Navigate  ", Style::default().fg(Color::White)),
-            Span::styled(" Enter ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(" Enter ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
             Span::styled("Select  ", Style::default().fg(Color::White)),
-            Span::styled(" Esc ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(" Esc ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
             Span::styled("Cancel", Style::default().fg(Color::White)),
         ]);
         let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
@@ -200,8 +197,8 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                     let label = &s[..colon_pos + 1];
                     let value = &s[colon_pos + 1..];
                     ListItem::new(Line::from(vec![
-                        Span::styled(format!("  {}", label), Style::default().fg(Color::DarkGray)),
-                        Span::styled(value.to_string(), Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)),
+                        Span::styled(format!("  {}", label), Style::default().fg(Color::White)),
+                        Span::styled(value.to_string(), Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                     ]))
                 } else if s.contains(" (") && s.ends_with(")") {
                     // Format: "Label (Value)"
@@ -209,8 +206,8 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                         let label = &s[..paren_pos];
                         let value = &s[paren_pos..];
                         ListItem::new(Line::from(vec![
-                            Span::styled(format!("  {}", label), Style::default().fg(Color::DarkGray)),
-                            Span::styled(value.to_string(), Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)),
+                            Span::styled(format!("  {}", label), Style::default().fg(Color::White)),
+                            Span::styled(value.to_string(), Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                         ]))
                     } else {
                         ListItem::new(Line::from(Span::styled(format!("  {}", s), Style::default().fg(Color::White))))
@@ -220,18 +217,19 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                     ListItem::new(Line::from(Span::styled(format!("  {}", s), Style::default().fg(Color::White))))
                 }
             }).collect();
+            let inner_list_area = crate::ui::common::render_composite_block(f, chunks[0], Some(" // AUTHORIZED_NODES [v3.0.2] "));
+            
             let list = List::new(items)
-                .block(Block::default().title(" // AUTHORIZED_NODES [v3.0.2] ").borders(Borders::ALL).border_type(BorderType::Double).border_style(Style::default().fg(MATRIX_GREEN)))
                 .highlight_style(Style::default().bg(MATRIX_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" > ");
-            f.render_stateful_widget(list, chunks[0], &mut app.settings_list_state);
+            f.render_stateful_widget(list, inner_list_area, &mut app.settings_list_state);
 
             // Show description for selected setting
             let desc = app.settings_descriptions.get(app.selected_settings_index)
                 .map(|s| s.as_str())
                 .unwrap_or("");
             let desc_block = Paragraph::new(desc)
-                .block(Block::default().title(" INFO ").borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(Color::Cyan)))
+                .block(Block::default().title(" INFO ").borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(DARK_GREEN)))
                 .style(Style::default().fg(Color::White))
                 .wrap(ratatui::widgets::Wrap { trim: true });
             f.render_widget(desc_block, chunks[1]);
@@ -250,20 +248,20 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 ]))
             }).collect();
             let list = List::new(accounts)
-                .block(Block::default().title(format!(" MANAGE PLAYLISTS ({}) ", app.config.accounts.len())).borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(Color::Cyan)))
-                .highlight_style(Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD))
+                .block(Block::default().title(format!(" MANAGE PLAYLISTS ({}) ", app.config.accounts.len())).borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(MATRIX_GREEN)))
+                .highlight_style(Style::default().bg(MATRIX_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" > ");
             f.render_stateful_widget(list, chunks[0], &mut app.account_list_state);
 
             // Navigation hints
             let hints = Line::from(vec![
-                Span::styled(" a ", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+                Span::styled(" a ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Add  ", Style::default().fg(Color::White)),
-                Span::styled(" Enter ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" Enter ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Edit  ", Style::default().fg(Color::White)),
                 Span::styled(" d ", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                 Span::styled("Delete  ", Style::default().fg(Color::White)),
-                Span::styled(" Esc ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" Esc ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Back", Style::default().fg(Color::White)),
             ]);
             let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
@@ -298,23 +296,20 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 ListItem::new(format!("{}{}", prefix, p.display_name()))
             }).collect();
             
+            let inner_list_area = crate::ui::common::render_composite_block(f, chunks[0], Some(" SELECT DNS PROVIDER "));
+            
             let list = List::new(items)
-                .block(Block::default()
-                    .title(" SELECT DNS PROVIDER ")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Double)
-                    .border_style(Style::default().fg(Color::Cyan)))
-                .highlight_style(Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::default().bg(MATRIX_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" > ");
-            f.render_stateful_widget(list, chunks[0], &mut app.dns_list_state);
+            f.render_stateful_widget(list, inner_list_area, &mut app.dns_list_state);
 
             // Navigation hints
             let hints = Line::from(vec![
-                Span::styled(" ↑↓ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" ↑↓ ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Navigate  ", Style::default().fg(Color::White)),
-                Span::styled(" Enter ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" Enter ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Select  ", Style::default().fg(Color::White)),
-                Span::styled(" Esc ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" Esc ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Cancel", Style::default().fg(Color::White)),
             ]);
             let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
@@ -338,15 +333,12 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 ListItem::new(format!("{}{}", prefix, name))
             }).collect();
             
+            let inner_list_area = crate::ui::common::render_composite_block(f, chunks[0], Some(" SELECT VIDEO MODE "));
+            
             let list = List::new(items)
-                .block(Block::default()
-                    .title(" SELECT VIDEO MODE ")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Double)
-                    .border_style(Style::default().fg(Color::Cyan)))
-                .highlight_style(Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::default().bg(MATRIX_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" > ");
-            f.render_stateful_widget(list, chunks[0], &mut app.video_mode_list_state);
+            f.render_stateful_widget(list, inner_list_area, &mut app.video_mode_list_state);
 
             // Show description for selected mode
             let desc = if let Some(idx) = app.video_mode_list_state.selected() {
@@ -355,18 +347,18 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 ""
             };
             let desc_block = Paragraph::new(desc)
-                .block(Block::default().title(" INFO ").borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(Color::DarkGray)))
+                .block(Block::default().title(" INFO ").borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(DARK_GREEN)))
                 .style(Style::default().fg(Color::White))
                 .wrap(ratatui::widgets::Wrap { trim: true });
             f.render_widget(desc_block, chunks[1]);
 
             // Navigation hints
             let hints = Line::from(vec![
-                Span::styled(" ↑↓ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" ↑↓ ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Navigate  ", Style::default().fg(Color::White)),
-                Span::styled(" Enter ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" Enter ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Select  ", Style::default().fg(Color::White)),
-                Span::styled(" Esc ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" Esc ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Cancel", Style::default().fg(Color::White)),
             ]);
             let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
@@ -392,15 +384,12 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled("   [ APPLY & SAVE ]", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD))
             ])));
             
+            let inner_list_area = crate::ui::common::render_composite_block(f, chunks[0], Some(" PLAYLIST FILTRATION (Space to Toggle) "));
+            
             let list = List::new(items)
-                .block(Block::default()
-                    .title(" PLAYLIST FILTRATION (Space to Toggle) ")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Double)
-                    .border_style(Style::default().fg(Color::Cyan)))
-                .highlight_style(Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::default().bg(MATRIX_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" > ");
-            f.render_stateful_widget(list, chunks[0], &mut app.playlist_mode_list_state);
+            f.render_stateful_widget(list, inner_list_area, &mut app.playlist_mode_list_state);
 
             // Show description for selected mode
             let desc = if let Some(idx) = app.playlist_mode_list_state.selected() {
@@ -415,18 +404,18 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 ""
             };
             let desc_block = Paragraph::new(desc)
-                .block(Block::default().title(" MODE_MANIFEST ").borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(Color::DarkGray)))
+                .block(Block::default().title(" MODE_MANIFEST ").borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(DARK_GREEN)))
                 .style(Style::default().fg(Color::White))
                 .wrap(ratatui::widgets::Wrap { trim: true });
             f.render_widget(desc_block, chunks[1]);
 
             // Navigation hints
             let hints = Line::from(vec![
-                Span::styled(" ↑↓ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" ↑↓ ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Navigate  ", Style::default().fg(Color::White)),
-                Span::styled(" Space ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" Space ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Toggle  ", Style::default().fg(Color::White)),
-                Span::styled(" Enter ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" Enter ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Done  ", Style::default().fg(Color::White)),
             ]);
             let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
@@ -456,15 +445,12 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 ListItem::new(format!("{}{}", prefix, name))
             }).collect();
             
+            let inner_list_area = crate::ui::common::render_composite_block(f, chunks[0], Some(" AUTO-REFRESH INTERVAL "));
+            
             let list = List::new(items)
-                .block(Block::default()
-                    .title(" AUTO-REFRESH INTERVAL ")
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Double)
-                    .border_style(Style::default().fg(Color::Cyan)))
-                .highlight_style(Style::default().bg(Color::Cyan).fg(Color::Black).add_modifier(Modifier::BOLD))
+                .highlight_style(Style::default().bg(MATRIX_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" > ");
-            f.render_stateful_widget(list, chunks[0], &mut app.auto_refresh_list_state);
+            f.render_stateful_widget(list, inner_list_area, &mut app.auto_refresh_list_state);
 
             // Show description for selected interval
             let desc = if let Some(idx) = app.auto_refresh_list_state.selected() {
@@ -473,18 +459,18 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 ""
             };
             let desc_block = Paragraph::new(desc)
-                .block(Block::default().title(" INFO ").borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(Color::DarkGray)))
+                .block(Block::default().title(" INFO ").borders(Borders::ALL).border_type(BorderType::Rounded).border_style(Style::default().fg(DARK_GREEN)))
                 .style(Style::default().fg(Color::White))
                 .wrap(ratatui::widgets::Wrap { trim: true });
             f.render_widget(desc_block, chunks[1]);
 
             // Navigation hints
             let hints = Line::from(vec![
-                Span::styled(" ↑↓ ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" ↑↓ ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Navigate  ", Style::default().fg(Color::White)),
-                Span::styled(" Enter ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" Enter ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Select  ", Style::default().fg(Color::White)),
-                Span::styled(" Esc ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                Span::styled(" Esc ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("Cancel", Style::default().fg(Color::White)),
             ]);
             let hints_para = Paragraph::new(hints).alignment(Alignment::Center);

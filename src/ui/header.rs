@@ -42,16 +42,6 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
-    let current_tab = match app.current_screen {
-        CurrentScreen::VodCategories | CurrentScreen::VodStreams => 1,
-        CurrentScreen::Settings | CurrentScreen::TimezoneSettings => 2,
-        CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => 3,
-        _ => 0,
-    };
-
-    let style_active = Style::default().bg(MATRIX_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD);
-    let separator = Span::styled(" / ", Style::default().fg(Color::LightBlue));
-
     let mut left_spans = vec![Span::styled(
         " // SYSTEM_NETWORK",
         Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD),
@@ -90,14 +80,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         left_spans.push(Span::styled("] ", Style::default().fg(DARK_GREEN)));
     }
 
-    left_spans.push(separator.clone());
-    left_spans.push(if current_tab == 0 { Span::styled(" [LIVE] ", style_active) } else { Span::styled(" LIVE ", Style::default().fg(MATRIX_GREEN)) });
-    left_spans.push(separator.clone());
-    left_spans.push(if current_tab == 1 { Span::styled(" [VOD] ", style_active) } else { Span::styled(" VOD ", Style::default().fg(MATRIX_GREEN)) });
-    left_spans.push(separator.clone());
-    left_spans.push(if current_tab == 3 { Span::styled(" [SERIES] ", style_active) } else { Span::styled(" SERIES ", Style::default().fg(MATRIX_GREEN)) });
-    left_spans.push(separator.clone());
-    left_spans.push(if current_tab == 2 { Span::styled(" [CONFIG] ", style_active) } else { Span::styled(" CONFIG ", Style::default().fg(MATRIX_GREEN)) });
+    left_spans.push(Span::styled(" ", Style::default()));
 
     let tabs = Paragraph::new(Line::from(left_spans)).block(
         Block::default()

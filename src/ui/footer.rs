@@ -32,11 +32,14 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             spans.push(Span::styled("Enter", key_style));
             spans.push(Span::styled(": Load", label_style));
             push_sep!();
-            spans.push(Span::styled("Ctl+Space", key_style));
-            spans.push(Span::styled(": 🔎🌐", label_style));
+            spans.push(Span::styled("m", key_style));
+            spans.push(Span::styled(": Mode", label_style));
             push_sep!();
             spans.push(Span::styled("x", key_style));
-            spans.push(Span::styled(": 🛠️", label_style));
+            spans.push(Span::styled(": Settings", label_style));
+            push_sep!();
+            spans.push(Span::styled("1-3", key_style));
+            spans.push(Span::styled(": Help", label_style));
             push_sep!();
             spans.push(Span::styled("n", key_style));
             spans.push(Span::styled(": Add", label_style));
@@ -85,8 +88,11 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 spans.push(Span::styled("Enter", key_style));
                 spans.push(Span::styled(": Select", label_style));
                 push_sep!();
+                spans.push(Span::styled("m", key_style));
+                spans.push(Span::styled(": Mode", label_style));
+                push_sep!();
                 spans.push(Span::styled("Ctl+Space", key_style));
-                spans.push(Span::styled(": 🔎🌐", label_style));
+                spans.push(Span::styled(": 🔎 ", label_style));
                 push_sep!();
                 spans.push(Span::styled("f", key_style));
                 spans.push(Span::styled(": 🔍", label_style));
@@ -172,4 +178,11 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
 
     let p = Paragraph::new(Line::from(spans)).alignment(Alignment::Left);
     f.render_widget(p, area);
+
+    // Render version in the bottom right
+    let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+    let version_p = Paragraph::new(Line::from(vec![
+        Span::styled(version, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
+    ])).alignment(Alignment::Right);
+    f.render_widget(version_p, area);
 }

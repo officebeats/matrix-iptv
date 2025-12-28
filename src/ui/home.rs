@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph},
+    widgets::{List, ListItem, Paragraph, Wrap},
     Frame,
 };
 use crate::app::App;
@@ -97,19 +97,13 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
     }).collect();
 
     app.area_accounts = content_layout[0];
+    let inner_list_area = crate::ui::common::render_composite_block(f, content_layout[0], Some(" // PLAYLIST_NODES "));
+    
     f.render_stateful_widget(
         List::new(accounts)
-            .block(Block::default()
-                .title(Line::from(vec![
-                    Span::styled(" // ", Style::default().fg(DARK_GREEN)),
-                    Span::styled("PLAYLIST_NODES ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-                ]))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Double)
-                .border_style(Style::default().fg(DARK_GREEN)))
             .highlight_style(Style::default().bg(MATRIX_GREEN).fg(Color::Black).add_modifier(Modifier::BOLD))
             .highlight_symbol(" » "), 
-        content_layout[0], 
+        inner_list_area, 
         &mut app.account_list_state
     );
 
@@ -133,19 +127,19 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled("  [", Style::default().fg(Color::DarkGray)),
                 Span::styled("1", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled("Why CLI for IPTV?", Style::default().fg(MATRIX_GREEN))
+                Span::styled("Why CLI for IPTV?", Style::default().fg(Color::White))
             ]),
             Line::from(vec![
                 Span::styled("  [", Style::default().fg(Color::DarkGray)),
                 Span::styled("2", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled("Where do I get playlists?", Style::default().fg(MATRIX_GREEN))
+                Span::styled("Where do I get playlists?", Style::default().fg(Color::White))
             ]),
             Line::from(vec![
                 Span::styled("  [", Style::default().fg(Color::DarkGray)),
                 Span::styled("3", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled("What is IPTV?", Style::default().fg(MATRIX_GREEN))
+                Span::styled("What is IPTV?", Style::default().fg(Color::White))
             ]),
             Line::from(""),
             Line::from(vec![
@@ -169,6 +163,25 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
             ]),
             Line::from(""),
             Line::from(vec![
+                Span::styled("  [", Style::default().fg(Color::DarkGray)),
+                Span::styled("1", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+                Span::styled("] ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Why CLI for IPTV?", Style::default().fg(Color::White))
+            ]),
+            Line::from(vec![
+                Span::styled("  [", Style::default().fg(Color::DarkGray)),
+                Span::styled("2", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+                Span::styled("] ", Style::default().fg(Color::DarkGray)),
+                Span::styled("Where do I get playlists?", Style::default().fg(Color::White))
+            ]),
+            Line::from(vec![
+                Span::styled("  [", Style::default().fg(Color::DarkGray)),
+                Span::styled("3", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+                Span::styled("] ", Style::default().fg(Color::DarkGray)),
+                Span::styled("What is IPTV?", Style::default().fg(Color::White))
+            ]),
+            Line::from(""),
+            Line::from(vec![
                 Span::styled("  Playlists: ", Style::default().fg(Color::DarkGray)),
                 Span::styled(format!("{}", app.config.accounts.len()), Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled(" configured", Style::default().fg(Color::DarkGray))
@@ -185,14 +198,12 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
         ]),
     ]);
 
+    let inner_guides_area = crate::ui::common::render_composite_block(f, main_zone_chunks[0], None);
+
     f.render_widget(
         Paragraph::new(guides_text)
-            .block(Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Double)
-                .border_style(Style::default().fg(DARK_GREEN))
-                .padding(ratatui::widgets::Padding::new(1, 1, 1, 0))), 
-        main_zone_chunks[0]
+            .wrap(Wrap { trim: true }),
+        inner_guides_area
     );
 
     crate::ui::footer::render_footer(f, app, main_layout[2]);

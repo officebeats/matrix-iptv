@@ -26,6 +26,8 @@ pub enum AsyncAction {
     PlaylistRefreshed(Option<UserInfo>, Option<ServerInfo>),
     EpgLoaded(String, String), // stream_id, program_title
     StreamHealthLoaded(String, u64), // stream_id, latency_ms
+    UpdateAvailable(String), // new_version
+    NoUpdateFound,
     Error(String),
 }
 
@@ -46,6 +48,7 @@ pub enum CurrentScreen {
     GlobalSearch,         // Ctrl+Space Global Search across all content
     GroupManagement,      // Manage custom groups (create/edit/delete)
     GroupPicker,          // Pick a group to add stream to
+    UpdatePrompt,         // Prompt for app update
 }
 
 #[derive(PartialEq, Debug)]
@@ -242,6 +245,7 @@ pub struct App {
     pub pending_play_url: Option<String>,
     pub pending_play_title: Option<String>,
     pub show_play_details: bool,
+    pub new_version_available: Option<String>,
 }
 
 #[derive(Clone)]
@@ -427,6 +431,7 @@ impl App {
             pending_play_url: None,
             pending_play_title: None,
             show_play_details: false,
+            new_version_available: None,
         };
 
         app.refresh_settings_options();
@@ -465,6 +470,7 @@ impl App {
                 }
             ),
             "Matrix Rain Screensaver".to_string(),
+            "Check for Updates".to_string(),
             "About".to_string(),
         ];
 
@@ -477,6 +483,7 @@ impl App {
             "Enhanced = Interpolation, upscaling, and soap opera effect for smoother video. MPV Default = Standard MPV settings with no enhancements.".to_string(),
             "How often to automatically refresh playlist data when logging in. Set to 0 to disable.".to_string(),
             "Launch the iconic Matrix digital rain animation.".to_string(),
+            "Check if a newer version of Matrix IPTV is available for download.".to_string(),
             "View application info, version, and credits.".to_string(),
         ];
 

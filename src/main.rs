@@ -72,6 +72,12 @@ async fn main() -> Result<(), anyhow::Error> {
     // Async Channel
     let (tx, mut rx) = mpsc::channel::<AsyncAction>(32);
 
+    // Initial background tasks
+    let tx_update = tx.clone();
+    tokio::spawn(async move {
+        matrix_iptv_lib::setup::check_for_updates(tx_update, false).await;
+    });
+
     let res = run_app(&mut terminal, &mut app, &player, tx, &mut rx).await;
 
     // Restore Terminal
@@ -83,8 +89,17 @@ async fn main() -> Result<(), anyhow::Error> {
     )?;
     terminal.show_cursor()?;
 
-    if let Err(err) = res {
-        println!("{:?}", err);
+    let exit_code = match res {
+        Ok(Some(code)) => code,
+        Ok(None) => 0,
+        Err(err) => {
+            println!("{:?}", err);
+            1
+        }
+    };
+
+    if exit_code == 42 {
+        std::process::exit(42);
     }
 
     Ok(())
@@ -100,7 +115,7 @@ async fn run_app<B: ratatui::backend::Backend>(
     player: &player::Player,
     tx: mpsc::Sender<AsyncAction>,
     rx: &mut mpsc::Receiver<AsyncAction>,
-) -> io::Result<()> {
+) -> io::Result<Option<i32>> {
     loop {
         terminal.draw(|f| ui::ui(f, app))?;
 
@@ -282,7 +297,8 @@ async fn run_app<B: ratatui::backend::Backend>(
             match event::read()? {
                 Event::Key(key) => {
                     match handlers::input::handle_key_event(app, key, &tx, player).await? {
-                        handlers::input::InputResult::Quit => return Ok(()),
+                        handlers::input::InputResult::Quit => return Ok(None),
+                        handlers::input::InputResult::UpdateRequested => return Ok(Some(42)),
                         handlers::input::InputResult::Continue => continue,
                         handlers::input::InputResult::Ok => {}
                     }

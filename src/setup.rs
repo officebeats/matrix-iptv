@@ -128,3 +128,33 @@ fn install_mpv_windows() -> Result<(), anyhow::Error> {
         Err(anyhow::anyhow!("Failed to install mpv via winget."))
     }
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn check_for_updates(tx: tokio::sync::mpsc::Sender<crate::app::AsyncAction>, manual: bool) {
+    let current_version = env!("CARGO_PKG_VERSION");
+    let client = reqwest::Client::builder()
+        .user_agent("matrix-iptv-cli-updater")
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_default();
+
+    // Use a GET request to the latest release to check the tag
+    // GitHub redirects /latest to the specific tag URL
+    if let Ok(resp) = client.get("https://github.com/officebeats/matrix-iptv/releases/latest")
+        .send()
+        .await 
+    {
+        let final_url = resp.url().to_string();
+        // URL is likely https://github.com/officebeats/matrix-iptv/releases/tag/v3.0.9
+        if let Some(tag) = final_url.split("/tag/").last() {
+            let tag = tag.trim_start_matches('v');
+            if tag != current_version && !tag.is_empty() {
+                let _ = tx.send(crate::app::AsyncAction::UpdateAvailable(tag.to_string())).await;
+            } else if manual {
+                let _ = tx.send(crate::app::AsyncAction::NoUpdateFound).await;
+            }
+        }
+    } else if manual {
+        let _ = tx.send(crate::app::AsyncAction::Error("Failed to check for updates. Please check your connection.".to_string())).await;
+    }
+}
