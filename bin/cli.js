@@ -59,6 +59,19 @@ async function performUpdate() {
 
     if (os.platform() !== "win32") {
       fs.chmodSync(tempPath, "755");
+
+      // On macOS, remove quarantine flag to prevent Gatekeeper blocking
+      if (os.platform() === "darwin") {
+        try {
+          const { execSync } = require("child_process");
+          execSync(
+            `xattr -d com.apple.quarantine "${tempPath}" 2>/dev/null || true`
+          );
+          console.log(`[+] macOS quarantine flag cleared.`);
+        } catch (e) {
+          // xattr might fail silently, that's okay
+        }
+      }
     }
 
     // Replace old binary
@@ -73,9 +86,20 @@ async function performUpdate() {
         break;
       } catch (e) {
         attempts++;
+        console.log(`[!] Retry ${attempts}/5: ${e.message}`);
         if (attempts === 5) throw e;
         await new Promise((r) => setTimeout(r, 500));
       }
+    }
+
+    // Also clear quarantine on final binary path
+    if (os.platform() === "darwin") {
+      try {
+        const { execSync } = require("child_process");
+        execSync(
+          `xattr -d com.apple.quarantine "${binaryPath}" 2>/dev/null || true`
+        );
+      } catch (e) {}
     }
 
     console.log(`[+] Update complete. Rebooting system...\n`);
