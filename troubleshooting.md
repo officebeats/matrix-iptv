@@ -59,3 +59,25 @@ This document tracks identified issues and their resolutions to assist in future
 - **Issue**: Names in the "NBA Package" category were not being cleaned properly (prefixes remained).
 - **Cause**: The `CLEAN_PREFIX_COMBINED` regex was missing common sports markers like NBA, NFL, etc.
 - **Resolution**: Added `NBA|NFL|MLB|UFC|NHL|MLS` to the starting prefix cleaning regex in `src/parser.rs`.
+
+## Player / MPV
+
+### [2025-12-28] mpv Not Found on macOS (Homebrew PATH Issue)
+
+- **Issue**: On macOS (especially Apple Silicon), Matrix IPTV fails to detect mpv even when it's installed via Homebrew.
+- **Symptom**: Diagnostics show "mpv found" in terminal, but the application reports mpv as missing or fails to launch streams.
+- **Cause**: Homebrew on Apple Silicon installs to `/opt/homebrew/bin` which is not in the default PATH that the application sees when launched outside of a shell context. The installer and app were only checking the system PATH.
+- **Resolution (Multi-pronged)**:
+  1. **Installer Fix**: Updated `install.sh` to detect common Homebrew prefixes (`/opt/homebrew`, `/usr/local`) and add them to PATH before checking for mpv.
+  2. **Rust App Fix**: Added `get_mpv_path()` function in `setup.rs` that searches common installation locations when PATH lookup fails:
+     - `/opt/homebrew/bin/mpv` (Apple Silicon)
+     - `/usr/local/bin/mpv` (Intel Mac)
+     - `/usr/bin/mpv` (System)
+     - `/snap/bin/mpv` (Linux Snap)
+  3. **Error Messages**: Improved error messages to include helpful hints for macOS users about Homebrew PATH configuration.
+- **User Workaround** (if issue persists): Add Homebrew to your shell PATH in `~/.zshrc`:
+  ```bash
+  export PATH="/opt/homebrew/bin:$PATH"  # Apple Silicon
+  # or
+  export PATH="/usr/local/bin:$PATH"     # Intel Mac
+  ```

@@ -42,6 +42,24 @@ impl Player {
     pub fn play(&self, url: &str, use_default_mpv: bool) -> Result<(), anyhow::Error> {
         self.stop();
 
+        // Find mpv executable, checking PATH and common installation locations
+        let mpv_path = crate::setup::get_mpv_path().ok_or_else(|| {
+            let hint = if cfg!(target_os = "macos") {
+                "\n\nHint: On macOS with Homebrew:\n\
+                 - Apple Silicon: mpv is typically at /opt/homebrew/bin/mpv\n\
+                 - Intel Mac: mpv is typically at /usr/local/bin/mpv\n\n\
+                 To fix, add Homebrew to your PATH:\n\
+                   export PATH=\"/opt/homebrew/bin:$PATH\"\n\
+                 (Add this line to ~/.zshrc or ~/.bash_profile)"
+            } else {
+                ""
+            };
+            anyhow::anyhow!(
+                "mpv not found. Please install mpv and ensure it's in your PATH.{}",
+                hint
+            )
+        })?;
+
         // Create a unique IPC path for this session
         let pipe_name = if cfg!(target_os = "windows") {
             format!("\\\\.\\pipe\\mpv_ipc_{}", std::process::id())
@@ -49,7 +67,7 @@ impl Player {
             format!("/tmp/mpv_ipc_{}", std::process::id())
         };
 
-        let mut cmd = Command::new("mpv");
+        let mut cmd = Command::new(&mpv_path);
         cmd.arg(url)
            .arg("--fs")        // Start in Fullscreen
            .arg("--osc=yes");  // Enable On Screen Controller for usability
@@ -112,10 +130,22 @@ impl Player {
                 }
                 Ok(())
             }
-            Err(e) => Err(anyhow::anyhow!(
-                "Failed to start mpv: {}. Make sure mpv is installed and in PATH.",
-                e
-            )),
+            Err(e) => {
+                let hint = if cfg!(target_os = "macos") {
+                    format!(
+                        "\n\nSearched for mpv at: {}\n\
+                        Hint: On Apple Silicon, Homebrew installs to /opt/homebrew/bin.\n\
+                        Add this to your ~/.zshrc: export PATH=\"/opt/homebrew/bin:$PATH\"",
+                        mpv_path
+                    )
+                } else {
+                    String::new()
+                };
+                Err(anyhow::anyhow!(
+                    "Failed to start mpv: {}.{}",
+                    e, hint
+                ))
+            }
         }
     }
 
