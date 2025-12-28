@@ -8,10 +8,9 @@ pub const CP_YELLOW: Color = Color::Rgb(255, 255, 0);  // Pure Yellow
 pub const CP_WHITE: Color = Color::White;              // Pure White
 pub const CP_GRAY: Color = Color::Rgb(220, 220, 220);  // Bright Silver (for unselected)
 
-// Mappings
-pub const MATRIX_GREEN: Color = CP_GREEN;
-pub const DARK_GREEN: Color = CP_GREEN; // Use Green for borders too for that Matrix vibe
-pub const BRIGHT_GREEN: Color = CP_CYAN; // Use Cyan for highlights now instead of Yellow for variety
+// Matrix Palette
+pub const MATRIX_GREEN: Color = Color::Rgb(0, 255, 65);   // Classic Matrix Neon
+pub const DARK_GREEN: Color = Color::Rgb(0, 100, 0);     // Deep Terminal Green
+pub const BRIGHT_GREEN: Color = Color::Rgb(150, 255, 150); // Lighter Neon highlight
 pub const BRIGHT_YELLOW: Color = CP_YELLOW; 
-// pub const BRIGHT_WHITE: Color = Color::White;
 pub const BRIGHT_GRAY: Color = CP_GRAY;

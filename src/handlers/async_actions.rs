@@ -478,6 +478,20 @@ pub async fn handle_async_action(
             app.loading_message = None;
             app.login_error = Some("System Protocol: You are running the latest version.".to_string());
         }
+        AsyncAction::SportsMatchesLoaded(matches) => {
+            app.sports_matches = matches;
+            app.state_loading = false;
+            app.loading_message = None;
+            app.sports_list_state.select(Some(0));
+            // Trigger stream fetch for the first match if it exists
+            if !app.sports_matches.is_empty() {
+                app.sports_details_loading = true;
+            }
+        }
+        AsyncAction::SportsStreamsLoaded(streams) => {
+            app.current_sports_streams = streams;
+            app.sports_details_loading = false;
+        }
         AsyncAction::Error(e) => {
             app.login_error = Some(e);
             app.state_loading = false;

@@ -11,6 +11,7 @@ pub mod home;
 pub mod vod;
 pub mod series;
 pub mod groups;
+pub mod sports;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -62,6 +63,9 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         CurrentScreen::UpdatePrompt => {
             popups::render_update_prompt(f, app, area);
         }
+        CurrentScreen::SportsDashboard => {
+            render_main_layout(f, app, area);
+        }
     }
 
     // Overlays
@@ -109,8 +113,11 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
 
     match app.current_screen {
         CurrentScreen::Categories | CurrentScreen::Streams => {
+            // Calculate column widths
             let (cat_width, stream_width) = calculate_two_column_split(&app.categories, content_area.width);
-            let content_chunks = Layout::default()
+            
+            // Split horizontally: Categories (left) | Streams+Intelligence (right)
+            let h_chunks = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([
                     Constraint::Length(cat_width),
@@ -118,8 +125,32 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                 ])
                 .split(content_area);
 
-            panes::render_categories_pane(f, app, content_chunks[0], MATRIX_GREEN);
-            panes::render_streams_pane(f, app, content_chunks[1], MATRIX_GREEN);
+            // Categories takes full height on left
+            panes::render_categories_pane(f, app, h_chunks[0], MATRIX_GREEN);
+
+            // Check if focused stream is a sports event
+            let is_sports_event = app.streams.get(app.selected_stream_index)
+                .map(|s| crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref()).sports_event.is_some())
+                .unwrap_or(false);
+
+            if is_sports_event {
+                // Right side: Streams (top) + Intelligence (bottom)
+                // Height: 4 for double borders + 2 for content = 6
+                let intel_height = 6u16;
+                let right_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Min(10),
+                        Constraint::Length(intel_height),
+                    ])
+                    .split(h_chunks[1]);
+
+                panes::render_streams_pane(f, app, right_chunks[0], MATRIX_GREEN);
+                panes::render_stream_details_pane(f, app, right_chunks[1], MATRIX_GREEN);
+            } else {
+                // No sports event: streams takes full right side
+                panes::render_streams_pane(f, app, h_chunks[1], MATRIX_GREEN);
+            }
         }
         CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
             vod::render_vod_view(f, app, content_area);
@@ -130,8 +161,30 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
         CurrentScreen::Settings | CurrentScreen::TimezoneSettings => {
             form::render_settings(f, app, content_area);
         }
+        CurrentScreen::SportsDashboard => {
+            sports::render_sports_view(f, app, content_area);
+        }
         CurrentScreen::GlobalSearch => {
-            panes::render_global_search_pane(f, app, content_area);
+            // Check if focused result is a sports event
+            let is_sports_event = app.global_search_results.get(app.selected_stream_index)
+                .map(|s| crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref()).sports_event.is_some())
+                .unwrap_or(false);
+
+            if is_sports_event {
+                let intel_height = 6u16;
+                let layout_chunks = Layout::default()
+                    .direction(Direction::Vertical)
+                    .constraints([
+                        Constraint::Min(10),
+                        Constraint::Length(intel_height),
+                    ])
+                    .split(content_area);
+
+                panes::render_global_search_pane(f, app, layout_chunks[0]);
+                panes::render_stream_details_pane(f, app, layout_chunks[1], MATRIX_GREEN);
+            } else {
+                panes::render_global_search_pane(f, app, content_area);
+            }
         }
         _ => {}
     }

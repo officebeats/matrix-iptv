@@ -60,9 +60,10 @@ pub fn stylize_channel_name(
              if !detected_sport_icon.is_empty() { break; }
         }
 
-        spans.push(Span::styled(format!("{}", event.team1), base_style.fg(t1_color)));
+        // HOME = Matrix Green, AWAY = White (Simple, readable contrast)
+        spans.push(Span::styled(format!("{}", event.team1), base_style.fg(MATRIX_GREEN)));
         spans.push(Span::styled(" vs ", Style::default().fg(Color::Gray)));
-        spans.push(Span::styled(format!("{}", event.team2), base_style.fg(t2_color)));
+        spans.push(Span::styled(format!("{}", event.team2), base_style.fg(Color::White)));
         
     } else {
         let words: Vec<&str> = name.split_whitespace().collect();

@@ -13,7 +13,7 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use tokio::sync::mpsc;
 use matrix_iptv_lib::app::{App, AsyncAction, CurrentScreen, Pane};
 use matrix_iptv_lib::api::get_id_str;
-use matrix_iptv_lib::{player, setup, ui, handlers};
+use matrix_iptv_lib::{player, setup, ui, handlers, sports};
 
 #[derive(clap::Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -249,6 +249,92 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 } else {
                                     if let Ok(info) = client.get_vod_info(&fid).await {
                                         let _ = tx.send(AsyncAction::VodInfoLoaded(info)).await;
+                                    }
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 1.10 Debounced Sports Info Fetching (Matches list)
+        if app.current_screen == CurrentScreen::SportsDashboard && app.sports_matches.is_empty() && !app.state_loading {
+            let tx = tx.clone();
+            let category = app.sports_categories[app.selected_sports_category_index].clone();
+            app.state_loading = true;
+            tokio::spawn(async move {
+                if let Ok(matches) = sports::fetch_streamed_matches(&category).await {
+                    let _ = tx.send(AsyncAction::SportsMatchesLoaded(matches)).await;
+                } else {
+                    let _ = tx.send(AsyncAction::Error("System Protocol: Failed to link with sports uplink.".to_string())).await;
+                }
+            });
+        }
+
+        // 1.11 Debounced Sports Stream Link Fetching
+        if app.current_screen == CurrentScreen::SportsDashboard && !app.sports_matches.is_empty() {
+            if let Some(selected_match) = app.sports_matches.get(app.sports_list_state.selected().unwrap_or(0)) {
+                let focused_id = selected_match.id.clone();
+                if app.last_focused_stream_id.as_ref() != Some(&focused_id) {
+                    app.last_focused_stream_id = Some(focused_id.clone());
+                    app.focus_timestamp = Some(std::time::Instant::now());
+                    app.sports_details_loading = true;
+                } else if let Some(ts) = app.focus_timestamp {
+                    if ts.elapsed().as_millis() >= 500 {
+                        app.focus_timestamp = None;
+                        let tx = tx.clone();
+                        // Find first available source
+                        if let Some(source) = selected_match.sources.first() {
+                            let source_name = source.source.clone();
+                            let source_id = source.id.clone();
+                            tokio::spawn(async move {
+                                if let Ok(links) = sports::fetch_streamed_links(&source_name, &source_id).await {
+                                    let _ = tx.send(AsyncAction::SportsStreamsLoaded(links)).await;
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // 1.12 Debounced Sports Matching for regular streams
+        if (app.current_screen == CurrentScreen::Streams || app.current_screen == CurrentScreen::GlobalSearch) && app.active_pane == Pane::Streams {
+            let focused_stream = if app.current_screen == CurrentScreen::GlobalSearch {
+                app.global_search_results.get(app.selected_stream_index)
+            } else {
+                app.streams.get(app.selected_stream_index)
+            };
+
+            if let Some(stream) = focused_stream {
+                let parsed = matrix_iptv_lib::parser::parse_stream(&stream.name, app.provider_timezone.as_deref());
+                if parsed.sports_event.is_some() {
+                    let stream_id = get_id_str(&stream.stream_id);
+                    if app.last_focused_stream_id.as_ref() != Some(&stream_id) {
+                        app.last_focused_stream_id = Some(stream_id.clone());
+                        app.focus_timestamp = Some(std::time::Instant::now());
+                        app.current_sports_streams.clear();
+                    } else if let Some(ts) = app.focus_timestamp {
+                        if ts.elapsed().as_millis() >= 1000 {
+                            app.focus_timestamp = None;
+                            let tx = tx.clone();
+                            let team1 = parsed.sports_event.as_ref().unwrap().team1.clone();
+                            let team2 = parsed.sports_event.as_ref().unwrap().team2.clone();
+                            
+                            tokio::spawn(async move {
+                                // Scrape "live" category for matching titles
+                                if let Ok(matches) = sports::fetch_streamed_matches("live").await {
+                                    let found = matches.into_iter().find(|m| {
+                                        let title = m.title.to_lowercase();
+                                        title.contains(&team1.to_lowercase()) || title.contains(&team2.to_lowercase())
+                                    });
+                                    if let Some(m) = found {
+                                        if let Some(source) = m.sources.first() {
+                                            if let Ok(links) = sports::fetch_streamed_links(&source.source, &source.id).await {
+                                                let _ = tx.send(AsyncAction::SportsStreamsLoaded(links)).await;
+                                            }
+                                        }
                                     }
                                 }
                             });

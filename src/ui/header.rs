@@ -42,8 +42,14 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         return;
     }
 
+    let header_title = if app.current_screen == CurrentScreen::SportsDashboard {
+        " // SPORTS_UPLINK"
+    } else {
+        " // SYSTEM_NETWORK"
+    };
+
     let mut left_spans = vec![Span::styled(
-        " // SYSTEM_NETWORK",
+        header_title,
         Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD),
     )];
     

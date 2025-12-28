@@ -251,15 +251,7 @@ pub fn render_welcome_popup(f: &mut Frame, app: &App, area: Rect) {
     
     f.render_widget(Clear, popup_area);
     
-    let block = Block::default()
-        .title(" // SYSTEM_INITIALIZATION // ")
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .border_style(Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::BOLD));
-    
-    f.render_widget(block.clone(), popup_area);
-    
-    let inner = block.inner(popup_area);
+    let inner = crate::ui::common::render_composite_block(f, popup_area, Some(" // SYSTEM_INITIALIZATION // "));
     
     let mut text = vec![
         Line::from(""),

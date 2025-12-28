@@ -28,6 +28,8 @@ pub enum AsyncAction {
     StreamHealthLoaded(String, u64), // stream_id, latency_ms
     UpdateAvailable(String), // new_version
     NoUpdateFound,
+    SportsMatchesLoaded(Vec<crate::sports::StreamedMatch>),
+    SportsStreamsLoaded(Vec<crate::sports::StreamedStream>),
     Error(String),
 }
 
@@ -49,6 +51,7 @@ pub enum CurrentScreen {
     GroupManagement,      // Manage custom groups (create/edit/delete)
     GroupPicker,          // Pick a group to add stream to
     UpdatePrompt,         // Prompt for app update
+    SportsDashboard,      // Integrated Live Sports from Streamed.pk
 }
 
 #[derive(PartialEq, Debug)]
@@ -246,6 +249,15 @@ pub struct App {
     pub pending_play_title: Option<String>,
     pub show_play_details: bool,
     pub new_version_available: Option<String>,
+
+    // Sports Dashboard (Streamed.pk)
+    pub sports_matches: Vec<crate::sports::StreamedMatch>,
+    pub sports_list_state: ListState,
+    pub sports_categories: Vec<String>,
+    pub sports_category_list_state: ListState,
+    pub selected_sports_category_index: usize,
+    pub current_sports_streams: Vec<crate::sports::StreamedStream>,
+    pub sports_details_loading: bool,
 }
 
 #[derive(Clone)]
@@ -432,6 +444,25 @@ impl App {
             pending_play_title: None,
             show_play_details: false,
             new_version_available: None,
+
+            // Sports Dashboard
+            sports_matches: Vec::new(),
+            sports_list_state: ListState::default(),
+            sports_categories: vec![
+                "live".to_string(), 
+                "all-today".to_string(), 
+                "football".to_string(), 
+                "basketball".to_string(),
+                "f1".to_string(),
+                "ufc".to_string(),
+                "tennis".to_string(),
+                "baseball".to_string(),
+                "hockey".to_string(),
+            ],
+            sports_category_list_state: ListState::default(),
+            selected_sports_category_index: 0,
+            current_sports_streams: Vec::new(),
+            sports_details_loading: false,
         };
 
         app.refresh_settings_options();

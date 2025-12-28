@@ -276,6 +276,13 @@ pub async fn handle_key_event(
                     }
                 }
                 KeyCode::Char('x') => app.current_screen = CurrentScreen::Settings,
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    app.previous_screen = Some(CurrentScreen::Home);
+                    app.current_screen = CurrentScreen::SportsDashboard;
+                    app.active_pane = Pane::Categories;
+                    app.sports_matches.clear();
+                    app.sports_category_list_state.select(Some(0));
+                }
                 KeyCode::Char('j') | KeyCode::Down => app.next_account(),
                 KeyCode::Char('k') | KeyCode::Up => app.previous_account(),
                 KeyCode::Char('1') => {
@@ -364,6 +371,12 @@ pub async fn handle_key_event(
                     } else {
                         app.selected_content_type_index -= 1;
                     }
+                }
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    app.current_screen = CurrentScreen::SportsDashboard;
+                    app.active_pane = Pane::Categories;
+                    app.sports_matches.clear();
+                    app.sports_category_list_state.select(Some(0));
                 }
                 KeyCode::Enter => {
                     match app.selected_content_type_index {
@@ -1597,8 +1610,90 @@ pub async fn handle_key_event(
                 _ => {}
             }
         }
+        CurrentScreen::SportsDashboard => {
+            match key.code {
+                KeyCode::Esc | KeyCode::Backspace => {
+                    app.current_screen = app.previous_screen.take().unwrap_or(CurrentScreen::Home);
+                }
+                KeyCode::Tab | KeyCode::Right | KeyCode::Char('l') => {
+                    app.active_pane = if app.active_pane == Pane::Categories { Pane::Streams } else { Pane::Categories };
+                }
+                KeyCode::Left | KeyCode::Char('h') => {
+                    app.active_pane = if app.active_pane == Pane::Categories { Pane::Streams } else { Pane::Categories };
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if app.active_pane == Pane::Categories {
+                        let i = match app.sports_category_list_state.selected() {
+                            Some(i) => {
+                                if i == 0 { app.sports_categories.len() - 1 } else { i - 1 }
+                            }
+                            None => 0,
+                        };
+                        app.sports_category_list_state.select(Some(i));
+                        app.selected_sports_category_index = i;
+                        app.sports_matches.clear(); // Trigger refresh
+                    } else {
+                        let i = match app.sports_list_state.selected() {
+                            Some(i) => {
+                                if i == 0 { if app.sports_matches.is_empty() { 0 } else { app.sports_matches.len() - 1 } } else { i - 1 }
+                            }
+                            None => 0,
+                        };
+                        app.sports_list_state.select(Some(i));
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if app.active_pane == Pane::Categories {
+                        let i = match app.sports_category_list_state.selected() {
+                            Some(i) => {
+                                if i >= app.sports_categories.len() - 1 { 0 } else { i + 1 }
+                            }
+                            None => 0,
+                        };
+                        app.sports_category_list_state.select(Some(i));
+                        app.selected_sports_category_index = i;
+                        app.sports_matches.clear(); // Trigger refresh
+                    } else {
+                        let i = match app.sports_list_state.selected() {
+                            Some(i) => {
+                                if app.sports_matches.is_empty() { 0 } else if i >= app.sports_matches.len() - 1 { 0 } else { i + 1 }
+                            }
+                            None => 0,
+                        };
+                        app.sports_list_state.select(Some(i));
+                    }
+                }
+                KeyCode::Enter => {
+                    if app.active_pane == Pane::Categories {
+                        app.active_pane = Pane::Streams;
+                    } else if !app.current_sports_streams.is_empty() {
+                        let stream = &app.current_sports_streams[0]; // Play first link
+                        let url = stream.embed_url.clone();
+                        let title = app.sports_matches[app.sports_list_state.selected().unwrap_or(0)].title.clone();
+                        
+                        app.state_loading = true;
+                        app.loading_message = Some(format!("Preparing: {}...", title));
+                        
+                        let tx = tx.clone();
+                        let player = player.clone();
+                        let use_default = app.config.use_default_mpv;
+                        tokio::spawn(async move {
+                            match player.play(&url, use_default) {
+                                Ok(_) => {
+                                    match player.wait_for_playback(10000).await {
+                                        Ok(true) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
+                                        _ => { let _ = tx.send(AsyncAction::PlayerFailed("Failed to start".to_string())).await; }
+                                    }
+                                }
+                                Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(e.to_string())).await; }
+                            }
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
         _ => {}
     }
-
-    Ok(InputResult::Ok)
+    Ok(InputResult::Continue)
 }

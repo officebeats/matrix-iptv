@@ -1,14 +1,15 @@
 use ratatui::{
-    layout::Rect,
+    layout::{Rect, Layout, Constraint, Direction},
     style::{Color, Modifier, Style},
-    text::Line,
-    widgets::{Block, BorderType, Borders, List, ListItem},
+    text::{Line, Span},
+    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
 };
-use crate::app::{App, CurrentScreen};
-use crate::parser::{parse_category, country_flag, country_color, parse_stream};
-use crate::ui::colors::MATRIX_GREEN;
-use crate::ui::common::stylize_channel_name; 
+use crate::app::{App, CurrentScreen, Guide, InputMode, LoginField, Pane, SettingsState};
+use crate::parser::{parse_category, parse_stream, country_flag, country_color};
+use crate::ui::colors::{DARK_GREEN, MATRIX_GREEN, BRIGHT_GREEN};
+use crate::ui::common::stylize_channel_name;
+use crate::sports::get_team_color;
 use chrono::{Utc, DateTime};
 use chrono_tz::Tz;
 
@@ -316,9 +317,11 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 spans.push(ratatui::text::Span::styled("[ENDED] ", Style::default().fg(Color::Rgb(100, 100, 100)).add_modifier(Modifier::BOLD)));
             }
 
-            // 7. Location (LOC) at the end
-            if let Some(loc) = parsed.location {
-                spans.push(ratatui::text::Span::styled(format!("({})", loc), Style::default().fg(Color::LightBlue)));
+            // 7. Location (LOC) at the end - Skip for sports events (team abbrs handled by Intelligence)
+            if parsed.sports_event.is_none() {
+                if let Some(loc) = parsed.location {
+                    spans.push(ratatui::text::Span::styled(format!("({})", loc), Style::default().fg(Color::LightBlue)));
+                }
             }
 
             // 8. Network Health (Latency)
@@ -451,4 +454,58 @@ fn latency_to_bars(latency: Option<u64>) -> ratatui::text::Span<'static> {
         Some(_) => ratatui::text::Span::styled(" [📶    ]", Style::default().fg(Color::Red)),
         None => ratatui::text::Span::raw(""), // No latency data - hide indicator
     }
+}
+pub fn render_stream_details_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
+    let selected_idx = app.selected_stream_index;
+    let focused_stream = if app.current_screen == CurrentScreen::GlobalSearch {
+        app.global_search_results.get(selected_idx)
+    } else {
+        app.streams.get(selected_idx)
+    };
+
+    // Only render for sports events
+    let Some(s) = focused_stream else { return };
+    let parsed = parse_stream(&s.name, app.provider_timezone.as_deref());
+    let Some(event) = &parsed.sports_event else { return };
+
+    let title = " // MATCH_INTELLIGENCE ";
+    let inner_area = crate::ui::common::render_matrix_box(f, area, title, border_color);
+
+    let sub_chunks = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(50),
+            Constraint::Percentage(50),
+        ])
+        .split(inner_area);
+
+    // --- LEFT SIDE: TEAMS ---
+    let mut left = Vec::new();
+    left.push(Line::from(vec![
+        Span::styled("HOME: ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(&event.team1, Style::default().fg(crate::sports::get_team_color_with_fallback(&event.team1, true))),
+    ]));
+    left.push(Line::from(vec![
+        Span::styled("AWAY: ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+        Span::styled(&event.team2, Style::default().fg(crate::sports::get_team_color_with_fallback(&event.team2, false))),
+    ]));
+    f.render_widget(Paragraph::new(left), sub_chunks[0]);
+
+    // --- RIGHT SIDE: TIME & CONTROLS ---
+    let mut right = Vec::new();
+    if let Some(st) = parsed.start_time {
+        let user_tz_str = app.config.get_user_timezone();
+        let user_tz: Tz = user_tz_str.parse().unwrap_or(chrono_tz::UTC);
+        let time_str = format_relative_time(st, &user_tz);
+        right.push(Line::from(vec![
+            Span::styled("START: ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(time_str, Style::default().fg(MATRIX_GREEN)),
+        ]));
+    }
+    right.push(Line::from(vec![
+        Span::styled("Press ", Style::default().fg(Color::Gray)),
+        Span::styled("Enter", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(" to play", Style::default().fg(Color::Gray)),
+    ]));
+    f.render_widget(Paragraph::new(right), sub_chunks[1]);
 }

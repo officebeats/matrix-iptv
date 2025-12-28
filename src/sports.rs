@@ -1,4 +1,6 @@
 use ratatui::style::Color;
+use serde::{Deserialize, Serialize};
+use anyhow::Result;
 
 
 /// Returns the primary color for a team based on its name or abbreviation.
@@ -287,7 +289,20 @@ pub fn get_team_color(name: &str) -> Color {
     } // Goldish
 
     // Fallback
-    Color::White
+    Color::Reset
+}
+
+/// Returns the primary color for a team with Home/Away fallback logic.
+/// Home = Matrix Green, Away = White.
+pub fn get_team_color_with_fallback(name: &str, is_home: bool) -> Color {
+    let specific = get_team_color(name);
+    if specific != Color::Reset {
+        specific
+    } else if is_home {
+        crate::ui::colors::MATRIX_GREEN
+    } else {
+        Color::White
+    }
 }
 
 pub fn is_generic_label(name: &str) -> bool {
@@ -317,9 +332,9 @@ pub fn is_generic_label(name: &str) -> bool {
 
 #[derive(Debug, Clone)]
 pub struct SportsEvent {
-    pub team1: String,
+    pub team1: String, // Home
     pub team1_abbr: Option<String>,
-    pub team2: String,
+    pub team2: String, // Away
     pub team2_abbr: Option<String>,
     pub start_time_raw: String,
 }
@@ -431,4 +446,60 @@ mod tests {
         assert_eq!(res.team1, "Cowboys");
         assert_eq!(res.team2, "Commanders");
     }
+}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamedTeam {
+    pub name: String,
+    pub badge: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamedTeams {
+    pub home: Option<StreamedTeam>,
+    pub away: Option<StreamedTeam>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamedSource {
+    pub source: String,
+    pub id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamedMatch {
+    pub id: String,
+    pub title: String,
+    pub category: String,
+    pub date: i64, // Unix timestamp in ms
+    pub popular: bool,
+    pub teams: Option<StreamedTeams>,
+    pub sources: Vec<StreamedSource>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamedStream {
+    pub id: String,
+    pub stream_no: i32,
+    pub language: String,
+    pub hd: bool,
+    pub embed_url: String,
+    pub source: String,
+}
+
+pub async fn fetch_streamed_matches(endpoint: &str) -> Result<Vec<StreamedMatch>> {
+    let url = format!("https://streamed.pk/api/matches/{}", endpoint);
+    let client = reqwest::Client::new();
+    let res = client.get(url).send().await?;
+    let matches: Vec<StreamedMatch> = res.json().await?;
+    Ok(matches)
+}
+
+pub async fn fetch_streamed_links(source: &str, id: &str) -> Result<Vec<StreamedStream>> {
+    let url = format!("https://streamed.pk/api/stream/{}/{}", source, id);
+    let client = reqwest::Client::new();
+    let res = client.get(url).send().await?;
+    let streams: Vec<StreamedStream> = res.json().await?;
+    Ok(streams)
 }
