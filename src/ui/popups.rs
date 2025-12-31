@@ -479,3 +479,88 @@ pub fn render_update_prompt(f: &mut Frame, app: &App, area: Rect) {
 
     f.render_widget(controls, chunks[1]);
 }
+
+/// Renders a popup for selecting Chromecast devices to cast to
+pub fn render_cast_picker_popup(f: &mut Frame, app: &App, area: Rect) {
+    let area = centered_rect(50, 50, area);
+    f.render_widget(Clear, area);
+    let inner = crate::ui::common::render_composite_block(f, area, Some(" // CAST_TARGET_SELECTION "));
+    
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Length(2), // Title
+            Constraint::Min(0),    // Device list
+            Constraint::Length(3), // Controls
+        ])
+        .split(inner);
+
+    // Title
+    let title_text = if app.cast_discovering {
+        "⟳ Scanning for Chromecast devices..."
+    } else if app.cast_devices.is_empty() {
+        "No Chromecast devices found"
+    } else {
+        "Select a Chromecast device:"
+    };
+    
+    let title = Paragraph::new(title_text)
+        .alignment(Alignment::Center)
+        .style(Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD));
+    f.render_widget(title, chunks[0]);
+
+    // Device list
+    if app.cast_devices.is_empty() {
+        let empty_msg = if app.cast_discovering {
+            "Please wait..."
+        } else {
+            "Press [R] to rescan or check your network"
+        };
+        let empty = Paragraph::new(empty_msg)
+            .alignment(Alignment::Center)
+            .style(Style::default().fg(DARK_GREEN).add_modifier(Modifier::ITALIC));
+        f.render_widget(empty, chunks[1]);
+    } else {
+        let items: Vec<ListItem> = app.cast_devices
+            .iter()
+            .enumerate()
+            .map(|(i, device)| {
+                let is_selected = i == app.selected_cast_device_index;
+                let icon = if is_selected { "▶ " } else { "  " };
+                let model_str = device.model.as_deref().unwrap_or("Chromecast");
+                
+                let style = if is_selected {
+                    Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(ratatui::style::Color::White)
+                };
+                
+                ListItem::new(Line::from(vec![
+                    Span::styled(icon, style),
+                    Span::styled(&device.name, style),
+                    Span::styled(format!("  ({})", model_str), Style::default().fg(DARK_GREEN)),
+                ]))
+            })
+            .collect();
+
+        let mut list_state = app.cast_device_list_state.clone();
+        let list = List::new(items)
+            .highlight_style(Style::default().bg(DARK_GREEN).fg(ratatui::style::Color::Black));
+        f.render_stateful_widget(list, chunks[1], &mut list_state);
+    }
+
+    // Controls
+    let controls = Paragraph::new(vec![
+        Line::from(vec![
+            Span::styled(" [Enter] ", Style::default().fg(ratatui::style::Color::Black).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(" CAST   ", Style::default().fg(ratatui::style::Color::White)),
+            Span::styled(" [R] ", Style::default().fg(ratatui::style::Color::Black).bg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled(" RESCAN   ", Style::default().fg(ratatui::style::Color::White)),
+            Span::styled(" [Esc] ", Style::default().fg(ratatui::style::Color::Black).bg(ratatui::style::Color::Red).add_modifier(Modifier::BOLD)),
+            Span::styled(" CANCEL ", Style::default().fg(ratatui::style::Color::White)),
+        ])
+    ]).alignment(Alignment::Center);
+
+    f.render_widget(controls, chunks[2]);
+}

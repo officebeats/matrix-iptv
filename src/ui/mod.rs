@@ -89,6 +89,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         popups::render_play_details_popup(f, app, area);
     }
 
+    if app.show_cast_picker {
+        popups::render_cast_picker_popup(f, app, area);
+    }
+
     if let Some(error) = &app.login_error {
         if app.current_screen != CurrentScreen::Login {
             popups::render_error_popup(f, area, error);

@@ -165,6 +165,11 @@ fn default_auto_refresh_hours() -> u32 { 12 }
 
 impl Default for AppConfig {
     fn default() -> Self {
+        // On macOS, default to using MPV's default settings (enhanced OFF)
+        // because enhanced mode can have compatibility issues with Homebrew MPV.
+        // On Windows, default to enhanced mode (ON) for best performance.
+        let use_default_mpv_default = cfg!(target_os = "macos");
+        
         Self {
             accounts: Vec::new(),
             last_used_account_index: None,
@@ -173,7 +178,7 @@ impl Default for AppConfig {
             playlist_mode: PlaylistMode::default(),
             processing_modes: Vec::new(),
             dns_provider: DnsProvider::default(),
-            use_default_mpv: false,
+            use_default_mpv: use_default_mpv_default,
             auto_refresh_hours: 12,
         }
     }

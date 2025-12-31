@@ -492,6 +492,25 @@ pub async fn handle_async_action(
             app.current_sports_streams = streams;
             app.sports_details_loading = false;
         }
+        // Chromecast Casting
+        AsyncAction::CastDevicesDiscovered(devices) => {
+            app.cast_devices = devices;
+            app.cast_discovering = false;
+            if !app.cast_devices.is_empty() {
+                app.selected_cast_device_index = 0;
+                app.cast_device_list_state.select(Some(0));
+            }
+        }
+        AsyncAction::CastStarted(device_name) => {
+            app.state_loading = false;
+            app.loading_message = Some(format!("▶ Casting to {}", device_name));
+            app.show_cast_picker = false;
+        }
+        AsyncAction::CastFailed(e) => {
+            app.cast_discovering = false;
+            app.show_cast_picker = false;
+            app.player_error = Some(format!("Cast failed: {}", e));
+        }
         AsyncAction::Error(e) => {
             app.login_error = Some(e);
             app.state_loading = false;

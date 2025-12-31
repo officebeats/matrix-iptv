@@ -4,6 +4,8 @@ pub mod config;
 pub mod parser;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod player;
+#[cfg(all(not(target_arch = "wasm32"), feature = "chromecast"))]
+pub mod cast;
 pub mod setup;
 pub mod sports;
 pub mod ui;

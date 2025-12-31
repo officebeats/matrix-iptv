@@ -1,6 +1,8 @@
 use crate::app::{App, AsyncAction, CurrentScreen, Pane, InputMode, LoginField, Guide, SettingsState};
 use crate::api::{XtreamClient, get_id_str};
 use crate::{preprocessing, player};
+#[cfg(feature = "chromecast")]
+use crate::cast;
 use crate::config::Account;
 use tokio::sync::mpsc;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, Event, KeyModifiers};
@@ -154,6 +156,83 @@ pub async fn handle_key_event(
     // Priority 6: Welcome Popup (FTUE)
     if app.show_welcome_popup {
         app.show_welcome_popup = false;
+        return Ok(InputResult::Continue);
+    }
+
+    // Priority 7: Cast Device Picker
+    if app.show_cast_picker {
+        match key.code {
+            KeyCode::Esc => {
+                app.show_cast_picker = false;
+                app.cast_discovering = false;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                if !app.cast_devices.is_empty() {
+                    let len = app.cast_devices.len();
+                    app.selected_cast_device_index = (app.selected_cast_device_index + 1) % len;
+                    app.cast_device_list_state.select(Some(app.selected_cast_device_index));
+                }
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                if !app.cast_devices.is_empty() {
+                    let len = app.cast_devices.len();
+                    if app.selected_cast_device_index == 0 {
+                        app.selected_cast_device_index = len - 1;
+                    } else {
+                        app.selected_cast_device_index -= 1;
+                    }
+                    app.cast_device_list_state.select(Some(app.selected_cast_device_index));
+                }
+            }
+            KeyCode::Char('r') => {
+                // Refresh/rescan for devices
+                #[cfg(feature = "chromecast")]
+                if !app.cast_discovering {
+                    app.cast_discovering = true;
+                    app.cast_devices.clear();
+                    let tx = tx.clone();
+                    tokio::spawn(async move {
+                        match cast::CastManager::discover_devices(5).await {
+                            Ok(devices) => {
+                                let _ = tx.send(AsyncAction::CastDevicesDiscovered(devices)).await;
+                            }
+                            Err(e) => {
+                                let _ = tx.send(AsyncAction::CastFailed(format!("Discovery failed: {}", e))).await;
+                            }
+                        }
+                    });
+                }
+                #[cfg(not(feature = "chromecast"))]
+                {
+                    let _ = tx.send(AsyncAction::CastFailed("Chromecast support not enabled. Rebuild with --features chromecast".to_string()));
+                }
+            }
+            KeyCode::Enter => {
+                #[cfg(feature = "chromecast")]
+                if !app.cast_devices.is_empty() && app.selected_cast_device_index < app.cast_devices.len() {
+                    let device = app.cast_devices[app.selected_cast_device_index].clone();
+                    let device_name = device.name.clone();
+                    
+                    // Get the pending URL to cast
+                    if let Some(url) = app.pending_play_url.take() {
+                        let tx = tx.clone();
+                        tokio::spawn(async move {
+                            let mut manager = cast::CastManager::new();
+                            match manager.cast_to_device(&device, &url, None) {
+                                Ok(_) => {
+                                    let _ = tx.send(AsyncAction::CastStarted(device_name)).await;
+                                }
+                                Err(e) => {
+                                    let _ = tx.send(AsyncAction::CastFailed(e.to_string())).await;
+                                }
+                            }
+                        });
+                    }
+                    app.show_cast_picker = false;
+                }
+            }
+            _ => {}
+        }
         return Ok(InputResult::Continue);
     }
 
@@ -850,6 +929,36 @@ pub async fn handle_key_event(
                         app.selected_group_index = 0;
                         app.group_list_state.select(if app.config.favorites.groups.is_empty() { None } else { Some(0) });
                         app.current_screen = CurrentScreen::GroupManagement;
+                    }
+                    #[cfg(feature = "chromecast")]
+                    KeyCode::Char('C') => {
+                        // Cast to Chromecast - open device picker
+                        if app.active_pane == Pane::Streams && !app.streams.is_empty() {
+                            let stream = &app.streams[app.selected_stream_index];
+                            if let Some(client) = &app.current_client {
+                                let id = get_id_str(&stream.stream_id);
+                                let url = client.get_stream_url(&id, "ts");
+                                app.pending_play_url = Some(url);
+                                app.pending_play_title = Some(stream.name.clone());
+                                app.show_cast_picker = true;
+                                app.cast_discovering = true;
+                                app.selected_cast_device_index = 0;
+                                app.cast_device_list_state.select(None);
+                                
+                                // Start device discovery
+                                let tx = tx.clone();
+                                tokio::spawn(async move {
+                                    match cast::CastManager::discover_devices(5).await {
+                                        Ok(devices) => {
+                                            let _ = tx.send(AsyncAction::CastDevicesDiscovered(devices)).await;
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(AsyncAction::CastFailed(format!("Discovery failed: {}", e))).await;
+                                        }
+                                    }
+                                });
+                            }
+                        }
                     }
                     _ => {}
                 }

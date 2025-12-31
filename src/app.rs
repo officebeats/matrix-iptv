@@ -5,6 +5,19 @@ use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
 use tui_input::Input;
 
+// Casting types - conditionally use real or stub implementation
+#[cfg(all(not(target_arch = "wasm32"), feature = "chromecast"))]
+pub use crate::cast::CastDevice;
+
+#[cfg(not(all(not(target_arch = "wasm32"), feature = "chromecast")))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct CastDevice {
+    pub name: String,
+    pub ip: String,
+    pub port: u16,
+    pub model: Option<String>,
+}
+
 #[derive(Debug, Clone)]
 pub enum AsyncAction {
     LoginSuccess(XtreamClient, Option<UserInfo>, Option<ServerInfo>),
@@ -30,6 +43,10 @@ pub enum AsyncAction {
     NoUpdateFound,
     SportsMatchesLoaded(Vec<crate::sports::StreamedMatch>),
     SportsStreamsLoaded(Vec<crate::sports::StreamedStream>),
+    // Chromecast casting
+    CastDevicesDiscovered(Vec<CastDevice>),
+    CastStarted(String), // Device name
+    CastFailed(String),  // Error message
     Error(String),
 }
 
@@ -258,6 +275,15 @@ pub struct App {
     pub selected_sports_category_index: usize,
     pub current_sports_streams: Vec<crate::sports::StreamedStream>,
     pub sports_details_loading: bool,
+
+    // Chromecast Casting
+    #[cfg(all(not(target_arch = "wasm32"), feature = "chromecast"))]
+    pub cast_manager: crate::cast::CastManager,
+    pub cast_devices: Vec<CastDevice>,
+    pub cast_device_list_state: ListState,
+    pub show_cast_picker: bool,
+    pub cast_discovering: bool,
+    pub selected_cast_device_index: usize,
 }
 
 #[derive(Clone)]
@@ -463,6 +489,15 @@ impl App {
             selected_sports_category_index: 0,
             current_sports_streams: Vec::new(),
             sports_details_loading: false,
+
+            // Chromecast Casting
+            #[cfg(all(not(target_arch = "wasm32"), feature = "chromecast"))]
+            cast_manager: crate::cast::CastManager::new(),
+            cast_devices: Vec::new(),
+            cast_device_list_state: ListState::default(),
+            show_cast_picker: false,
+            cast_discovering: false,
+            selected_cast_device_index: 0,
         };
 
         app.refresh_settings_options();
