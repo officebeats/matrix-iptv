@@ -101,12 +101,21 @@ impl ProcessingMode {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
+pub enum AccountType {
+    #[default]
+    Xtream,
+    M3U,
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Account {
     pub name: String,
-    pub base_url: String,
-    pub username: String,
-    pub password: String,
+    pub base_url: String, // For M3U, this is the M3U URL
+    pub username: String, // Empty for M3U
+    pub password: String, // Empty for M3U
+    #[serde(default)]
+    pub account_type: AccountType,
     pub epg_url: Option<String>,
     pub last_refreshed: Option<i64>,
     pub total_channels: Option<usize>,

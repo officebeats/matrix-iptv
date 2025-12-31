@@ -48,29 +48,27 @@ pub async fn handle_key_event(
         // "Value Prop": If searching from home screen and no data is loaded, boot-up the highlighted account
         if on_home && app.global_all_streams.is_empty() {
              if let Some(acc) = app.config.accounts.get(app.selected_account_index) {
-                 let client = crate::api::XtreamClient::new(
-                     acc.base_url.clone(),
-                     acc.username.clone(),
-                     acc.password.clone(),
-                 );
-                 app.current_client = Some(client.clone());
                  let tx = tx.clone();
-                 let pms = app.config.processing_modes.clone();
-                 let stream_favs = app.config.favorites.streams.clone();
-                 let vod_favs = app.config.favorites.vod_streams.clone();
-                 let acc_name = acc.name.clone();
+                 let acc_type = acc.account_type;
+                 let base_url = acc.base_url.clone();
+                 let username = acc.username.clone();
+                 let password = acc.password.clone();
                  
                  tokio::spawn(async move {
-                     if let Ok((true, _, _)) = client.authenticate().await {
-                         // Load Live
-                         if let Ok(mut streams) = client.get_live_streams("ALL").await {
-                             crate::preprocessing::preprocess_streams(&mut streams, &stream_favs, &pms, true, &acc_name);
-                             let _ = tx.send(AsyncAction::TotalChannelsLoaded(streams)).await;
+                     match acc_type {
+                         crate::config::AccountType::Xtream => {
+                             let client = crate::api::XtreamClient::new(base_url, username, password);
+                             if let Ok((true, _, _)) = client.authenticate().await {
+                                 let iptv_client = crate::api::IptvClient::Xtream(client.clone());
+                                 let _ = tx.send(AsyncAction::LoginSuccess(iptv_client, None, None)).await;
+                             }
                          }
-                         // Load VOD
-                         if let Ok(mut streams) = client.get_vod_streams_all().await {
-                             crate::preprocessing::preprocess_streams(&mut streams, &vod_favs, &pms, false, &acc_name);
-                             let _ = tx.send(AsyncAction::TotalMoviesLoaded(streams)).await;
+                         crate::config::AccountType::M3U => {
+                             let mut client = crate::api::M3uClient::new(base_url);
+                             if let Ok(_) = client.load_playlist().await {
+                                 let iptv_client = crate::api::IptvClient::M3U(client);
+                                 let _ = tx.send(AsyncAction::LoginSuccess(iptv_client, None, None)).await;
+                             }
                          }
                      }
                  });
@@ -267,22 +265,20 @@ pub async fn handle_key_event(
                 app.all_vod_streams.clear();
 
                 tokio::spawn(async move {
-                    let (auth_success, ui, si) = match client.authenticate().await {
+                    let (auth_success, updated_client, ui, si) = match client.authenticate().await {
                         Ok(r) => r,
                         Err(e) => {
                             let _ = tx.send(AsyncAction::Error(format!("Refresh failed: {}", e))).await;
-                            let _ = tx.send(AsyncAction::PlaylistRefreshed(None, None)).await;
                             return;
                         }
                     };
-
+ 
                     if !auth_success {
                         let _ = tx.send(AsyncAction::Error("Refresh authentication failed".to_string())).await;
-                        let _ = tx.send(AsyncAction::PlaylistRefreshed(None, None)).await;
                         return;
                     }
-
-                    let _ = tx.send(AsyncAction::PlaylistRefreshed(ui, si)).await;
+ 
+                    let _ = tx.send(AsyncAction::PlaylistRefreshed(updated_client, ui, si)).await;
                 });
             }
         }
@@ -325,6 +321,7 @@ pub async fn handle_key_event(
                     app.input_epg_url = tui_input::Input::default();
                     app.login_error = None;
                     app.editing_account_index = None;
+                    app.active_account_type = crate::config::AccountType::Xtream;
                     app.input_mode = InputMode::Editing; // Auto-start in editing mode
                 }
                 KeyCode::Char('e') => {
@@ -339,6 +336,7 @@ pub async fn handle_key_event(
 
                         app.current_screen = CurrentScreen::Login;
                         app.previous_screen = Some(CurrentScreen::Home);
+                        app.active_account_type = acc.account_type;
                         app.input_mode = InputMode::Editing; // Auto-start in editing mode
                     }
                 }
@@ -395,21 +393,37 @@ pub async fn handle_key_event(
                         app.login_error = None;
                         let tx = tx.clone();
                         let dns_provider = app.config.dns_provider;
+                        let acc_type = acc.account_type;
                         tokio::spawn(async move {
-                            match XtreamClient::new_with_doh(base_url, username, password, dns_provider).await {
-                                Ok(client) => match client.authenticate().await {
-                                    Ok((true, ui, si)) => {
-                                        let _ = tx.send(AsyncAction::LoginSuccess(client, ui, si)).await;
+                            match acc_type {
+                                crate::config::AccountType::Xtream => {
+                                    match crate::api::XtreamClient::new_with_doh(base_url, username, password, dns_provider).await {
+                                        Ok(client) => match client.authenticate().await {
+                                            Ok((true, ui, si)) => {
+                                                let _ = tx.send(AsyncAction::LoginSuccess(crate::api::IptvClient::Xtream(client), ui, si)).await;
+                                            }
+                                            Ok((false, _, _)) => {
+                                                let _ = tx.send(AsyncAction::LoginFailed("Authentication failed".to_string())).await;
+                                            }
+                                            Err(e) => {
+                                                let _ = tx.send(AsyncAction::LoginFailed(e.to_string())).await;
+                                            }
+                                        },
+                                        Err(e) => {
+                                            let _ = tx.send(AsyncAction::LoginFailed(format!("Connection error: {}", e))).await;
+                                        }
                                     }
-                                    Ok((false, _, _)) => {
-                                        let _ = tx.send(AsyncAction::LoginFailed("Authentication failed".to_string())).await;
+                                }
+                                crate::config::AccountType::M3U => {
+                                    let mut client = crate::api::M3uClient::new(base_url);
+                                    match client.load_playlist().await {
+                                        Ok(_) => {
+                                            let _ = tx.send(AsyncAction::LoginSuccess(crate::api::IptvClient::M3U(client), None, None)).await;
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(AsyncAction::LoginFailed(format!("M3U Load failed: {}", e))).await;
+                                        }
                                     }
-                                    Err(e) => {
-                                        let _ = tx.send(AsyncAction::LoginFailed(e.to_string())).await;
-                                    }
-                                },
-                                Err(e) => {
-                                    let _ = tx.send(AsyncAction::LoginFailed(format!("Connection error: {}", e))).await;
                                 }
                             }
                         });
@@ -495,8 +509,8 @@ pub async fn handle_key_event(
                         let tx = tx.clone();
                         tokio::spawn(async move {
                             match client.authenticate().await {
-                                Ok((_, ui, si)) => {
-                                    let _ = tx.send(AsyncAction::PlaylistRefreshed(ui, si)).await;
+                                Ok((_, updated_client, ui, si)) => {
+                                    let _ = tx.send(AsyncAction::PlaylistRefreshed(updated_client, ui, si)).await;
                                 }
                                 Err(e) => {
                                     let _ = tx.send(AsyncAction::Error(format!("Refresh failed: {}", e))).await;
@@ -575,7 +589,8 @@ pub async fn handle_key_event(
                             }
                             KeyCode::Char('j') | KeyCode::Down | KeyCode::Tab => {
                                 app.login_field_focus = match app.login_field_focus {
-                                    LoginField::Name => LoginField::Url,
+                                    LoginField::Name => LoginField::Type,
+                                    LoginField::Type => LoginField::Url,
                                     LoginField::Url => LoginField::Username,
                                     LoginField::Username => LoginField::Password,
                                     LoginField::Password => LoginField::EpgUrl,
@@ -585,11 +600,20 @@ pub async fn handle_key_event(
                             KeyCode::Char('k') | KeyCode::Up => {
                                 app.login_field_focus = match app.login_field_focus {
                                     LoginField::Name => LoginField::EpgUrl,
-                                    LoginField::Url => LoginField::Name,
+                                    LoginField::Type => LoginField::Name,
+                                    LoginField::Url => LoginField::Type,
                                     LoginField::Username => LoginField::Url,
                                     LoginField::Password => LoginField::Username,
                                     LoginField::EpgUrl => LoginField::Password,
                                 };
+                            }
+                            KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') | KeyCode::Char('h') | KeyCode::Char('l') => {
+                                if app.login_field_focus == LoginField::Type {
+                                    app.active_account_type = match app.active_account_type {
+                                        crate::config::AccountType::Xtream => crate::config::AccountType::M3U,
+                                        crate::config::AccountType::M3U => crate::config::AccountType::Xtream,
+                                    };
+                                }
                             }
                             KeyCode::Enter => app.toggle_input_mode(),
                             _ => {}
@@ -616,7 +640,8 @@ pub async fn handle_key_event(
                             KeyCode::Tab => {
                                 // Move to next field without leaving editing mode
                                 app.login_field_focus = match app.login_field_focus {
-                                    LoginField::Name => LoginField::Url,
+                                    LoginField::Name => LoginField::Type,
+                                    LoginField::Type => LoginField::Url,
                                     LoginField::Url => LoginField::Username,
                                     LoginField::Username => LoginField::Password,
                                     LoginField::Password => LoginField::EpgUrl,
@@ -627,7 +652,8 @@ pub async fn handle_key_event(
                                 // Move to previous field
                                 app.login_field_focus = match app.login_field_focus {
                                     LoginField::Name => LoginField::EpgUrl,
-                                    LoginField::Url => LoginField::Name,
+                                    LoginField::Type => LoginField::Name,
+                                    LoginField::Url => LoginField::Type,
                                     LoginField::Username => LoginField::Url,
                                     LoginField::Password => LoginField::Username,
                                     LoginField::EpgUrl => LoginField::Password,
@@ -649,6 +675,7 @@ pub async fn handle_key_event(
                                             base_url: url,
                                             username: user,
                                             password: pass,
+                                            account_type: app.active_account_type,
                                             epg_url: epg_opt,
                                             last_refreshed: None,
                                             total_channels: None,
@@ -677,7 +704,8 @@ pub async fn handle_key_event(
                                 } else {
                                     // Move to next field on Enter
                                     app.login_field_focus = match app.login_field_focus {
-                                        LoginField::Name => LoginField::Url,
+                                        LoginField::Name => LoginField::Type,
+                                        LoginField::Type => LoginField::Url,
                                         LoginField::Url => LoginField::Username,
                                         LoginField::Username => LoginField::Password,
                                         LoginField::Password => LoginField::EpgUrl,
@@ -698,6 +726,7 @@ pub async fn handle_key_event(
                                                         let current = app.input_name.value().to_string();
                                                         app.input_name = tui_input::Input::new(current + &text);
                                                     }
+                                                    LoginField::Type => {} // No pasting into type selection
                                                     LoginField::Url => {
                                                         let current = app.input_url.value().to_string();
                                                         app.input_url = tui_input::Input::new(current + &text);
@@ -721,6 +750,14 @@ pub async fn handle_key_event(
                                 } else {
                                     match app.login_field_focus {
                                         LoginField::Name => { app.input_name.handle_event(&Event::Key(key)); }
+                                        LoginField::Type => {
+                                            if matches!(key.code, KeyCode::Left | KeyCode::Right | KeyCode::Char(' ')) {
+                                                app.active_account_type = match app.active_account_type {
+                                                    crate::config::AccountType::Xtream => crate::config::AccountType::M3U,
+                                                    crate::config::AccountType::M3U => crate::config::AccountType::Xtream,
+                                                };
+                                            }
+                                        }
                                         LoginField::Url => { app.input_url.handle_event(&Event::Key(key)); }
                                         LoginField::Username => { app.input_username.handle_event(&Event::Key(key)); }
                                         LoginField::Password => { app.input_password.handle_event(&Event::Key(key)); }
@@ -1556,8 +1593,8 @@ pub async fn handle_key_event(
                                         app.loading_message = Some("Applying filter matrix...".to_string());
                                         
                                         tokio::spawn(async move {
-                                            if let Ok((true, ui, si)) = client.authenticate().await {
-                                                let _ = tx.send(AsyncAction::PlaylistRefreshed(ui, si)).await;
+                                            if let Ok((true, updated_client, ui, si)) = client.authenticate().await {
+                                                let _ = tx.send(AsyncAction::PlaylistRefreshed(updated_client, ui, si)).await;
                                             }
                                         });
                                     }
