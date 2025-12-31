@@ -75,20 +75,35 @@ async function performUpdate() {
     }
 
     // Replace old binary
-    // On Windows, sometimes the OS still has a lock for a split second
+    // On Windows, sometimes the OS still has a lock for a split second or unlinking is restricted
     let attempts = 0;
-    while (attempts < 5) {
+    const maxAttempts = 10;
+    while (attempts < maxAttempts) {
       try {
         if (fs.existsSync(binaryPath)) {
-          fs.unlinkSync(binaryPath);
+          if (os.platform() === "win32") {
+            // "Rename-out" strategy for Windows: move the file to a temporary name first
+            // This is often allowed even if the file is lazily being released by the OS
+            const oldPath = binaryPath + ".old." + Date.now();
+            fs.renameSync(binaryPath, oldPath);
+            // Optionally try to delete the old one, but don't fail if we can't
+            try {
+              fs.unlinkSync(oldPath);
+            } catch (e) {
+              // It's okay if we can't delete it now, it'll just stay as a .old file
+            }
+          } else {
+            fs.unlinkSync(binaryPath);
+          }
         }
         fs.renameSync(tempPath, binaryPath);
         break;
       } catch (e) {
         attempts++;
-        console.log(`[!] Retry ${attempts}/5: ${e.message}`);
-        if (attempts === 5) throw e;
-        await new Promise((r) => setTimeout(r, 500));
+        console.log(`[!] Retry ${attempts}/${maxAttempts}: ${e.message}`);
+        if (attempts === maxAttempts) throw e;
+        // Increase delay on each attempt
+        await new Promise((r) => setTimeout(r, 500 + attempts * 200));
       }
     }
 
