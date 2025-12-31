@@ -131,38 +131,115 @@ pub fn check_and_install_dependencies() -> Result<(), anyhow::Error> {
     Ok(())
 }
 
+/// Find the Homebrew executable, checking common locations
 #[cfg(not(target_arch = "wasm32"))]
-fn install_mpv_macos() -> Result<(), anyhow::Error> {
-    // Check if brew is installed
-    let brew_check = Command::new("brew")
+fn find_brew() -> Option<String> {
+    // Try PATH first
+    if Command::new("brew")
         .arg("--version")
         .output()
-        .is_ok();
-
-    if !brew_check {
-        return Err(anyhow::anyhow!("Homebrew ('brew') is required for headless installation on macOS. Please install it first from https://brew.sh/"));
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return Some("brew".to_string());
     }
+    
+    // Check common Homebrew locations
+    let candidates = [
+        "/opt/homebrew/bin/brew",    // Apple Silicon
+        "/usr/local/bin/brew",       // Intel Mac
+        "/home/linuxbrew/.linuxbrew/bin/brew", // Linux Homebrew
+    ];
+    
+    for candidate in candidates {
+        let path = Path::new(candidate);
+        if path.exists() && path.is_file() {
+            if Command::new(candidate)
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+            {
+                return Some(candidate.to_string());
+            }
+        }
+    }
+    
+    None
+}
 
-    println!("Running: brew install mpv");
-    let status = Command::new("brew")
+/// Install Homebrew headlessly on macOS
+#[cfg(not(target_arch = "wasm32"))]
+fn install_homebrew() -> Result<String, anyhow::Error> {
+    println!("Installing Homebrew...");
+    println!("This may take a few minutes. Please wait...");
+    
+    // Run the official Homebrew installer script with NONINTERACTIVE flag
+    let status = Command::new("/bin/bash")
+        .args(&[
+            "-c",
+            "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+        ])
+        .status()?;
+    
+    if !status.success() {
+        return Err(anyhow::anyhow!(
+            "Failed to install Homebrew. Please install manually from https://brew.sh/"
+        ));
+    }
+    
+    // Find brew after installation
+    if let Some(brew_path) = find_brew() {
+        println!("✓ Homebrew installed successfully.");
+        Ok(brew_path)
+    } else {
+        Err(anyhow::anyhow!(
+            "Homebrew was installed but could not be found. \
+            You may need to add it to your PATH and restart the application."
+        ))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn install_mpv_macos() -> Result<(), anyhow::Error> {
+    // Find or install Homebrew
+    let brew_path = match find_brew() {
+        Some(path) => {
+            println!("✓ Found Homebrew at: {}", path);
+            path
+        }
+        None => {
+            println!("Homebrew not found. Installing...");
+            install_homebrew()?
+        }
+    };
+    
+    println!("Installing mpv via Homebrew...");
+    println!("Running: {} install mpv", brew_path);
+    
+    let status = Command::new(&brew_path)
         .args(&["install", "mpv"])
         .status()?;
 
     if status.success() {
-        println!("✓ mpv installed successfully via brew.");
+        println!("✓ mpv installed successfully via Homebrew.");
+        return Ok(());
+    }
+    
+    // Try cask as fallback
+    println!("Formula install failed, trying cask...");
+    let status_cask = Command::new(&brew_path)
+        .args(&["install", "--cask", "mpv"])
+        .status()?;
+    
+    if status_cask.success() {
+        println!("✓ mpv installed successfully via Homebrew Cask.");
         Ok(())
     } else {
-        println!("brew install mpv failed, trying cask...");
-        let status_cask = Command::new("brew")
-            .args(&["install", "--cask", "mpv"])
-            .status()?;
-        
-        if status_cask.success() {
-            println!("✓ mpv installed successfully via brew cask.");
-            Ok(())
-        } else {
-            Err(anyhow::anyhow!("Failed to install mpv via homebrew."))
-        }
+        Err(anyhow::anyhow!(
+            "Failed to install mpv via Homebrew. \
+            Please try manually: brew install mpv"
+        ))
     }
 }
 
