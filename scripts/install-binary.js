@@ -64,9 +64,37 @@ function download(url, dest) {
   });
 }
 
-download(releaseUrl, binaryPath)
-  .then(() => {
+const tempPath = binaryPath + ".tmp";
+
+download(releaseUrl, tempPath)
+  .then(async () => {
     console.log(`[+] Download complete.`);
+
+    // Replace old binary with robustness logic for Windows
+    let attempts = 0;
+    const maxAttempts = 5;
+    while (attempts < maxAttempts) {
+      try {
+        if (fs.existsSync(binaryPath)) {
+          if (os.platform() === "win32") {
+            const oldPath = binaryPath + ".old." + Date.now();
+            fs.renameSync(binaryPath, oldPath);
+            try {
+              fs.unlinkSync(oldPath);
+            } catch (e) {}
+          } else {
+            fs.unlinkSync(binaryPath);
+          }
+        }
+        fs.renameSync(tempPath, binaryPath);
+        break;
+      } catch (e) {
+        attempts++;
+        if (attempts === maxAttempts) throw e;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+    }
+
     if (os.platform() !== "win32") {
       fs.chmodSync(binaryPath, "755");
       console.log(`[+] Executable permissions set.`);

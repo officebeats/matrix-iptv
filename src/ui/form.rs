@@ -22,38 +22,42 @@ pub fn render_login(f: &mut Frame, app: &App, area: Rect) {
         .border_style(Style::default().fg(MATRIX_GREEN));
     f.render_widget(block.clone(), area);
 
+    let constraints = vec![
+        Constraint::Length(3), // Name
+        Constraint::Length(3), // URL
+        Constraint::Length(3), // User
+        Constraint::Length(3), // Pass
+        Constraint::Length(3), // EPG
+        Constraint::Length(2), // Footer hints
+        Constraint::Min(1),    // Error
+    ];
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
-        .constraints([
-            Constraint::Length(3), // Name
-            Constraint::Length(3), // Type
-            Constraint::Length(3), // URL
-            Constraint::Length(3), // User
-            Constraint::Length(3), // Pass
-            Constraint::Length(3), // EPG
-            Constraint::Length(2), // Footer hints
-            Constraint::Min(1),    // Error
-        ])
+        .constraints(constraints)
         .split(area);
 
     let active = &app.login_field_focus;
     let mode = app.input_mode == InputMode::Editing;
 
-    f.render_widget(render_input("Playlist Name", app.input_name.value(), matches!(active, LoginField::Name), mode, app.input_name.visual_cursor(), app.loading_tick), chunks[0]);
+    let mut current_chunk = 0;
+    f.render_widget(render_input("Playlist Name", app.input_name.value(), matches!(active, LoginField::Name), mode, app.input_name.visual_cursor(), app.loading_tick), chunks[current_chunk]);
+    current_chunk += 1;
     
-    // Type selection
-    let type_str = match app.active_account_type {
-        crate::config::AccountType::Xtream => "Xtream Codes (Login)",
-        crate::config::AccountType::M3U => "M3U Playlist (URL)",
-    };
-    f.render_widget(render_input("Playlist Type (Left/Right to toggle)", type_str, matches!(active, LoginField::Type), false, 0, app.loading_tick), chunks[1]);
+    f.render_widget(render_input("Server URL", app.input_url.value(), matches!(active, LoginField::Url), mode, app.input_url.visual_cursor(), app.loading_tick), chunks[current_chunk]);
+    current_chunk += 1;
 
-    f.render_widget(render_input("Server URL / M3U URL", app.input_url.value(), matches!(active, LoginField::Url), mode, app.input_url.visual_cursor(), app.loading_tick), chunks[2]);
-    f.render_widget(render_input("Username", app.input_username.value(), matches!(active, LoginField::Username), mode, app.input_username.visual_cursor(), app.loading_tick), chunks[3]);
+    f.render_widget(render_input("Username", app.input_username.value(), matches!(active, LoginField::Username), mode, app.input_username.visual_cursor(), app.loading_tick), chunks[current_chunk]);
+    current_chunk += 1;
+    
     let mask: String = app.input_password.value().chars().map(|_| '*').collect();
-    f.render_widget(render_input("Password", &mask, matches!(active, LoginField::Password), mode, app.input_password.visual_cursor(), app.loading_tick), chunks[4]);
-    f.render_widget(render_input("EPG URL (Optional)", app.input_epg_url.value(), matches!(active, LoginField::EpgUrl), mode, app.input_epg_url.visual_cursor(), app.loading_tick), chunks[5]);
+    f.render_widget(render_input("Password", &mask, matches!(active, LoginField::Password), mode, app.input_password.visual_cursor(), app.loading_tick), chunks[current_chunk]);
+    current_chunk += 1;
+
+    f.render_widget(render_input("EPG URL (Optional)", app.input_epg_url.value(), matches!(active, LoginField::EpgUrl), mode, app.input_epg_url.visual_cursor(), app.loading_tick), chunks[current_chunk]);
+    let hints_chunk = current_chunk + 1;
+    let error_chunk = current_chunk + 2;
     
     // Navigation hints footer
     let key_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
@@ -75,12 +79,12 @@ pub fn render_login(f: &mut Frame, app: &App, area: Rect) {
         ])
     };
     let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
-    f.render_widget(hints_para, chunks[5]);
+    f.render_widget(hints_para, chunks[hints_chunk]);
     
     if let Some(err) = &app.login_error {
         let error_msg = Paragraph::new(format!(" // ERROR_OVERRIDE: {}", err))
             .style(Style::default().fg(Color::Black).bg(Color::Red).add_modifier(Modifier::BOLD));
-        f.render_widget(error_msg, chunks[6]);
+        f.render_widget(error_msg, chunks[error_chunk]);
     }
 }
 

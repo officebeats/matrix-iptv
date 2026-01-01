@@ -128,7 +128,6 @@ pub struct EpgResponse {
 #[derive(Debug, Clone)]
 pub enum IptvClient {
     Xtream(XtreamClient),
-    M3U(M3uClient),
 }
 
 impl IptvClient {
@@ -138,240 +137,93 @@ impl IptvClient {
                 let (success, ui, si) = c.authenticate().await?;
                 Ok((success, IptvClient::Xtream(c.clone()), ui, si))
             }
-            IptvClient::M3U(c) => {
-                let mut c_mod = c.clone();
-                match c_mod.load_playlist().await {
-                    Ok(_) => Ok((true, IptvClient::M3U(c_mod), None, None)),
-                    Err(e) => Err(e),
-                }
-            }
         }
     }
 
     pub async fn get_live_categories(&self) -> Result<Vec<Category>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_live_categories().await,
-            IptvClient::M3U(c) => c.get_live_categories().await,
         }
     }
 
     pub async fn get_live_streams(&self, category_id: &str) -> Result<Vec<Stream>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_live_streams(category_id).await,
-            IptvClient::M3U(c) => c.get_live_streams(category_id).await,
         }
     }
 
     pub async fn get_vod_categories(&self) -> Result<Vec<Category>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_vod_categories().await,
-            IptvClient::M3U(_) => Ok(Vec::new()), // M3U usually doesn't separate VOD easily without complex parsing
         }
     }
 
     pub async fn get_vod_streams(&self, category_id: &str) -> Result<Vec<Stream>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_vod_streams(category_id).await,
-            IptvClient::M3U(_) => Ok(Vec::new()),
         }
     }
 
     pub async fn get_vod_streams_all(&self) -> Result<Vec<Stream>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_vod_streams_all().await,
-            IptvClient::M3U(_) => Ok(Vec::new()),
         }
     }
 
     pub async fn get_series_categories(&self) -> Result<Vec<Category>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_series_categories().await,
-            IptvClient::M3U(_) => Ok(Vec::new()),
         }
     }
 
     pub async fn get_series_all(&self) -> Result<Vec<Stream>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_series_all().await,
-            IptvClient::M3U(_) => Ok(Vec::new()),
         }
     }
 
     pub async fn get_series_streams(&self, category_id: &str) -> Result<Vec<Stream>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_series_streams(category_id).await,
-            IptvClient::M3U(_) => Ok(Vec::new()),
         }
     }
 
     pub async fn get_series_info(&self, series_id: &str) -> Result<SeriesInfo, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_series_info(series_id).await,
-            IptvClient::M3U(_) => Err(anyhow::anyhow!("Series info not supported for M3U")),
         }
     }
 
     pub async fn get_vod_info(&self, vod_id: &str) -> Result<VodInfo, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_vod_info(vod_id).await,
-            IptvClient::M3U(_) => Ok(VodInfo::default()),
         }
     }
 
     pub async fn get_short_epg(&self, stream_id: &str) -> Result<EpgResponse, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_short_epg(stream_id).await,
-            IptvClient::M3U(_) => Ok(EpgResponse { epg_listings: Vec::new() }),
         }
     }
 
     pub fn get_stream_url(&self, stream_id: &str, extension: &str) -> String {
         match self {
             IptvClient::Xtream(c) => c.get_stream_url(stream_id, extension),
-            IptvClient::M3U(c) => c.get_stream_url(stream_id),
         }
     }
 
     pub fn get_vod_url(&self, stream_id: &str, extension: &str) -> String {
         match self {
             IptvClient::Xtream(c) => c.get_vod_url(stream_id, extension),
-            IptvClient::M3U(c) => c.get_stream_url(stream_id), // Same for M3U
         }
     }
 
     pub fn get_series_url(&self, stream_id: &str, extension: &str) -> String {
         match self {
             IptvClient::Xtream(c) => c.get_series_url(stream_id, extension),
-            IptvClient::M3U(c) => c.get_stream_url(stream_id),
         }
     }
 }
-
-#[derive(Debug, Clone)]
-pub struct M3uClient {
-    pub url: String,
-    client: reqwest::Client,
-    // Cache for parsed data
-    pub streams: Vec<Stream>,
-    pub categories: Vec<Category>,
-}
-
-impl M3uClient {
-    pub fn new(url: String) -> Self {
-        let builder = reqwest::Client::builder()
-            .user_agent("IPTV Smarters Pro");
-        
-        #[cfg(not(target_arch = "wasm32"))]
-        let builder = builder
-            .timeout(std::time::Duration::from_secs(60))
-            .connect_timeout(std::time::Duration::from_secs(10));
-
-        let client = builder.build().unwrap_or_else(|_| reqwest::Client::new());
-
-        Self {
-            url,
-            client,
-            streams: Vec::new(),
-            categories: Vec::new(),
-        }
-    }
-
-    pub async fn load_playlist(&mut self) -> Result<(), anyhow::Error> {
-        let resp = self.client.get(&self.url).send().await?;
-        let text = resp.text().await?;
-        
-        use m3u8_rs::parse_playlist_res;
-        
-        match parse_playlist_res(text.as_bytes()) {
-            Ok(m3u8_rs::Playlist::MasterPlaylist(_)) => {
-                return Err(anyhow::anyhow!("Master playlists not supported yet"));
-            }
-            Ok(m3u8_rs::Playlist::MediaPlaylist(pl)) => {
-                let mut categories = std::collections::HashSet::new();
-                let mut streams = Vec::new();
-                
-                for (i, segment) in pl.segments.iter().enumerate() {
-                    let mut category = "Uncategorized".to_string();
-                    let mut channel_name = format!("Channel {}", i);
-                    let mut icon = None;
-                    
-                    // Try to extract group-title and tvg-name from title/inf
-                    if let Some(title) = &segment.title {
-                        // M3U titles often look like: #EXTINF:-1 tvg-id="ID" tvg-name="Name" group-title="Category",Name
-                        // m3u8-rs might not parse all these tags into fields, so we might need manual extraction if not available
-                        
-                        // Check for common tags in the title string
-                        if let Some(group) = extract_tag(title, "group-title") {
-                            category = group;
-                        }
-                        if let Some(name) = extract_tag(title, "tvg-name") {
-                            channel_name = name;
-                        } else {
-                            // Use the part after the last comma as name
-                            if let Some(comma_pos) = title.rfind(',') {
-                                channel_name = title[comma_pos + 1..].trim().to_string();
-                            } else {
-                                channel_name = title.clone();
-                            }
-                        }
-                        if let Some(logo) = extract_tag(title, "tvg-logo") {
-                            icon = Some(logo);
-                        }
-                    }
-
-                    categories.insert(category.clone());
-                    
-                    streams.push(Stream {
-                        stream_id: serde_json::Value::String(segment.uri.clone()),
-                        name: channel_name,
-                        category_id: Some(category),
-                        stream_icon: icon,
-                        stream_type: "live".to_string(), // Defaulting to live
-                        ..Default::default()
-                    });
-                }
-                
-                self.streams = streams;
-                self.categories = categories.into_iter().enumerate().map(|(_id, name)| {
-                    Category {
-                        category_id: name.clone(), // Use name as ID for M3U
-                        category_name: name,
-                        ..Default::default()
-                    }
-                }).collect();
-                
-                Ok(())
-            }
-            Err(e) => Err(anyhow::anyhow!("Failed to parse M3U: {}", e)),
-        }
-    }
-
-    pub async fn get_live_categories(&self) -> Result<Vec<Category>, anyhow::Error> {
-        Ok(self.categories.clone())
-    }
-
-    pub async fn get_live_streams(&self, category_id: &str) -> Result<Vec<Stream>, anyhow::Error> {
-        if category_id == "ALL" {
-            Ok(self.streams.clone())
-        } else {
-            Ok(self.streams.iter()
-                .filter(|s| s.category_id.as_deref() == Some(category_id))
-                .cloned()
-                .collect())
-        }
-    }
-
-    pub fn get_stream_url(&self, stream_id: &str) -> String {
-        stream_id.to_string()
-    }
-}
-
-fn extract_tag(text: &str, tag: &str) -> Option<String> {
-    let pattern = format!("{}=\"([^\"]*)\"", tag);
-    let re = regex::Regex::new(&pattern).ok()?;
-    re.captures(text).map(|caps| caps[1].to_string())
-}
-
 #[derive(Debug, Clone)]
 pub struct XtreamClient {
     pub base_url: String,

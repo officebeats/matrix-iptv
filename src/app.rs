@@ -1,4 +1,4 @@
-use crate::api::{Category, ServerInfo, Stream, UserInfo, IptvClient, XtreamClient};
+use crate::api::{Category, ServerInfo, Stream, UserInfo, IptvClient};
 use crate::config::AppConfig;
 // Parser imports removed as processing moved to background tasks in main.rs
 use ratatui::layout::Rect;
@@ -80,7 +80,6 @@ pub enum InputMode {
 #[derive(PartialEq)]
 pub enum LoginField {
     Name,
-    Type,
     Url,
     Username,
     Password,
@@ -115,7 +114,6 @@ pub struct App {
 
     // Login Form
     pub login_field_focus: LoginField,
-    pub active_account_type: crate::config::AccountType,
     pub input_name: Input,
     pub input_url: Input,
     pub input_username: Input,
@@ -347,7 +345,6 @@ impl App {
             account_list_state,
 
             login_field_focus: LoginField::Name,
-            active_account_type: crate::config::AccountType::Xtream,
             input_name: Input::default(),
             input_url: Input::default(),
             input_username: Input::default(),
@@ -1058,7 +1055,7 @@ impl App {
                 base_url: final_url,
                 username: user,
                 password: pass,
-                account_type: self.active_account_type,
+                account_type: crate::config::AccountType::Xtream,
                 epg_url: epg_opt,
                 last_refreshed: None,
                 total_channels: None,

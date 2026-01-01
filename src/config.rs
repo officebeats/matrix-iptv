@@ -105,7 +105,6 @@ impl ProcessingMode {
 pub enum AccountType {
     #[default]
     Xtream,
-    M3U,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

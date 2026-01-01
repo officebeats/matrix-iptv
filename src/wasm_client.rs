@@ -215,6 +215,7 @@ impl WasmClient {
                                                 base_url: url,
                                                 username: user,
                                                 password: pass,
+                                                account_type: crate::config::AccountType::Xtream,
                                                 epg_url: epg_opt,
                                                 last_refreshed: None,
                                                 total_channels: None,
