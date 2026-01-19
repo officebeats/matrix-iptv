@@ -1,4 +1,5 @@
 use std::{io, time::Duration};
+use tokio::time::interval;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crossterm::{
@@ -25,6 +26,10 @@ struct Args {
     /// Check configuration and verify login
     #[arg(long)]
     check: bool,
+
+    /// Skip checking for updates on startup
+    #[arg(long)]
+    skip_update: bool,
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -73,9 +78,28 @@ async fn main() -> Result<(), anyhow::Error> {
     let (tx, mut rx) = mpsc::channel::<AsyncAction>(32);
 
     // Initial background tasks
-    let tx_update = tx.clone();
+    if !args.skip_update {
+        let tx_update = tx.clone();
+        tokio::spawn(async move {
+            matrix_iptv_lib::setup::check_for_updates(tx_update, false).await;
+        });
+    }
+
+    // Score Fetcher Task
+    let tx_scores = tx.clone();
     tokio::spawn(async move {
-        matrix_iptv_lib::setup::check_for_updates(tx_update, false).await;
+        let service = matrix_iptv_lib::scores::ScoreService::new();
+        // Initial fetch delayed by 5s to allow startup
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        
+        // Loop every 60s
+        let mut ticker = interval(Duration::from_secs(60));
+        loop {
+            ticker.tick().await; 
+             if let Ok(scores) = service.fetch_scores().await {
+                 let _ = tx_scores.send(AsyncAction::ScoresLoaded(scores)).await;
+             }
+        }
     });
 
     let res = run_app(&mut terminal, &mut app, &player, tx, &mut rx).await;

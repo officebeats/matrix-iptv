@@ -80,8 +80,8 @@ matrix-iptv
 - **🛡️ Multi-Select Playlist Modes**: Combine optimizations like **'Merica**, **Sports**, and **All-English** in real-time.
 - **⚡ Instant Response**: Built in Rust for maximum performance. Navigate tens of thousands of channels with zero lag.
 - **📡 Xtream API Native**: Strictly optimized for **Xtream API** providers (support for M3U is not planned at this time).
-- **🔎 Global Search**: Press **`Ctrl`+`Space`** (displayed as `🔎🌐 Ctrl+Space`) to search across Live TV, Movies, and Series content instantly.
-- **📁 Unified Navigation**: "All" views for Channels, Movies, and Series allow for rapid browsing without digging into categories.
+- **🔎 Global Search**: Press **`Ctrl`+`Space`** (displayed as `🔎🌐 Ctrl+Space`) to search across Live TV, Movies, and Series content instantly. Results are limited to 100 items total (channels, movies, and series combined).
+- **📁 Unified Navigation**: "All" views for Channels, Movies, and Series allow for rapid browsing without digging into categories. Use **Tab** to switch between categories and streams, **Left/Right** arrows to navigate panes. Use **Tab** to switch between categories and streams, **Left/Right** arrows to navigate panes.
 - **🎨 Color-Coded UX**: Rebuilt footer with screen-aware hints and color coding.
 - **🚥 Mode Indicators**: Colorful header indicators (Red/White/Blue for 'Merica, Yellow for Sports, Blue for All-English).
 - **📋 Paste Support**: Support for `Ctrl+V` in login fields for quick credentials setup.
@@ -89,7 +89,8 @@ matrix-iptv
 - **🎞️ VOD Experience**: Browse movies with rich metadata and instant playback.
 - **📟 Matrix Rain Screensaver**: A high-performance, authentic digital rain screensaver that activates when idle.
 - **🔒 Secure**: Uses Private DNS-over-HTTPS (DoH) for secure provider connection.
-- **👁️ Headless Playback**: Integrated borderless fullscreen mode for a cinematic experience.
+- **⚡ Jump Navigation**: Press **`g`** to jump to bottom, **`G`** to jump to top, or **`0`-`9`** to jump directly to items 0-9 in any list.
+- **⚡ Jump Navigation**: Press **`g`** to jump to bottom, **`G`** to jump to top, or **`0`-`9`** to jump directly to items 0-9 in any list.
 
 ## 🛡️ Playlist Modes
 
@@ -115,7 +116,8 @@ To change modes:
 
 We leverage advanced **MPV** flags to ensure professional-level video quality even on lower-end hardware:
 
-- **Headless Fullscreen**: Launches directly into borderless fullscreen (`--no-border`, `--fs`) for a professional, TV-like experience.
+- **Fullscreen Mode**: Launches directly into fullscreen (`--fs`) for a professional, TV-like experience.
+- **On Screen Controller**: Enables `--osc=yes` for usability and control.
 - **Advanced Anti-Aliasing**: Uses `spline36` scaling, providing superior edge smoothing.
 - **Oversample Upscaling**: High-quality temporal upscaling that sharpens images.
 - **Motion Smoothing**: High-performance `display-resample` interpolation for fluid sports playback.
@@ -125,22 +127,25 @@ We leverage advanced **MPV** flags to ensure professional-level video quality ev
 
 ## ⌨️ Common Controls
 
-| Key                     | Action                                  |
-| :---------------------- | :-------------------------------------- |
-| **`Enter`**             | **Play Channel / Select / Confirm**     |
-| **`Esc` / `Backspace`** | **Go Back / Cancel**                    |
-| **`Ctrl` + `Space`**    | **Global Search** (Search everything)   |
-| **`f`** or **`/`**      | **Local Search** (Filter current view)  |
-| **`v`**                 | **Toggle Favorite**                     |
-| **`j` / `↓`**           | Move Down                               |
-| **`k` / `↑`**           | Move Up                                 |
-| **`m`**                 | **Playlist Mode** (Quick Toggle/Switch) |
-| **`x`**                 | **Settings**                            |
-| **`n`**                 | **New Playlist** (Home Screen)          |
-| **`e`**                 | **Edit Playlist** (Home Screen)         |
-| **`d`**                 | **Delete Playlist** (Home Screen)       |
-| **`r`**                 | **Refresh Playlist** (Global)           |
-| **`q`**                 | **Quit**                                |
+| Key                     | Action                                        |
+| :---------------------- | :-------------------------------------------- |
+| **`Enter`**             | **Play Channel / Select / Confirm**           |
+| **`Esc` / `Backspace`** | **Go Back / Cancel**                          |
+| **`Ctrl` + `Space`**    | **Global Search** (Search everything)         |
+| **`f`** or **`/`**      | **Local Search** (Filter current view)        |
+| **`v`**                 | **Toggle Favorite**                           |
+| **`j` / `↓`**           | Move Down                                     |
+| **`k` / `↑`**           | Move Up                                       |
+| **`g`**                 | **Jump to Bottom** (Go to last item)          |
+| **`G`**                 | **Jump to Top** (Go to first item)            |
+| **`0`-`9`**             | **Jump to Item** (Direct access to items 0-9) |
+| **`m`**                 | **Playlist Mode** (Quick Toggle/Switch)       |
+| **`x`**                 | **Settings**                                  |
+| **`n`**                 | **New Playlist** (Home Screen)                |
+| **`e`**                 | **Edit Playlist** (Home Screen)               |
+| **`d`**                 | **Delete Playlist** (Home Screen)             |
+| **`r`**                 | **Refresh Playlist** (Global)                 |
+| **`q`**                 | **Quit**                                      |
 
 ---
 

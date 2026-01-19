@@ -1,5 +1,5 @@
 use crate::app::{App, AsyncAction, CurrentScreen, Pane, InputMode, LoginField, Guide, SettingsState};
-use crate::api::{XtreamClient, get_id_str};
+use crate::api::get_id_str;
 use crate::{preprocessing, player};
 #[cfg(feature = "chromecast")]
 use crate::cast;
@@ -39,7 +39,7 @@ pub async fn handle_key_event(
         app.previous_screen = Some(app.current_screen.clone());
         app.current_screen = CurrentScreen::GlobalSearch;
         app.search_mode = true;
-        app.search_query.clear();
+        app.search_state.query.clear();
         app.update_search();
         // Force screensaver off
         app.show_matrix_rain = false;
@@ -63,6 +63,23 @@ pub async fn handle_key_event(
              }
         }
 
+        return Ok(InputResult::Continue);
+    }
+
+    // Priority 0: Loading State Handling (Cancellation)
+    if app.state_loading {
+        // While loading, we trap input. Allow Esc to cancel.
+        if key.code == KeyCode::Esc {
+            app.state_loading = false;
+            app.loading_message = None;
+            app.login_error = None; // clear any previous error
+            // If we were connecting, we just stop waiting for the result.
+            // The background task will still complete but its result will be ignored 
+            // because state_loading is false (async actions check this or we just overwrite)
+            // But to be safe, let's just let the user regain control.
+            return Ok(InputResult::Continue);
+        }
+        // ignore other keys while loading
         return Ok(InputResult::Continue);
     }
 
@@ -377,12 +394,17 @@ pub async fn handle_key_event(
                         }
 
                         app.login_error = None;
+                        app.login_error = None;
                         let tx = tx.clone();
                         let dns_provider = app.config.dns_provider;
                         tokio::spawn(async move {
+                            let _ = tx.send(AsyncAction::LoadingMessage("Connecting to server...".to_string())).await;
                             match crate::api::XtreamClient::new_with_doh(base_url, username, password, dns_provider).await {
-                                Ok(client) => match client.authenticate().await {
+                                Ok(client) => {
+                                    let _ = tx.send(AsyncAction::LoadingMessage("Authenticating...".to_string())).await;
+                                    match client.authenticate().await {
                                     Ok((true, ui, si)) => {
+                                        let _ = tx.send(AsyncAction::LoadingMessage("Processing Playlist...".to_string())).await;
                                         let _ = tx.send(AsyncAction::LoginSuccess(crate::api::IptvClient::Xtream(client), ui, si)).await;
                                     }
                                     Ok((false, _, _)) => {
@@ -391,7 +413,8 @@ pub async fn handle_key_event(
                                     Err(e) => {
                                         let _ = tx.send(AsyncAction::LoginFailed(e.to_string())).await;
                                     }
-                                },
+                                    }
+                                }
                                 Err(e) => {
                                     let _ = tx.send(AsyncAction::LoginFailed(format!("Connection error: {}", e))).await;
                                 }
@@ -408,21 +431,21 @@ pub async fn handle_key_event(
                     app.current_screen = CurrentScreen::Categories;
                     app.active_pane = Pane::Categories;
                     app.search_mode = false;
-                    app.search_query.clear();
+                    app.search_state.query.clear();
                     app.update_search();
                 }
                 KeyCode::Char('2') => {
                     app.current_screen = CurrentScreen::VodCategories;
                     app.active_pane = Pane::Categories;
                     app.search_mode = false;
-                    app.search_query.clear();
+                    app.search_state.query.clear();
                     app.update_search();
                 }
                 KeyCode::Char('3') => {
                     app.current_screen = CurrentScreen::SeriesCategories;
                     app.active_pane = Pane::Categories;
                     app.search_mode = false;
-                    app.search_query.clear();
+                    app.search_state.query.clear();
                     app.update_search();
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
@@ -447,7 +470,7 @@ pub async fn handle_key_event(
                             app.current_screen = CurrentScreen::Categories;
                             app.active_pane = Pane::Categories;
                             app.search_mode = false;
-                            app.search_query.clear();
+                            app.search_state.query.clear();
                             app.update_search();
 
                             // Auto-load first category's streams for cached "ALL"
@@ -475,14 +498,14 @@ pub async fn handle_key_event(
                             app.current_screen = CurrentScreen::VodCategories;
                             app.active_pane = Pane::Categories;
                             app.search_mode = false;
-                            app.search_query.clear();
+                            app.search_state.query.clear();
                             app.update_search();
                         }
                         2 => {
                             app.current_screen = CurrentScreen::SeriesCategories;
                             app.active_pane = Pane::Categories;
                             app.search_mode = false;
-                            app.search_query.clear();
+                            app.search_state.query.clear();
                             app.update_search();
                         }
                         _ => {}
@@ -745,18 +768,18 @@ pub async fn handle_key_event(
                 match key.code {
                     KeyCode::Esc => {
                         app.search_mode = false;
-                        app.search_query.clear();
+                        app.search_state.query.clear();
                         app.update_search();
                     }
                     KeyCode::Enter => {
                         app.search_mode = false;
                     }
                     KeyCode::Backspace => {
-                        app.search_query.pop();
+                        app.search_state.query.pop();
                         app.update_search();
                     }
                     KeyCode::Char(c) => {
-                        app.search_query.push(c);
+                        app.search_state.query.push(c);
                         app.update_search();
                     }
                     _ => {}
@@ -765,7 +788,7 @@ pub async fn handle_key_event(
                 match key.code {
                     KeyCode::Char('/') | KeyCode::Char('f') => {
                         app.search_mode = true;
-                        app.search_query.clear();
+                        app.search_state.query.clear();
                         app.update_search();
                     }
                     KeyCode::Esc | KeyCode::Backspace => {
@@ -776,7 +799,7 @@ pub async fn handle_key_event(
                             app.selected_stream_index = 0;
                             app.stream_list_state.select(None);
                             app.search_mode = false;
-                            app.search_query.clear();
+                            app.search_state.query.clear();
                         } else {
                             app.streams.clear();
                             app.all_streams.clear();
@@ -785,7 +808,7 @@ pub async fn handle_key_event(
                             app.stream_list_state.select(None);
                             app.category_list_state.select(None);
                             app.search_mode = false;
-                            app.search_query.clear();
+                            app.search_state.query.clear();
                             app.current_screen = CurrentScreen::ContentTypeSelection;
                         }
                     }
@@ -976,12 +999,12 @@ pub async fn handle_key_event(
                 match key.code {
                     KeyCode::Esc => {
                         app.search_mode = false;
-                        app.search_query.clear();
+                        app.search_state.query.clear();
                         app.update_search();
                     }
                     KeyCode::Enter => { app.search_mode = false; }
-                    KeyCode::Backspace => { app.search_query.pop(); app.update_search(); }
-                    KeyCode::Char(c) => { app.search_query.push(c); app.update_search(); }
+                    KeyCode::Backspace => { app.search_state.query.pop(); app.update_search(); }
+                    KeyCode::Char(c) => { app.search_state.query.push(c); app.update_search(); }
                     _ => {}
                 }
             } else {
@@ -989,7 +1012,7 @@ pub async fn handle_key_event(
                     KeyCode::Char('/') | KeyCode::Char('f') => {
                         app.search_mode = true;
                         app.active_pane = Pane::Categories;
-                        app.search_query.clear();
+                        app.search_state.query.clear();
                         app.update_search();
                     }
                     KeyCode::Esc | KeyCode::Backspace => {
@@ -1000,11 +1023,83 @@ pub async fn handle_key_event(
                         app.vod_category_list_state.select(None);
                         app.vod_stream_list_state.select(None);
                         app.search_mode = false;
-                        app.search_query.clear();
+                        app.search_state.query.clear();
                         app.current_screen = CurrentScreen::ContentTypeSelection;
                     }
                     KeyCode::Char('j') | KeyCode::Down => app.next_vod_category(),
                     KeyCode::Char('k') | KeyCode::Up => app.previous_vod_category(),
+                    KeyCode::Char('g') => {
+                        if !app.vod_categories.is_empty() {
+                            app.selected_vod_category_index = app.vod_categories.len() - 1;
+                            app.vod_category_list_state.select(Some(app.vod_categories.len() - 1));
+                        }
+                    }
+                    KeyCode::Char('G') => {
+                        if !app.vod_categories.is_empty() {
+                            app.selected_vod_category_index = 0;
+                            app.vod_category_list_state.select(Some(0));
+                        }
+                    }
+                    KeyCode::Char('0') => {
+                        if !app.vod_categories.is_empty() {
+                            app.selected_vod_category_index = 0;
+                            app.vod_category_list_state.select(Some(0));
+                        }
+                    }
+                    KeyCode::Char('1') => {
+                        if app.vod_categories.len() > 0 {
+                            app.selected_vod_category_index = 0;
+                            app.vod_category_list_state.select(Some(0));
+                        }
+                    }
+                    KeyCode::Char('2') => {
+                        if app.vod_categories.len() > 1 {
+                            app.selected_vod_category_index = 1;
+                            app.vod_category_list_state.select(Some(1));
+                        }
+                    }
+                    KeyCode::Char('3') => {
+                        if app.vod_categories.len() > 2 {
+                            app.selected_vod_category_index = 2;
+                            app.vod_category_list_state.select(Some(2));
+                        }
+                    }
+                    KeyCode::Char('4') => {
+                        if app.vod_categories.len() > 3 {
+                            app.selected_vod_category_index = 3;
+                            app.vod_category_list_state.select(Some(3));
+                        }
+                    }
+                    KeyCode::Char('5') => {
+                        if app.vod_categories.len() > 4 {
+                            app.selected_vod_category_index = 4;
+                            app.vod_category_list_state.select(Some(4));
+                        }
+                    }
+                    KeyCode::Char('6') => {
+                        if app.vod_categories.len() > 5 {
+                            app.selected_vod_category_index = 5;
+                            app.vod_category_list_state.select(Some(5));
+                        }
+                    }
+                    KeyCode::Char('7') => {
+                        if app.vod_categories.len() > 6 {
+                            app.selected_vod_category_index = 6;
+                            app.vod_category_list_state.select(Some(6));
+                        }
+                    }
+                    KeyCode::Char('8') => {
+                        if app.vod_categories.len() > 7 {
+                            app.selected_vod_category_index = 7;
+                            app.vod_category_list_state.select(Some(7));
+                        }
+                    }
+                    KeyCode::Char('9') => {
+                        if app.vod_categories.len() > 8 {
+                            app.selected_vod_category_index = 8;
+                            app.vod_category_list_state.select(Some(8));
+                        }
+                    }
                     KeyCode::Enter => {
                         if !app.vod_categories.is_empty() {
                             let cat_id = app.vod_categories[app.selected_vod_category_index].category_id.clone();
@@ -1053,15 +1148,15 @@ pub async fn handle_key_event(
         CurrentScreen::VodStreams => {
             if app.search_mode {
                 match key.code {
-                    KeyCode::Esc => { app.search_mode = false; app.search_query.clear(); app.update_search(); }
+                    KeyCode::Esc => { app.search_mode = false; app.search_state.query.clear(); app.update_search(); }
                     KeyCode::Enter => { app.search_mode = false; }
-                    KeyCode::Backspace => { app.search_query.pop(); app.update_search(); }
-                    KeyCode::Char(c) => { app.search_query.push(c); app.update_search(); }
+                    KeyCode::Backspace => { app.search_state.query.pop(); app.update_search(); }
+                    KeyCode::Char(c) => { app.search_state.query.push(c); app.update_search(); }
                     _ => {}
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.active_pane = Pane::Streams; app.search_query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.active_pane = Pane::Streams; app.search_state.query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace => {
                         app.vod_streams.clear();
                         app.all_vod_streams.clear();
@@ -1071,6 +1166,78 @@ pub async fn handle_key_event(
                     }
                     KeyCode::Char('j') | KeyCode::Down => app.next_vod_stream(),
                     KeyCode::Char('k') | KeyCode::Up => app.previous_vod_stream(),
+                    KeyCode::Char('g') => {
+                        if !app.vod_streams.is_empty() {
+                            app.selected_vod_stream_index = app.vod_streams.len() - 1;
+                            app.vod_stream_list_state.select(Some(app.vod_streams.len() - 1));
+                        }
+                    }
+                    KeyCode::Char('G') => {
+                        if !app.vod_streams.is_empty() {
+                            app.selected_vod_stream_index = 0;
+                            app.vod_stream_list_state.select(Some(0));
+                        }
+                    }
+                    KeyCode::Char('0') => {
+                        if !app.vod_streams.is_empty() {
+                            app.selected_vod_stream_index = 0;
+                            app.vod_stream_list_state.select(Some(0));
+                        }
+                    }
+                    KeyCode::Char('1') => {
+                        if app.vod_streams.len() > 0 {
+                            app.selected_vod_stream_index = 0;
+                            app.vod_stream_list_state.select(Some(0));
+                        }
+                    }
+                    KeyCode::Char('2') => {
+                        if app.vod_streams.len() > 1 {
+                            app.selected_vod_stream_index = 1;
+                            app.vod_stream_list_state.select(Some(1));
+                        }
+                    }
+                    KeyCode::Char('3') => {
+                        if app.vod_streams.len() > 2 {
+                            app.selected_vod_stream_index = 2;
+                            app.vod_stream_list_state.select(Some(2));
+                        }
+                    }
+                    KeyCode::Char('4') => {
+                        if app.vod_streams.len() > 3 {
+                            app.selected_vod_stream_index = 3;
+                            app.vod_stream_list_state.select(Some(3));
+                        }
+                    }
+                    KeyCode::Char('5') => {
+                        if app.vod_streams.len() > 4 {
+                            app.selected_vod_stream_index = 4;
+                            app.vod_stream_list_state.select(Some(4));
+                        }
+                    }
+                    KeyCode::Char('6') => {
+                        if app.vod_streams.len() > 5 {
+                            app.selected_vod_stream_index = 5;
+                            app.vod_stream_list_state.select(Some(5));
+                        }
+                    }
+                    KeyCode::Char('7') => {
+                        if app.vod_streams.len() > 6 {
+                            app.selected_vod_stream_index = 6;
+                            app.vod_stream_list_state.select(Some(6));
+                        }
+                    }
+                    KeyCode::Char('8') => {
+                        if app.vod_streams.len() > 7 {
+                            app.selected_vod_stream_index = 7;
+                            app.vod_stream_list_state.select(Some(7));
+                        }
+                    }
+                    KeyCode::Char('9') => {
+                        if app.vod_streams.len() > 8 {
+                            app.selected_vod_stream_index = 8;
+                            app.vod_stream_list_state.select(Some(8));
+                        }
+                    }
                     KeyCode::Left => {
                         app.vod_streams.clear();
                         app.all_vod_streams.clear();
@@ -1098,15 +1265,15 @@ pub async fn handle_key_event(
         CurrentScreen::SeriesCategories => {
             if app.search_mode {
                 match key.code {
-                    KeyCode::Esc => { app.search_mode = false; app.search_query.clear(); app.series_categories = app.all_series_categories.clone(); app.series_streams = app.all_series_streams.clone(); }
+                    KeyCode::Esc => { app.search_mode = false; app.search_state.query.clear(); app.series_categories = app.all_series_categories.clone(); app.series_streams = app.all_series_streams.clone(); }
                     KeyCode::Enter => { app.search_mode = false; }
-                    KeyCode::Backspace => { app.search_query.pop(); app.update_search(); }
-                    KeyCode::Char(c) => { app.search_query.push(c); app.update_search(); }
+                    KeyCode::Backspace => { app.search_state.query.pop(); app.update_search(); }
+                    KeyCode::Char(c) => { app.search_state.query.push(c); app.update_search(); }
                     _ => {}
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_state.query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace => {
                         app.series_streams.clear();
                         app.all_series_streams.clear();
@@ -1115,11 +1282,83 @@ pub async fn handle_key_event(
                         app.series_category_list_state.select(None);
                         app.series_stream_list_state.select(None);
                         app.search_mode = false;
-                        app.search_query.clear();
+                        app.search_state.query.clear();
                         app.current_screen = CurrentScreen::ContentTypeSelection;
                     }
                     KeyCode::Char('j') | KeyCode::Down => app.next_series_category(),
                     KeyCode::Char('k') | KeyCode::Up => app.previous_series_category(),
+                    KeyCode::Char('g') => {
+                        if !app.series_categories.is_empty() {
+                            app.selected_series_category_index = app.series_categories.len() - 1;
+                            app.series_category_list_state.select(Some(app.series_categories.len() - 1));
+                        }
+                    }
+                    KeyCode::Char('G') => {
+                        if !app.series_categories.is_empty() {
+                            app.selected_series_category_index = 0;
+                            app.series_category_list_state.select(Some(0));
+                        }
+                    }
+                    KeyCode::Char('0') => {
+                        if !app.series_categories.is_empty() {
+                            app.selected_series_category_index = 0;
+                            app.series_category_list_state.select(Some(0));
+                        }
+                    }
+                    KeyCode::Char('1') => {
+                        if app.series_categories.len() > 0 {
+                            app.selected_series_category_index = 0;
+                            app.series_category_list_state.select(Some(0));
+                        }
+                    }
+                    KeyCode::Char('2') => {
+                        if app.series_categories.len() > 1 {
+                            app.selected_series_category_index = 1;
+                            app.series_category_list_state.select(Some(1));
+                        }
+                    }
+                    KeyCode::Char('3') => {
+                        if app.series_categories.len() > 2 {
+                            app.selected_series_category_index = 2;
+                            app.series_category_list_state.select(Some(2));
+                        }
+                    }
+                    KeyCode::Char('4') => {
+                        if app.series_categories.len() > 3 {
+                            app.selected_series_category_index = 3;
+                            app.series_category_list_state.select(Some(3));
+                        }
+                    }
+                    KeyCode::Char('5') => {
+                        if app.series_categories.len() > 4 {
+                            app.selected_series_category_index = 4;
+                            app.series_category_list_state.select(Some(4));
+                        }
+                    }
+                    KeyCode::Char('6') => {
+                        if app.series_categories.len() > 5 {
+                            app.selected_series_category_index = 5;
+                            app.series_category_list_state.select(Some(5));
+                        }
+                    }
+                    KeyCode::Char('7') => {
+                        if app.series_categories.len() > 6 {
+                            app.selected_series_category_index = 6;
+                            app.series_category_list_state.select(Some(6));
+                        }
+                    }
+                    KeyCode::Char('8') => {
+                        if app.series_categories.len() > 7 {
+                            app.selected_series_category_index = 7;
+                            app.series_category_list_state.select(Some(7));
+                        }
+                    }
+                    KeyCode::Char('9') => {
+                        if app.series_categories.len() > 8 {
+                            app.selected_series_category_index = 8;
+                            app.series_category_list_state.select(Some(8));
+                        }
+                    }
                     KeyCode::Enter => {
                         if !app.series_categories.is_empty() {
                             let cat_id = app.series_categories[app.selected_series_category_index].category_id.clone();
@@ -1159,20 +1398,20 @@ pub async fn handle_key_event(
         CurrentScreen::SeriesStreams => {
              if app.search_mode {
                 match key.code {
-                    KeyCode::Esc => { app.search_mode = false; app.search_query.clear(); app.series_categories = app.all_series_categories.clone(); app.series_streams = app.all_series_streams.clone(); }
+                    KeyCode::Esc => { app.search_mode = false; app.search_state.query.clear(); app.series_categories = app.all_series_categories.clone(); app.series_streams = app.all_series_streams.clone(); }
                     KeyCode::Enter => { app.search_mode = false; }
-                    KeyCode::Backspace => { app.search_query.pop(); app.update_search(); }
-                    KeyCode::Char(c) => { app.search_query.push(c); app.update_search(); }
+                    KeyCode::Backspace => { app.search_state.query.pop(); app.update_search(); }
+                    KeyCode::Char(c) => { app.search_state.query.push(c); app.update_search(); }
                     _ => {}
                 }
             } else {
                  match key.code {
-                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_state.query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace | KeyCode::Left => {
                         match app.active_pane {
-                            Pane::Episodes => { app.series_episodes.clear(); app.selected_series_episode_index = 0; app.series_episode_list_state.select(None); app.active_pane = Pane::Streams; app.search_mode = false; app.search_query.clear(); }
-                            Pane::Streams => { app.series_streams.clear(); app.all_series_streams.clear(); app.selected_series_stream_index = 0; app.series_stream_list_state.select(None); app.active_pane = Pane::Categories; app.search_mode = false; app.search_query.clear(); }
-                            Pane::Categories => { app.series_streams.clear(); app.all_series_streams.clear(); app.selected_series_stream_index = 0; app.series_stream_list_state.select(None); app.search_mode = false; app.search_query.clear(); app.current_screen = CurrentScreen::SeriesCategories; }
+                            Pane::Episodes => { app.series_episodes.clear(); app.selected_series_episode_index = 0; app.series_episode_list_state.select(None); app.active_pane = Pane::Streams; app.search_mode = false; app.search_state.query.clear(); }
+                            Pane::Streams => { app.series_streams.clear(); app.all_series_streams.clear(); app.selected_series_stream_index = 0; app.series_stream_list_state.select(None); app.active_pane = Pane::Categories; app.search_mode = false; app.search_state.query.clear(); }
+                            Pane::Categories => { app.series_streams.clear(); app.all_series_streams.clear(); app.selected_series_stream_index = 0; app.series_stream_list_state.select(None); app.search_mode = false; app.search_state.query.clear(); app.current_screen = CurrentScreen::SeriesCategories; }
                         }
                     }
                     KeyCode::Char('j') | KeyCode::Down => match app.active_pane {
@@ -1258,21 +1497,21 @@ pub async fn handle_key_event(
                 match key.code {
                     KeyCode::Esc => { 
                         app.search_mode = false; 
-                        app.search_query.clear(); 
+                        app.search_state.query.clear(); 
                         app.global_search_results.clear(); 
                         app.current_screen = app.previous_screen.clone().unwrap_or(CurrentScreen::Home);
                     }
                     KeyCode::Enter => { app.search_mode = false; }
-                    KeyCode::Backspace => { app.search_query.pop(); app.update_search(); }
-                    KeyCode::Char(c) => { app.search_query.push(c); app.update_search(); }
+                    KeyCode::Backspace => { app.search_state.query.pop(); app.update_search(); }
+                    KeyCode::Char(c) => { app.search_state.query.push(c); app.update_search(); }
                     _ => {}
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_state.query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace => {
                         app.search_mode = false;
-                        app.search_query.clear();
+                        app.search_state.query.clear();
                         app.global_search_results.clear();
                         app.current_screen = app.previous_screen.clone().unwrap_or(CurrentScreen::Home);
                     }
@@ -1813,3 +2052,4 @@ pub async fn handle_key_event(
     }
     Ok(InputResult::Continue)
 }
+

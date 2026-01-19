@@ -29,7 +29,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         .split(area);
 
     if app.search_mode {
-        let search_text = format!(" // SEARCH_PROTOCOLS: {}_", app.search_query);
+        let search_text = format!(" // SEARCH_PROTOCOLS: {}_", app.search_state.query);
         let p = Paragraph::new(search_text)
             .style(Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
             .block(

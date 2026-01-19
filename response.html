@@ -1,0 +1,20 @@
+<!doctype html>
+<html style="height:100%">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title></title>
+<script type="text/javascript">
+var url="https://myhomenetwork.att.com";
+var reason=["phishing"];
+</script>
+
+</head>
+<body style="margin: 0 auto; padding: 0 auto; width:100%; height: 100%; overflow : hidden;">
+ <iframe src="" id="frame" seamless="seamless" style="margin: 0 auto; padding: 0 auto; border: 0; width:100%; height: 100%" > </iframe>
+
+<script type="text/javascript">
+    document.getElementById('frame').src = url+"/networkprotected/index.html?reason="+reason[0]+"&source="+encodeURIComponent(window.location.href);
+</script>
+</body>
+</html>

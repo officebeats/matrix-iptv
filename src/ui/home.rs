@@ -127,19 +127,19 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled("  [", Style::default().fg(Color::DarkGray)),
                 Span::styled("1", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled("Why CLI for IPTV?", Style::default().fg(Color::White))
+                Span::styled("The TUI Edge: Why CLI?", Style::default().fg(Color::White))
             ]),
             Line::from(vec![
                 Span::styled("  [", Style::default().fg(Color::DarkGray)),
                 Span::styled("2", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled("Where do I get playlists?", Style::default().fg(Color::White))
+                Span::styled("Acquiring Playlists safely", Style::default().fg(Color::White))
             ]),
             Line::from(vec![
                 Span::styled("  [", Style::default().fg(Color::DarkGray)),
                 Span::styled("3", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled("What is IPTV?", Style::default().fg(Color::White))
+                Span::styled("Understanding the IPTV Protocol", Style::default().fg(Color::White))
             ]),
             Line::from(""),
             Line::from(vec![
@@ -166,19 +166,19 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled("  [", Style::default().fg(Color::DarkGray)),
                 Span::styled("1", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled("Why CLI for IPTV?", Style::default().fg(Color::White))
+                Span::styled("The TUI Edge: Why CLI?", Style::default().fg(Color::White))
             ]),
             Line::from(vec![
                 Span::styled("  [", Style::default().fg(Color::DarkGray)),
                 Span::styled("2", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled("Where do I get playlists?", Style::default().fg(Color::White))
+                Span::styled("Acquiring Playlists safely", Style::default().fg(Color::White))
             ]),
             Line::from(vec![
                 Span::styled("  [", Style::default().fg(Color::DarkGray)),
                 Span::styled("3", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("] ", Style::default().fg(Color::DarkGray)),
-                Span::styled("What is IPTV?", Style::default().fg(Color::White))
+                Span::styled("Understanding the IPTV Protocol", Style::default().fg(Color::White))
             ]),
             Line::from(""),
             Line::from(vec![

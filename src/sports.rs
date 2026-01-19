@@ -292,12 +292,36 @@ pub fn get_team_color(name: &str) -> Color {
     Color::Reset
 }
 
+/// Lightens a color for better visibility on dark terminals.
+/// Boosts RGB values closer to 255 while preserving hue.
+fn lighten_color(color: Color) -> Color {
+    match color {
+        Color::Rgb(r, g, b) => {
+            // Calculate luminance (using rough approximation)
+            let luminance = (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) / 255.0;
+            
+            // If color is too dark (luminance < 0.5), lighten it (increased from 0.4)
+            if luminance < 0.5 {
+                let boost = 1.7 + (0.5 - luminance); // Increased boost by ~15%
+                let new_r = ((r as f32 * boost).min(255.0)) as u8;
+                let new_g = ((g as f32 * boost).min(255.0)) as u8;
+                let new_b = ((b as f32 * boost).min(255.0)) as u8;
+                Color::Rgb(new_r.max(100), new_g.max(100), new_b.max(100)) // Raised floor from 80 to 100
+            } else {
+                Color::Rgb(r, g, b)
+            }
+        }
+        other => other,
+    }
+}
+
 /// Returns the primary color for a team with Home/Away fallback logic.
 /// Home = Matrix Green, Away = White.
+/// Colors are automatically lightened for dark terminal visibility.
 pub fn get_team_color_with_fallback(name: &str, is_home: bool) -> Color {
     let specific = get_team_color(name);
     if specific != Color::Reset {
-        specific
+        lighten_color(specific)
     } else if is_home {
         crate::ui::colors::MATRIX_GREEN
     } else {
@@ -342,17 +366,20 @@ pub struct SportsEvent {
 pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
     // Regex for: [Prefix:] Team One (T1) [separator] Team Two (T2) [time/other info]
     // Supported separators: x, vs, @, - (if surrounded by spaces)
-    // We use a non-greedy match for names and look for boundaries like "start:", "[", or end of string.
-    // Regex for: [Prefix:][space] Team One (T1) [separator] Team Two (T2) [time/other info]
-    // Supported separators: x, vs, at, @, - (if surrounded by spaces)
-    // We use explicit space requirements (\s+) for text separators to be safer than \b which failed on "Texans"
-    let re = regex::Regex::new(r"(?i)(?:^|[:])\s*([^:(]+?)\s*(?:\(([^)]+?)\))?\s*(?:(?:\s+(?:x|vs|at)\s+)|@|\s-\s)\s*([^:(\[]+?)\s*(?:\(([^)]+?)\))?(?:\s+start:|\[|\s\d{1,2}:\d{2}|$)").ok()?;
+    // We use a non-greedy match for names and look for boundaries like " - ", " start:", "[", or end of string.
+    // Enhanced stop markers: look for common IPTV suffixes like " (HD)", " - ET", " / UK", " | ", etc.
+    let re = regex::Regex::new(r"(?i)(?:^|[:])\s*([^:(|]+?)\s*(?:\(([^)]+?)\))?\s*(?:(?:\s+(?:x|vs|at)\s+)|@|\s-\s)\s*([^:(\[|/]+?)\s*(?:\(([^)]+?)\))?(?:\s+(?:start:|\[|\(|\d{1,2}:\d{2}|\s+-\s+|/|\|)|$)").ok()?;
 
     if let Some(caps) = re.captures(display_name) {
         let team1 = caps.get(1)?.as_str().trim().to_string();
         let team1_abbr = caps.get(2).map(|m| m.as_str().trim().to_string());
         let team2 = caps.get(3)?.as_str().trim().to_string();
         let team2_abbr = caps.get(4).map(|m| m.as_str().trim().to_string());
+        
+        // Debug prints
+        if display_name.contains("start:2025-12-21") {
+            println!("DEBUG: display_name: {:?}", display_name);
+        }
 
         // Scrub prefixes from team1
         let mut team1 = team1;

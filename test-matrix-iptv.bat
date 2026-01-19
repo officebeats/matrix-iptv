@@ -1,29 +1,35 @@
 @echo off
 setlocal
-echo [*] Matrix IPTV // Building Latest Source...
-taskkill /F /IM matrix-iptv.exe 2>nul
+echo [*] Matrix IPTV // Build Environment: 3.3.2
+echo [*] DEBUG: Script: %~f0
+echo [*] DEBUG: Workspace: %~dp0
 
-:: Navigate to the directory where this script is located
+:: Force kill everything to unlock files
+taskkill /F /IM matrix-iptv.exe /IM node.exe /IM mpv.exe 2>nul
+timeout /t 1 /nobreak >nul
+
+:: Set local target dir to avoid OneDrive sync locks
+set CARGO_TARGET_DIR=C:\Users\admin-beats\cargo-target
+
 pushd "%~dp0"
 
-:: 1. Rebuild the binary - using the bin flag to be explicit
-cargo build --release --bin matrix-iptv
-
+echo [*] Rebuilding binary...
+cargo build --release
 if %ERRORLEVEL% NEQ 0 (
     echo [!] Build Failed!
     popd
-    exit /b %ERRORLEVEL%
+    exit /b 1
 )
 
-:: 2. Ensure the bin directory exists
-if not exist "bin" mkdir "bin"
+echo [*] Syncing binary to bin/ folder...
+:: Copy from the new target location
+copy /Y "C:\Users\admin-beats\cargo-target\release\matrix-iptv.exe" "bin\matrix-iptv.exe" >nul
 
-:: 3. Copy the fresh binary to the bin folder for the wrapper
-copy /y target\release\matrix-iptv.exe bin\matrix-iptv.exe >nul
+echo [*] Verifying version before launch:
+bin\matrix-iptv.exe --version
 
-:: 4. Launch via the Intelligent Wrapper (Node.js)
-:: This enables the Auto-Update logic to function correctly
-node bin\cli.js
+echo [*] Launching Node wrapper (with --skip-update)...
+node bin\cli.js --skip-update
 
 popd
 endlocal

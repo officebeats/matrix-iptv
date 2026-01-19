@@ -23,6 +23,11 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         };
     }
 
+    // Start with version in the bottom left
+    let version = format!("v{}", env!("CARGO_PKG_VERSION"));
+    spans.push(Span::styled(version, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)));
+    push_sep!();
+
     match app.current_screen {
         CurrentScreen::Home => {
             push_sep!();
@@ -178,11 +183,4 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
 
     let p = Paragraph::new(Line::from(spans)).alignment(Alignment::Left);
     f.render_widget(p, area);
-
-    // Render version in the bottom right
-    let version = format!("v{}", env!("CARGO_PKG_VERSION"));
-    let version_p = Paragraph::new(Line::from(vec![
-        Span::styled(version, Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC)),
-    ])).alignment(Alignment::Right);
-    f.render_widget(version_p, area);
 }

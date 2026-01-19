@@ -1,4 +1,9 @@
 use serde::{Deserialize, Serialize};
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
+use once_cell::sync::Lazy;
+
+static FUZZY_MATCHER: Lazy<SkimMatcherV2> = Lazy::new(SkimMatcherV2::default);
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
 pub struct Category {
@@ -52,6 +57,37 @@ pub struct Stream {
     pub latency_ms: Option<u64>,
     #[serde(skip)]
     pub account_name: Option<String>,
+}
+
+impl Stream {
+    /// Get or parse stream metadata with caching
+    pub fn get_or_parse_cached(&mut self, provider_tz: Option<&str>) -> &crate::parser::ParsedStream {
+        if self.cached_parsed.is_none() {
+            self.cached_parsed = Some(Box::new(crate::parser::parse_stream(&self.name, provider_tz)));
+        }
+        self.cached_parsed.as_ref().unwrap()
+    }
+
+    /// Fuzzy search match against query
+    pub fn fuzzy_match(&self, query: &str, min_score: i64) -> bool {
+        if query.is_empty() {
+            return true;
+        }
+        
+        if let Some(score) = FUZZY_MATCHER.fuzzy_match(&self.search_name, query) {
+            score >= min_score
+        } else {
+            self.search_name.contains(&query.to_lowercase())
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct XtreamClient {
+    pub base_url: String,
+    pub username: String,
+    pub password: String,
+    client: reqwest::Client,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -224,13 +260,7 @@ impl IptvClient {
         }
     }
 }
-#[derive(Debug, Clone)]
-pub struct XtreamClient {
-    pub base_url: String,
-    pub username: String,
-    pub password: String,
-    client: reqwest::Client,
-}
+
 
 pub fn get_id_str(v: &serde_json::Value) -> String {
     match v {
@@ -250,12 +280,16 @@ impl XtreamClient {
 
         // Build client with User-Agent and timeouts
         let builder = reqwest::Client::builder()
-            .user_agent("IPTV Smarters Pro");
+            .user_agent("IPTV Smarters Pro")
+            .danger_accept_invalid_certs(true);
         
         #[cfg(not(target_arch = "wasm32"))]
         let builder = builder
             .timeout(std::time::Duration::from_secs(60))
-            .connect_timeout(std::time::Duration::from_secs(10));
+            .connect_timeout(std::time::Duration::from_secs(10))
+            .tcp_keepalive(std::time::Duration::from_secs(60))
+            .gzip(true)
+            .brotli(true);
 
         let client = builder.build().unwrap_or_else(|_| reqwest::Client::new());
 
@@ -291,8 +325,12 @@ impl XtreamClient {
         if dns_provider == DnsProvider::System {
             let client = reqwest::Client::builder()
                 .user_agent("IPTV Smarters Pro")
+                .danger_accept_invalid_certs(true)
                 .timeout(std::time::Duration::from_secs(60))
                 .connect_timeout(std::time::Duration::from_secs(10))
+                .tcp_keepalive(std::time::Duration::from_secs(60))
+                .gzip(true)
+                .brotli(true)
                 .build()?;
 
             return Ok(Self {
@@ -360,9 +398,13 @@ impl XtreamClient {
 
         let client = reqwest::Client::builder()
             .user_agent("IPTV Smarters Pro")
+            .danger_accept_invalid_certs(true)
             .dns_resolver(Arc::new(DohResolver(async_resolver)))
             .timeout(std::time::Duration::from_secs(60))
             .connect_timeout(std::time::Duration::from_secs(10))
+            .tcp_keepalive(std::time::Duration::from_secs(60))
+            .gzip(true)
+            .brotli(true)
             .build()?;
 
         Ok(Self {
@@ -375,22 +417,28 @@ impl XtreamClient {
 
     pub async fn authenticate(
         &self,
-    ) -> Result<(bool, Option<UserInfo>, Option<ServerInfo>), anyhow::Error> {
+    ) -> Result<(bool, Option<UserInfo>, Option<ServerInfo>), crate::errors::IptvError> {
         let url = format!(
             "{}/player_api.php?username={}&password={}",
             self.base_url, self.username, self.password
         );
-        let resp = self.client.get(&url).send().await
-            .map_err(|e| {
-                let mut msg = format!("Network request failed: {}", e);
-                if e.is_connect() { msg = format!("Connection failed (Check internet/URL): {}", e); }
-                if e.is_timeout() { msg = format!("Request timed out (Server slow?): {}", e); }
-                if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error (Try Quad9/Cloudflare DNS in Settings): {}", e); }
-                anyhow::anyhow!(msg)
-            })?;
+        
+        let resp = self.client.get(&url).send().await.map_err(|e| {
+            use crate::errors::ConnectionStage;
+            
+            if e.is_request() && e.to_string().contains("dns") {
+                crate::errors::IptvError::DnsResolution(self.base_url.clone(), e.to_string())
+            } else if e.is_connect() {
+                crate::errors::IptvError::ConnectionFailed(ConnectionStage::TcpConnection, e.to_string())
+            } else if e.is_timeout() {
+                crate::errors::IptvError::ConnectionTimeout(self.base_url.clone(), 60)
+            } else {
+                crate::errors::IptvError::ConnectionFailed(ConnectionStage::HttpHandshake, e.to_string())
+            }
+        })?;
 
         if !resp.status().is_success() {
-            return Err(anyhow::anyhow!("Server returned error status: {}", resp.status()));
+            return Err(crate::errors::IptvError::ServerError(resp.status().as_u16(), resp.status().canonical_reason().unwrap_or("Unknown error").to_string()));
         }
 
         #[derive(Deserialize)]
@@ -400,12 +448,12 @@ impl XtreamClient {
         }
 
         let bytes = resp.bytes().await
-            .map_err(|e| anyhow::anyhow!("Failed to read response body: {}", e))?;
+            .map_err(|e| crate::errors::IptvError::ConnectionFailed(crate::errors::ConnectionStage::ResponseParsing, e.to_string()))?;
 
         let bytes_for_auth = bytes.clone();
         let auth_res = tokio::task::spawn_blocking(move || {
             serde_json::from_slice::<AuthResponse>(&bytes_for_auth)
-        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?;
+        }).await.map_err(|e| crate::errors::IptvError::ParseError(e.to_string()))?;
 
         match auth_res {
             Ok(json) => {
@@ -415,12 +463,17 @@ impl XtreamClient {
                 Ok((false, None, None))
             }
             Err(e) => {
-                // Check if it's plain text error
+                // Check if it's plain text error or ISP block
                 let text = String::from_utf8_lossy(&bytes).to_lowercase();
                 if text.contains("invalid") || text.contains("expired") || text.contains("disabled") {
                     return Ok((false, None, None));
                 }
-                Err(anyhow::anyhow!("Failed to parse server response: {}. Body: {}", e, text.chars().take(100).collect::<String>()))
+                
+                if text.contains("<!doctype html>") || text.contains("<html") || text.contains("at&t") || text.contains("home network security") {
+                     return Err(crate::errors::IptvError::IspBlock);
+                }
+
+                Err(crate::errors::IptvError::ParseError(format!("{} Body: {}", e, text.chars().take(100).collect::<String>())))
             }
         }
     }
@@ -659,8 +712,19 @@ impl XtreamClient {
         );
         let resp = self.client.get(&url).send().await
             .map_err(|e| anyhow::anyhow!("Failed to fetch series streams (category {}): {}", category_id, e))?;
-        let streams: Vec<Stream> = resp.json().await
-            .map_err(|e| anyhow::anyhow!("Failed to parse series streams JSON (category {}): {}", category_id, e))?;
+        
+        let bytes = resp.bytes().await
+            .map_err(|e| anyhow::anyhow!("Failed to read series streams body (category {}): {}", category_id, e))?;
+
+        if bytes.is_empty() || bytes == "{}" || bytes == "null" {
+            return Ok(Vec::new());
+        }
+
+        let streams = tokio::task::spawn_blocking(move || {
+            serde_json::from_slice::<Vec<Stream>>(&bytes)
+        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
+          .map_err(|e| anyhow::anyhow!("Failed to parse series streams JSON (category {}): {}", category_id, e))?;
+        
         Ok(streams)
     }
 

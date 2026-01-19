@@ -132,15 +132,19 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
             // Categories takes full height on left
             panes::render_categories_pane(f, app, h_chunks[0], MATRIX_GREEN);
 
-            // Check if focused stream is a sports event
+            // Check if focused stream is a sports event OR has ESPN score data
             let is_sports_event = app.streams.get(app.selected_stream_index)
-                .map(|s| crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref()).sports_event.is_some())
+                .map(|s| {
+                    let parsed = crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref());
+                    // Show Match Intelligence if it parses as sports event OR we have ESPN data
+                    parsed.sports_event.is_some() || app.get_score_for_stream(&parsed.display_name).is_some()
+                })
                 .unwrap_or(false);
 
             if is_sports_event {
                 // Right side: Streams (top) + Intelligence (bottom)
-                // Height: 4 for double borders + 2 for content = 6
-                let intel_height = 6u16;
+                // Height: 2 for borders + 8 for content (score bar, clock, probability, series, scorer, headline, broadcasts, action)
+                let intel_height = 10u16;
                 let right_chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([
@@ -169,13 +173,16 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
             sports::render_sports_view(f, app, content_area);
         }
         CurrentScreen::GlobalSearch => {
-            // Check if focused result is a sports event
+            // Check if focused result is a sports event OR has ESPN score data
             let is_sports_event = app.global_search_results.get(app.selected_stream_index)
-                .map(|s| crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref()).sports_event.is_some())
+                .map(|s| {
+                    let parsed = crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref());
+                    parsed.sports_event.is_some() || app.get_score_for_stream(&parsed.display_name).is_some()
+                })
                 .unwrap_or(false);
 
             if is_sports_event {
-                let intel_height = 6u16;
+                let intel_height = 10u16;
                 let layout_chunks = Layout::default()
                     .direction(Direction::Vertical)
                     .constraints([

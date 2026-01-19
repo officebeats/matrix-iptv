@@ -2,6 +2,7 @@ pub mod api;
 pub mod app;
 pub mod config;
 pub mod parser;
+pub mod errors;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod player;
 #[cfg(all(not(target_arch = "wasm32"), feature = "chromecast"))]
@@ -12,6 +13,7 @@ pub mod ui;
 pub mod preprocessing;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod matrix_rain;
+pub mod scores;
 pub mod handlers;
 
 // Wasm module
@@ -43,6 +45,7 @@ mod tests {
             total_movies: None,
             total_series: None,
             server_timezone: None,
+            account_type: Default::default(),
         });
 
         // Ensure we have at least one
@@ -61,6 +64,7 @@ mod tests {
             total_movies: None,
             total_series: None,
             server_timezone: None,
+            account_type: Default::default(),
         };
 
         app.config.update_account(0, new_acc);

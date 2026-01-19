@@ -17,7 +17,7 @@ pub async fn handle_async_action(
             app.provider_timezone = si.and_then(|s| s.timezone);
             
             app.search_mode = false;
-            app.search_query.clear();
+            app.search_state.query.clear();
 
             if let Some(account) = app.config.accounts.get(app.selected_account_index) {
                 app.total_channels = account.total_channels.unwrap_or(0);
@@ -131,7 +131,9 @@ pub async fn handle_async_action(
                     }
                 });
 
-                // Background Full Scans - Only run if data is stale
+                // Background Full Scans - DISABLED per user request to not auto-load all channels
+                // This prevents massive network requests at startup and lets the user load "All Channels" on demand.
+                /*
                 if should_full_refresh {
                     let c2 = client.clone();
                     let t2 = tx.clone();
@@ -189,6 +191,7 @@ pub async fn handle_async_action(
                         }
                     });
                 }
+                */
             }
         }
         AsyncAction::LoginFailed(e) => {
@@ -381,7 +384,8 @@ pub async fn handle_async_action(
                 }
             });
 
-            // 4. Background Full Scans (Delayed)
+            // 4. Background Full Scans (Delayed) - DISABLED per user request
+            /*
             let c2 = client.clone();
             let t2 = tx.clone();
             let stream_favs = app.config.favorites.streams.clone();
@@ -407,6 +411,7 @@ pub async fn handle_async_action(
                     let _ = t4.send(AsyncAction::TotalMoviesLoaded(streams)).await;
                 }
             });
+            */
         }
         AsyncAction::SeriesInfoLoaded(info) => {
             app.current_series_info = Some(info.clone());
@@ -490,6 +495,9 @@ pub async fn handle_async_action(
         AsyncAction::SportsStreamsLoaded(streams) => {
             app.current_sports_streams = streams;
             app.sports_details_loading = false;
+        }
+        AsyncAction::ScoresLoaded(scores) => {
+            app.live_scores = scores;
         }
         // Chromecast Casting
         AsyncAction::CastDevicesDiscovered(devices) => {

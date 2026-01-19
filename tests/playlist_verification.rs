@@ -17,7 +17,7 @@ fn test_navigation_sync_live_tv() {
     assert_eq!(app.categories.len(), 2);
     
     // Search
-    app.search_query = "Action".to_string();
+    app.search_state.query = "Action".to_string();
     app.update_search();
     assert_eq!(app.categories.len(), 1);
     
@@ -27,7 +27,7 @@ fn test_navigation_sync_live_tv() {
     // Re-enter (Simulate the fix in main.rs)
     app.current_screen = CurrentScreen::Categories;
     app.active_pane = Pane::Categories;
-    app.search_query.clear();
+    app.search_state.query.clear();
     app.search_mode = false;
     app.update_search(); // Added by fix
     
@@ -46,7 +46,7 @@ fn test_navigation_sync_vod() {
     app.update_search();
     assert_eq!(app.vod_categories.len(), 1);
     
-    app.search_query = "NoMatch".to_string();
+    app.search_state.query = "NoMatch".to_string();
     app.update_search();
     assert_eq!(app.vod_categories.len(), 0);
     
@@ -55,7 +55,7 @@ fn test_navigation_sync_vod() {
     // Re-enter
     app.current_screen = CurrentScreen::VodCategories;
     app.active_pane = Pane::Categories;
-    app.search_query.clear();
+    app.search_state.query.clear();
     app.search_mode = false;
     app.update_search();
     
@@ -74,7 +74,7 @@ fn test_navigation_sync_series() {
     app.update_search();
     assert_eq!(app.series_categories.len(), 1);
     
-    app.search_query = "Search".to_string();
+    app.search_state.query = "Search".to_string();
     app.update_search();
     assert_eq!(app.series_categories.len(), 0);
     
@@ -83,7 +83,7 @@ fn test_navigation_sync_series() {
     // Re-enter
     app.current_screen = CurrentScreen::SeriesCategories;
     app.active_pane = Pane::Categories;
-    app.search_query.clear();
+    app.search_state.query.clear();
     app.search_mode = false;
     app.update_search();
     

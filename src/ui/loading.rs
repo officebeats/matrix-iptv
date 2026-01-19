@@ -47,7 +47,13 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Paragraph::new(rain_lines).alignment(Alignment::Center), layout[0]);
     f.render_widget(Paragraph::new("─".repeat(layout[1].width as usize)).style(Style::default().fg(DARK_GREEN)), layout[1]);
 
-    let msg = app.loading_message.as_deref().unwrap_or("SECURE_UPLINK_INITIALIZING...");
+    // Show detailed progress if available, else fallback to loading message
+    let msg = if let Some(progress) = &app.loading_progress {
+        progress.to_message()
+    } else {
+        app.loading_message.as_deref().unwrap_or("SECURE_UPLINK_INITIALIZING...").to_string()
+    };
+    
     let loading_text = Paragraph::new(format!(" > {} < ", msg.to_uppercase()))
         .style(Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD))
         .alignment(Alignment::Center);

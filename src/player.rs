@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 
 #[cfg(not(target_arch = "wasm32"))]
 
@@ -69,7 +69,8 @@ impl Player {
 
         let mut cmd = Command::new(&mpv_path);
         cmd.arg(url)
-           .arg("--fs")        // Start in Fullscreen
+           .arg("--geometry=1280x720") // Start in 720p window (user preference)
+           .arg("--force-window")      // Ensure window opens even if audio-only initially
            .arg("--osc=yes");  // Enable On Screen Controller for usability
 
         // Only apply optimizations if not using default MPV settings
@@ -105,12 +106,26 @@ impl Player {
         // Common settings for both modes
         cmd.arg("--msg-level=all=no")
            .arg("--term-status-msg=no")
+           .arg("--input-terminal=no") // Ignore terminal for input
+           .arg("--terminal=no")       // Completely disable terminal interactions
            // Add User-Agent to masquerade as a browser (crucial for some IPTV providers)
            .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
            // Keep window open if playback fails to see error (optional, maybe off for prod)
            .arg("--keep-open=no")
            // IPC for status monitoring
            .arg(format!("--input-ipc-server={}", pipe_name));
+
+        // Disconnect from terminal input/output to prevent hotkey conflicts
+        cmd.stdin(Stdio::null())
+           .stdout(Stdio::null())
+           .stderr(Stdio::null());
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const DETACHED_PROCESS: u32 = 0x00000008;
+            cmd.creation_flags(DETACHED_PROCESS);
+        }
 
         let child = cmd.spawn();
 

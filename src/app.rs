@@ -1,5 +1,6 @@
 use crate::api::{Category, ServerInfo, Stream, UserInfo, IptvClient};
 use crate::config::AppConfig;
+use crate::errors::{SearchState, LoadingProgress};
 // Parser imports removed as processing moved to background tasks in main.rs
 use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
@@ -43,6 +44,7 @@ pub enum AsyncAction {
     NoUpdateFound,
     SportsMatchesLoaded(Vec<crate::sports::StreamedMatch>),
     SportsStreamsLoaded(Vec<crate::sports::StreamedStream>),
+    ScoresLoaded(Vec<crate::scores::ScoreGame>),
     // Chromecast casting
     CastDevicesDiscovered(Vec<CastDevice>),
     CastStarted(String), // Device name
@@ -202,8 +204,11 @@ pub struct App {
     pub active_pane: Pane,
 
     // Search/Filter
-    pub search_query: String,
+    pub search_state: SearchState,
     pub search_mode: bool,
+    
+    // Loading progress
+    pub loading_progress: Option<LoadingProgress>,
 
     // Help
     pub show_help: bool,
@@ -275,6 +280,9 @@ pub struct App {
     pub selected_sports_category_index: usize,
     pub current_sports_streams: Vec<crate::sports::StreamedStream>,
     pub sports_details_loading: bool,
+    
+    // Live Scores (ESPN)
+    pub live_scores: Vec<crate::scores::ScoreGame>,
 
     // Chromecast Casting
     #[cfg(all(not(target_arch = "wasm32"), feature = "chromecast"))]
@@ -430,9 +438,10 @@ impl App {
             auto_refresh_list_state: ListState::default(),
 
             active_pane: Pane::Categories,
-            search_query: String::new(),
+            search_state: SearchState::new(),
             search_mode: false,
             show_help: false,
+            loading_progress: None,
             show_guide: None,
             guide_scroll: 0,
             settings_state: SettingsState::Main,
@@ -490,6 +499,9 @@ impl App {
             current_sports_streams: Vec::new(),
             sports_details_loading: false,
 
+            // Live Scores
+            live_scores: Vec::new(),
+
             // Chromecast Casting
             #[cfg(all(not(target_arch = "wasm32"), feature = "chromecast"))]
             cast_manager: crate::cast::CastManager::new(),
@@ -502,6 +514,51 @@ impl App {
 
         app.refresh_settings_options();
         app
+    }
+
+    pub fn get_score_for_stream(&self, stream_name: &str) -> Option<&crate::scores::ScoreGame> {
+        // Strip leading emojis/icons from team names (preprocessing adds 🏀, etc.)
+        fn strip_emoji_prefix(s: &str) -> String {
+            s.chars()
+                .skip_while(|c| !c.is_ascii_alphanumeric() && !c.is_ascii_whitespace())
+                .collect::<String>()
+                .trim()
+                .to_lowercase()
+        }
+        
+        // Strategy 1: Try to parse as "Team1 vs Team2" matchup
+        if let Some(event) = crate::sports::parse_sports_event(stream_name) {
+            let t1 = strip_emoji_prefix(&event.team1);
+            let t2 = strip_emoji_prefix(&event.team2);
+            
+            // Strict match: Both teams must be in the game
+            if let Some(game) = self.live_scores.iter().find(|game| {
+                let g_home = game.home_team.to_lowercase();
+                let g_away = game.away_team.to_lowercase();
+                
+                let t1_in_game = g_home.contains(&t1) || g_away.contains(&t1) || t1.contains(&g_home) || t1.contains(&g_away);
+                let t2_in_game = g_home.contains(&t2) || g_away.contains(&t2) || t2.contains(&g_home) || t2.contains(&g_away);
+                
+                t1_in_game && t2_in_game
+            }) {
+                return Some(game);
+            }
+        }
+        
+        // Strategy 2: Fallback - match by single team name in stream
+        // Useful for channel names like "SPECTRUM SPORTSNET LAKERS" or "YES NETWORK"
+        let stream_lower = stream_name.to_lowercase();
+        
+        // Common team name keywords to search for
+        self.live_scores.iter().find(|game| {
+            // Extract team short names (last word, e.g., "Lakers" from "Los Angeles Lakers")
+            let home_short = game.home_team.split_whitespace().last().unwrap_or("").to_lowercase();
+            let away_short = game.away_team.split_whitespace().last().unwrap_or("").to_lowercase();
+            
+            // Check if stream contains either team's short name (at least 4 chars to avoid false positives)
+            (home_short.len() >= 4 && stream_lower.contains(&home_short)) ||
+            (away_short.len() >= 4 && stream_lower.contains(&away_short))
+        })
     }
 
     pub fn refresh_settings_options(&mut self) {
@@ -657,6 +714,27 @@ impl App {
         );
     }
 
+    pub fn jump_to_category(&mut self, index: usize) {
+        if index < self.categories.len() {
+            self.selected_category_index = index;
+            self.category_list_state.select(Some(index));
+        }
+    }
+
+    pub fn jump_to_category_bottom(&mut self) {
+        if !self.categories.is_empty() {
+            self.selected_category_index = self.categories.len() - 1;
+            self.category_list_state.select(Some(self.categories.len() - 1));
+        }
+    }
+
+    pub fn jump_to_category_top(&mut self) {
+        if !self.categories.is_empty() {
+            self.selected_category_index = 0;
+            self.category_list_state.select(Some(0));
+        }
+    }
+
     pub fn previous_category(&mut self) {
         Self::navigate_list(
             self.categories.len(),
@@ -673,6 +751,27 @@ impl App {
             &mut self.stream_list_state,
             true,
         );
+    }
+
+    pub fn jump_to_stream(&mut self, index: usize) {
+        if index < self.streams.len() {
+            self.selected_stream_index = index;
+            self.stream_list_state.select(Some(index));
+        }
+    }
+
+    pub fn jump_to_bottom(&mut self) {
+        if !self.streams.is_empty() {
+            self.selected_stream_index = self.streams.len() - 1;
+            self.stream_list_state.select(Some(self.streams.len() - 1));
+        }
+    }
+
+    pub fn jump_to_top(&mut self) {
+        if !self.streams.is_empty() {
+            self.selected_stream_index = 0;
+            self.stream_list_state.select(Some(0));
+        }
     }
 
     pub fn previous_stream(&mut self) {
@@ -711,6 +810,27 @@ impl App {
         );
     }
 
+    pub fn jump_to_vod_stream(&mut self, index: usize) {
+        if index < self.vod_streams.len() {
+            self.selected_vod_stream_index = index;
+            self.vod_stream_list_state.select(Some(index));
+        }
+    }
+
+    pub fn jump_to_vod_bottom(&mut self) {
+        if !self.vod_streams.is_empty() {
+            self.selected_vod_stream_index = self.vod_streams.len() - 1;
+            self.vod_stream_list_state.select(Some(self.vod_streams.len() - 1));
+        }
+    }
+
+    pub fn jump_to_vod_top(&mut self) {
+        if !self.vod_streams.is_empty() {
+            self.selected_vod_stream_index = 0;
+            self.vod_stream_list_state.select(Some(0));
+        }
+    }
+
     pub fn previous_vod_stream(&mut self) {
         Self::navigate_list(
             self.vod_streams.len(),
@@ -747,6 +867,27 @@ impl App {
         );
     }
 
+    pub fn jump_to_global_search_result(&mut self, index: usize) {
+        if index < self.global_search_results.len() {
+            self.selected_stream_index = index;
+            self.global_search_list_state.select(Some(index));
+        }
+    }
+
+    pub fn jump_to_global_search_bottom(&mut self) {
+        if !self.global_search_results.is_empty() {
+            self.selected_stream_index = self.global_search_results.len() - 1;
+            self.global_search_list_state.select(Some(self.global_search_results.len() - 1));
+        }
+    }
+
+    pub fn jump_to_global_search_top(&mut self) {
+        if !self.global_search_results.is_empty() {
+            self.selected_stream_index = 0;
+            self.global_search_list_state.select(Some(0));
+        }
+    }
+
     pub fn previous_global_search_result(&mut self) {
         Self::navigate_list(
             self.global_search_results.len(),
@@ -756,9 +897,20 @@ impl App {
         );
     }
 
+    /// Update search with debouncing and fuzzy matching
     pub fn update_search(&mut self) {
-        let query = self.search_query.to_lowercase();
+        let query = self.search_state.query.to_lowercase();
         let is_merica = self.config.playlist_mode.is_merica_variant();
+
+        // Debounce search to avoid frequent updates
+        if !self.search_state.should_search(&query, 300) {
+            return;
+        }
+
+        // Add query to search history
+        if !query.is_empty() {
+            self.search_state.add_to_history(query.clone());
+        }
 
         match self.current_screen {
             CurrentScreen::Categories | CurrentScreen::Streams => {
@@ -785,21 +937,37 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        use rayon::prelude::*;
-                        let mut filtered: Vec<Stream> = self
-                            .all_streams
-                            .par_iter()
-                            .filter(|s| {
-                                s.search_name.contains(&query) && (!is_merica || s.is_american)
-                            })
-                            .map(|s| {
-                                if !is_merica { return s.clone(); }
-                                let mut s_mod = s.clone();
-                                s_mod.name = s_mod.clean_name.clone();
-                                s_mod
-                            })
-                            .collect();
-                        filtered.truncate(1000);
+                        let filtered: Vec<Stream> = if query.is_empty() {
+                            self.all_streams.iter()
+                                .filter(|s| !is_merica || s.is_american)
+                                .take(1000)
+                                .cloned()
+                                .collect()
+                        } else {
+                            // Multi-pass search prioritization
+                            let mut priority = Vec::new();
+                            let mut others = Vec::new();
+
+                            for s in &self.all_streams {
+                                if is_merica && !s.is_american { continue; }
+                                
+                                let lower_name = s.search_name.to_lowercase();
+                                let is_sports = crate::parser::is_sports_content(&s.name);
+                                
+                                // Priority 1: Exact substring match in sports
+                                if is_sports && lower_name.contains(&query) {
+                                    priority.push(s.clone());
+                                } 
+                                // Priority 2: Fuzzy match with high threshold
+                                else if s.fuzzy_match(&query, 60) {
+                                    others.push(s.clone());
+                                }
+                            }
+                            
+                            priority.extend(others);
+                            priority.into_iter().take(1000).collect()
+                        };
+
                         self.streams = filtered;
                         self.selected_stream_index = 0;
                         if !self.streams.is_empty() {
@@ -835,13 +1003,13 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        use rayon::prelude::*;
-                        let mut filtered: Vec<Stream> = self
+                        let filtered: Vec<Stream> = self
                             .all_vod_streams
-                            .par_iter()
+                            .iter()
                             .filter(|s| {
-                                s.search_name.contains(&query) && (!is_merica || s.is_english)
+                                s.fuzzy_match(&query, 0) && (!is_merica || s.is_english)
                             })
+                            .take(1000)
                             .map(|s| {
                                 if !is_merica { return s.clone(); }
                                 let mut s_mod = s.clone();
@@ -849,7 +1017,6 @@ impl App {
                                 s_mod
                             })
                             .collect();
-                        filtered.truncate(1000);
                         self.vod_streams = filtered;
                         self.selected_vod_stream_index = 0;
                         if !self.vod_streams.is_empty() {
@@ -885,13 +1052,13 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        use rayon::prelude::*;
-                        let mut filtered: Vec<Stream> = self
+                        let filtered: Vec<Stream> = self
                             .all_series_streams
-                            .par_iter()
+                            .iter()
                             .filter(|s| {
-                                s.search_name.contains(&query) && (!is_merica || s.is_english)
+                                s.fuzzy_match(&query, 0) && (!is_merica || s.is_english)
                             })
+                            .take(1000)
                             .map(|s| {
                                 if !is_merica { return s.clone(); }
                                 let mut s_mod = s.clone();
@@ -899,7 +1066,6 @@ impl App {
                                 s_mod
                             })
                             .collect();
-                        filtered.truncate(1000);
                         self.series_streams = filtered;
                         self.selected_series_stream_index = 0;
                         if !self.series_streams.is_empty() {
@@ -912,11 +1078,10 @@ impl App {
                 }
             }
             CurrentScreen::GlobalSearch => {
-                use rayon::prelude::*;
-                // Search through global caches in parallel
                 let mut results: Vec<_> = self.global_all_streams
-                    .par_iter()
-                    .filter(|s| s.search_name.contains(&query))
+                    .iter()
+                    .filter(|s| s.fuzzy_match(&query, 0))
+                    .take(100)
                     .map(|s| {
                         if !is_merica { return s.clone(); }
                         let mut s_mod = s.clone();
@@ -924,12 +1089,12 @@ impl App {
                         s_mod
                     })
                     .collect();
-                results.truncate(100);
 
                 if results.len() < 100 {
-                    let mut movie_results: Vec<_> = self.global_all_vod_streams
-                        .par_iter()
-                        .filter(|s| s.search_name.contains(&query))
+                    let movie_results: Vec<_> = self.global_all_vod_streams
+                        .iter()
+                        .filter(|s| s.fuzzy_match(&query, 0))
+                        .take(100 - results.len())
                         .map(|s| {
                             if !is_merica { return s.clone(); }
                             let mut s_mod = s.clone();
@@ -937,14 +1102,14 @@ impl App {
                             s_mod
                         })
                         .collect();
-                    movie_results.truncate(100 - results.len());
                     results.extend(movie_results);
                 }
 
                 if results.len() < 100 {
-                    let mut series_results: Vec<_> = self.global_all_series_streams
-                        .par_iter()
-                        .filter(|s| s.search_name.contains(&query))
+                    let series_results: Vec<_> = self.global_all_series_streams
+                        .iter()
+                        .filter(|s| s.fuzzy_match(&query, 0))
+                        .take(100 - results.len())
                         .map(|s| {
                             if !is_merica { return s.clone(); }
                             let mut s_mod = s.clone();
@@ -952,7 +1117,6 @@ impl App {
                             s_mod
                         })
                         .collect();
-                    series_results.truncate(100 - results.len());
                     results.extend(series_results);
                 }
 
@@ -994,6 +1158,27 @@ impl App {
             &mut self.series_stream_list_state,
             true,
         );
+    }
+
+    pub fn jump_to_series_stream(&mut self, index: usize) {
+        if index < self.series_streams.len() {
+            self.selected_series_stream_index = index;
+            self.series_stream_list_state.select(Some(index));
+        }
+    }
+
+    pub fn jump_to_series_bottom(&mut self) {
+        if !self.series_streams.is_empty() {
+            self.selected_series_stream_index = self.series_streams.len() - 1;
+            self.series_stream_list_state.select(Some(self.series_streams.len() - 1));
+        }
+    }
+
+    pub fn jump_to_series_top(&mut self) {
+        if !self.series_streams.is_empty() {
+            self.selected_series_stream_index = 0;
+            self.series_stream_list_state.select(Some(0));
+        }
     }
 
     pub fn previous_series_stream(&mut self) {
@@ -1120,19 +1305,19 @@ impl App {
                         self.current_screen = CurrentScreen::Categories;
                         self.active_pane = Pane::Categories;
                         self.search_mode = false;
-                        self.search_query.clear();
+                        self.search_state.query.clear();
                     }
                     KeyCode::Char('2') => {
                         self.current_screen = CurrentScreen::VodCategories;
                         self.active_pane = Pane::Categories;
                         self.search_mode = false;
-                        self.search_query.clear();
+                        self.search_state.query.clear();
                     }
                     KeyCode::Char('3') => {
                         self.current_screen = CurrentScreen::SeriesCategories;
                         self.active_pane = Pane::Categories;
                         self.search_mode = false;
-                        self.search_query.clear();
+                        self.search_state.query.clear();
                     }
                     KeyCode::Esc | KeyCode::Backspace => {
                         self.current_screen = CurrentScreen::Home;
@@ -1145,7 +1330,7 @@ impl App {
                     match key.code {
                         KeyCode::Esc => {
                             self.search_mode = false;
-                            self.search_query.clear();
+                            self.search_state.query.clear();
                         }
                         _ => {}
                     }
@@ -1154,7 +1339,105 @@ impl App {
                         KeyCode::Esc | KeyCode::Backspace => {
                             self.current_screen = CurrentScreen::ContentTypeSelection;
                             self.search_mode = false;
-                            self.search_query.clear();
+                            self.search_state.query.clear();
+                        }
+                        KeyCode::Char('j') | KeyCode::Down => {
+                            if self.active_pane == Pane::Categories {
+                                self.next_category();
+                            } else {
+                                self.next_stream();
+                            }
+                        }
+                        KeyCode::Char('k') | KeyCode::Up => {
+                            if self.active_pane == Pane::Categories {
+                                self.previous_category();
+                            } else {
+                                self.previous_stream();
+                            }
+                        }
+                        KeyCode::Char('g') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category_bottom();
+                            } else {
+                                self.jump_to_bottom();
+                            }
+                        }
+                        KeyCode::Char('G') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category_top();
+                            } else {
+                                self.jump_to_top();
+                            }
+                        }
+                        KeyCode::Char('0') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category_top();
+                            } else {
+                                self.jump_to_top();
+                            }
+                        }
+                        KeyCode::Char('1') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category(0);
+                            } else {
+                                self.jump_to_stream(0);
+                            }
+                        }
+                        KeyCode::Char('2') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category(1);
+                            } else {
+                                self.jump_to_stream(1);
+                            }
+                        }
+                        KeyCode::Char('3') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category(2);
+                            } else {
+                                self.jump_to_stream(2);
+                            }
+                        }
+                        KeyCode::Char('4') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category(3);
+                            } else {
+                                self.jump_to_stream(3);
+                            }
+                        }
+                        KeyCode::Char('5') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category(4);
+                            } else {
+                                self.jump_to_stream(4);
+                            }
+                        }
+                        KeyCode::Char('6') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category(5);
+                            } else {
+                                self.jump_to_stream(5);
+                            }
+                        }
+                        KeyCode::Char('7') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category(6);
+                            } else {
+                                self.jump_to_stream(6);
+                            }
+                        }
+                        KeyCode::Char('8') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category(7);
+                            } else {
+                                self.jump_to_stream(7);
+                            }
+                        }
+                        KeyCode::Char('9') => {
+                            if self.active_pane == Pane::Categories {
+                                self.jump_to_category(8);
+                            } else {
+                                self.jump_to_stream(8);
+                            }
                         }
                         _ => {}
                     }
@@ -1166,12 +1449,84 @@ impl App {
                     self.all_series_categories.clear();
                     self.selected_series_category_index = 0;
                     self.series_category_list_state.select(None);
-                    self.current_screen = CurrentScreen::ContentTypeSelection;
+                    self.current_screen = CurrentScreen::Home;
                     self.search_mode = false;
-                    self.search_query.clear();
+                    self.search_state.query.clear();
                 }
                 KeyCode::Char('j') | KeyCode::Down => self.next_series_category(),
                 KeyCode::Char('k') | KeyCode::Up => self.previous_series_category(),
+                KeyCode::Char('g') => {
+                    if !self.series_categories.is_empty() {
+                        self.selected_series_category_index = self.series_categories.len() - 1;
+                        self.series_category_list_state.select(Some(self.series_categories.len() - 1));
+                    }
+                }
+                KeyCode::Char('G') => {
+                    if !self.series_categories.is_empty() {
+                        self.selected_series_category_index = 0;
+                        self.series_category_list_state.select(Some(0));
+                    }
+                }
+                KeyCode::Char('0') => {
+                    if !self.series_categories.is_empty() {
+                        self.selected_series_category_index = 0;
+                        self.series_category_list_state.select(Some(0));
+                    }
+                }
+                KeyCode::Char('1') => {
+                    if self.series_categories.len() > 0 {
+                        self.selected_series_category_index = 0;
+                        self.series_category_list_state.select(Some(0));
+                    }
+                }
+                KeyCode::Char('2') => {
+                    if self.series_categories.len() > 1 {
+                        self.selected_series_category_index = 1;
+                        self.series_category_list_state.select(Some(1));
+                    }
+                }
+                KeyCode::Char('3') => {
+                    if self.series_categories.len() > 2 {
+                        self.selected_series_category_index = 2;
+                        self.series_category_list_state.select(Some(2));
+                    }
+                }
+                KeyCode::Char('4') => {
+                    if self.series_categories.len() > 3 {
+                        self.selected_series_category_index = 3;
+                        self.series_category_list_state.select(Some(3));
+                    }
+                }
+                KeyCode::Char('5') => {
+                    if self.series_categories.len() > 4 {
+                        self.selected_series_category_index = 4;
+                        self.series_category_list_state.select(Some(4));
+                    }
+                }
+                KeyCode::Char('6') => {
+                    if self.series_categories.len() > 5 {
+                        self.selected_series_category_index = 5;
+                        self.series_category_list_state.select(Some(5));
+                    }
+                }
+                KeyCode::Char('7') => {
+                    if self.series_categories.len() > 6 {
+                        self.selected_series_category_index = 6;
+                        self.series_category_list_state.select(Some(6));
+                    }
+                }
+                KeyCode::Char('8') => {
+                    if self.series_categories.len() > 7 {
+                        self.selected_series_category_index = 7;
+                        self.series_category_list_state.select(Some(7));
+                    }
+                }
+                KeyCode::Char('9') => {
+                    if self.series_categories.len() > 8 {
+                        self.selected_series_category_index = 8;
+                        self.series_category_list_state.select(Some(8));
+                    }
+                }
                 _ => {}
             },
             CurrentScreen::SeriesStreams => match key.code {
@@ -1181,9 +1536,23 @@ impl App {
                     self.selected_series_stream_index = 0;
                     self.series_stream_list_state.select(None);
                     self.current_screen = CurrentScreen::SeriesCategories;
+                    self.search_mode = false;
+                    self.search_state.query.clear();
                 }
                 KeyCode::Char('j') | KeyCode::Down => self.next_series_stream(),
                 KeyCode::Char('k') | KeyCode::Up => self.previous_series_stream(),
+                KeyCode::Char('g') => self.jump_to_series_bottom(),
+                KeyCode::Char('G') => self.jump_to_series_top(),
+                KeyCode::Char('0') => self.jump_to_series_top(),
+                KeyCode::Char('1') => self.jump_to_series_stream(0),
+                KeyCode::Char('2') => self.jump_to_series_stream(1),
+                KeyCode::Char('3') => self.jump_to_series_stream(2),
+                KeyCode::Char('4') => self.jump_to_series_stream(3),
+                KeyCode::Char('5') => self.jump_to_series_stream(4),
+                KeyCode::Char('6') => self.jump_to_series_stream(5),
+                KeyCode::Char('7') => self.jump_to_series_stream(6),
+                KeyCode::Char('8') => self.jump_to_series_stream(7),
+                KeyCode::Char('9') => self.jump_to_series_stream(8),
                 _ => {}
             },
             _ => {}
@@ -1236,6 +1605,7 @@ mod tests {
             total_movies: None,
             total_series: None,
             server_timezone: None,
+            account_type: Default::default(),
         });
 
         // Retry 'x'

@@ -140,15 +140,15 @@ async fn run_qa() {
                         print!("    > Deep Test (Fix: Search Reset on Escape): ");
                         app.current_screen = CurrentScreen::Categories;
                         app.search_mode = true;
-                        app.search_query = "NBA".to_string();
+                        app.search_state.query = "NBA".to_string();
                         
                         // Simulate Escape (navigates back to Content Selection)
                         app.handle_key_event(make_key(KeyCode::Esc));
                         
-                        if !app.search_mode && app.search_query.is_empty() && app.current_screen == CurrentScreen::ContentTypeSelection {
+                        if !app.search_mode && app.search_state.query.is_empty() && app.current_screen == CurrentScreen::ContentTypeSelection {
                             println!("[PASS] Search Reset on Escape Verified");
                         } else {
-                            println!("[FAIL] Search Reset failed! Mode: {}, Query: '{}', Screen: {:?}", app.search_mode, app.search_query, app.current_screen);
+                            println!("[FAIL] Search Reset failed! Mode: {}, Query: '{}', Screen: {:?}", app.search_mode, app.search_state.query, app.current_screen);
                             total_errors += 1;
                         }
 
@@ -156,15 +156,15 @@ async fn run_qa() {
                         // Re-enter screen from ContentTypeSelection
                         app.current_screen = CurrentScreen::ContentTypeSelection;
                         app.search_mode = true;
-                        app.search_query = "STILL_HERE".to_string();
+                        app.search_state.query = "STILL_HERE".to_string();
                         
                         // Simulate selecting Live TV (Key '1')
                         app.handle_key_event(make_key(KeyCode::Char('1')));
                         
-                        if !app.search_mode && app.search_query.is_empty() && app.current_screen == CurrentScreen::Categories {
+                        if !app.search_mode && app.search_state.query.is_empty() && app.current_screen == CurrentScreen::Categories {
                             println!("[PASS] Search Reset on Re-entry Verified");
                         } else {
-                            println!("[FAIL] Search Reset failed on entry! Mode: {}, Query: '{}', Screen: {:?}", app.search_mode, app.search_query, app.current_screen);
+                            println!("[FAIL] Search Reset failed on entry! Mode: {}, Query: '{}', Screen: {:?}", app.search_mode, app.search_state.query, app.current_screen);
                             total_errors += 1;
                         }
 

@@ -1,30 +1,31 @@
-# How do I get a playlist to view content?
+# How do I get a playlist?
 
-This app is a player. You need a **Playlist** to watch TV.
+Matrix IPTV is a **player**, not a service provider. We provide the vessel; you provide the fuel. To watch content, you need an IPTV subscription from a third-party provider.
 
-Flexible IPTV playlists are sold by third-party providers. We recommend buying from safe marketplaces rather than sketchy sites.
+### 🛡️ Where to Buy Safely
 
-### Recommended Steps
+We strongly advise against buying from "random" websites indexed on Google. Most are fly-by-night operations that will disappear with your money. Instead, use established digital marketplaces where sellers have ratings and buyer protection.
 
-1. **Visit a Marketplace**
-   Go to **g2g.com** or **z2u.com** (these are like eBay for digital goods).
+- **Marketplaces**: **G2G.com**, **Z2U.com**, or **Eldorado.gg**.
+- **Search Terms**: "IPTV Subscription", "Xtream Codes", or "M3U Playlist".
 
-2. **Search for a Provider**
+### 🦖 Recommended Providers (The Big Three)
 
-- 💪 **Strong8k**: Premium quality, 4K/8K streams. (Higher price, less bloat)
-- 🦖 **Trex**: Reliable standard, massive VOD library. (Medium price)
-- ⚡ **Mega**: Budget-friendly option. (Lowest price, more junk channels)
+While we are not affiliated with these, they are the "standard" in the industry:
 
-_Note: Higher prices usually mean better stability and cleaner channel lists._
+1. **Strong8k**: Known for the highest bitrate 4K streams. If you have a high-end display and fast internet, this is the premium choice. Best for live sports.
+2. **Trex**: The largest VOD (Movies & Series) library in the world. Extremely reliable server infrastructure but can have "bloated" channel lists.
+3. **Mega / 4kOTT**: Great budget-friendly options. They offer a huge variety of global channels but may experience more downtime during massive sporting events.
 
-3. **Pay Safely**
-   Use **Google Pay** or **Apple Pay** on these marketplaces to protect your info.
+### 🔑 Connecting via Xtream Codes
 
-4. **Connect (Xtream Codes)**
-   You will receive a **URL**, **Username**, and **Password**.
-   These three items are known as **Xtream Codes**.
+When you buy a subscription, the provider will send you three pieces of information:
 
-Press `n` on the Home screen to enter them and start watching.
+- **Server URL**: (e.g., `http://server.link:8080`)
+- **Username**: (e.g., `matrix_user`)
+- **Password**: (e.g., `redpill123`)
+
+In this app, press `n` on the Home screen to enter these credentials. Once saved, they are encrypted locally on your machine.
 
 ---
 

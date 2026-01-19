@@ -20,11 +20,11 @@ pub fn stylize_channel_name(
 ) -> (Vec<Span<'static>>, Option<&'static str>) {
     let mut spans = Vec::new();
     
-    let (t1_color, t2_color, ppv_color, vip_color, raw_color, hd_color, fhd_color, fps_color) = if is_ended {
+    let (ppv_color, vip_color, raw_color, hd_color, fhd_color, fps_color) = if is_ended {
         let dim = Color::Rgb(100, 100, 100);
-        (dim, dim, dim, dim, dim, dim, dim, dim)
+        (dim, dim, dim, dim, dim, dim)
     } else {
-        (Color::Cyan, CP_GREEN, Color::Rgb(255, 105, 180), Color::Yellow, Color::Cyan, Color::Cyan, CP_GREEN, Color::Yellow)
+        (Color::Rgb(255, 105, 180), Color::Yellow, Color::Cyan, Color::Cyan, CP_GREEN, Color::Yellow)
     };
 
     let mut base_style = base_style;

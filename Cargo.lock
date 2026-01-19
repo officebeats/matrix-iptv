@@ -787,6 +787,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fuzzy-matcher"
+version = "0.3.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "54614a3312934d066701a80f20f15fa3b56d67ac7722b39eea5b4c9dd1d66c94"
+dependencies = [
+ "thread_local",
+]
+
+[[package]]
 name = "gethostname"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1385,7 +1394,7 @@ dependencies = [
 
 [[package]]
 name = "matrix-iptv"
-version = "3.3.0"
+version = "3.3.5"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1396,6 +1405,7 @@ dependencies = [
  "crossterm",
  "directories",
  "futures",
+ "fuzzy-matcher",
  "getrandom 0.2.16",
  "hickory-resolver",
  "iana-time-zone",
@@ -1410,11 +1420,13 @@ dependencies = [
  "rust_cast",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "tui-input",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "zeroize",
 ]
 
 [[package]]
@@ -2412,6 +2424,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "thread_local"
+version = "1.1.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f60246a4944f24f6e018aa17cdeffb7818b76356965d03b07d6a9886e8962185"
+dependencies = [
+ "cfg-if",
 ]
 
 [[package]]

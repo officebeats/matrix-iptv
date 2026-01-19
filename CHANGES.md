@@ -1,5 +1,34 @@
 # IPTV App Changes Summary
 
+## Date: 2026-01-18 (v3.3.1)
+
+### Changes Implemented
+
+#### ✅ 1. Restored Detailed Help Guides
+
+- Re-implemented the technical and instructional depth for "The TUI Edge", "Playlist Acquisition", and "IPTV Protocol".
+- Guides now feature rich formatting and specific advice (Marketplaces, Providers, Technical Specs).
+
+#### ✅ 2. UI/UX Refinement
+
+- Moved version identifier to the bottom-left of the footer for better visibility during testing.
+- Updated Home Screen labels to be more descriptive ("The TUI Edge", "Understanding the Protocol").
+- Fixed the "Gray Icon" issue caused by leftover sports league fallbacks.
+- Simplified Category view to use a clean folder icon system.
+
+#### ✅ 3. Improved MPV Isolation
+
+- Detached MPV from terminal input/output to prevent keyboard shortcut conflicts.
+- On Windows, MPV now runs in a detached process to ensure CLI focus remains on the app.
+
+#### ✅ 4. Infrastructure & Test Sync
+
+- Updated global `test-matrix-iptv` command and PowerShell profile to point to the current (OneDrive) workspace.
+- Fixed a version mismatch where tests were running older cached binaries.
+- Established a new `update_and_test` workflow to ensure builds are synced to the Node wrapper's `bin/` directory.
+
+---
+
 ## Date: 2025-12-27 (v3.0.8)
 
 ### Changes Implemented

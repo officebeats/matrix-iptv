@@ -2,14 +2,13 @@ use ratatui::{
     layout::{Rect, Layout, Constraint, Direction},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph},
     Frame,
 };
-use crate::app::{App, CurrentScreen, Guide, InputMode, LoginField, Pane, SettingsState};
+use crate::app::{App, CurrentScreen};
 use crate::parser::{parse_category, parse_stream, country_flag, country_color};
-use crate::ui::colors::{DARK_GREEN, MATRIX_GREEN, BRIGHT_GREEN};
+use crate::ui::colors::MATRIX_GREEN;
 use crate::ui::common::stylize_channel_name;
-use crate::sports::get_team_color;
 use chrono::{Utc, DateTime};
 use chrono_tz::Tz;
 
@@ -60,79 +59,12 @@ pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
                 spans.push(ratatui::text::Span::styled("★ ", Style::default().fg(MATRIX_GREEN)));
             }
 
-            // Icon logic: ONLY show for sports/VIP/Exact Matches
-            let mut icon_span = None;
-            let upper_display = parsed.display_name.to_uppercase();
-            
-            if let Some(ct) = parsed.content_type {
-                let icon = ct.icon();
-                if !icon.is_empty() {
-                    icon_span = Some(ratatui::text::Span::raw(format!("{} ", icon)));
-                }
-            }
-            
-            // Comprehensive sports mapping (overrides or supplements generic icons)
-            // Exclude false positives like '24/7 ONEPLAY' which is not sports
-            let is_24_7 = upper_display.starts_with("24/7") || upper_display.contains("ONEPLAY") || upper_display.contains("RELAX");
-            if !is_24_7 {
-                if upper_display.contains("NBA") || upper_display.contains("NCAAB") || upper_display.contains("BASKETBALL") {
-                     icon_span = Some(ratatui::text::Span::styled("\u{1f3c0} ", Style::default().fg(Color::Rgb(255, 140, 0)))); // Basketball (orange)
-                } else if upper_display.contains("NFL") || upper_display.contains("NCAAF") {
-                     icon_span = Some(ratatui::text::Span::styled("\u{1f3c8} ", Style::default().fg(Color::Rgb(210, 180, 140)))); // Football (light brown)
-                } else if upper_display.contains("MLB") || upper_display.contains("MILB") || upper_display.contains("BASEBALL") {
-                     icon_span = Some(ratatui::text::Span::raw("\u{26be} ")); // Baseball
-                } else if upper_display.contains("NHL") || upper_display.contains("HOCKEY") {
-                     icon_span = Some(ratatui::text::Span::raw("\u{1f3d2} ")); // Hockey
-                } else if upper_display.contains("UFC") || upper_display.contains("FIGHT") || upper_display.contains("MATCHROOM") || upper_display.contains("BOXING") {
-                     icon_span = Some(ratatui::text::Span::raw("\u{1f94a} ")); // Boxing glove
-                } else if upper_display.contains("TENNIS") || upper_display.contains("ATP") || upper_display.contains("WTA") {
-                     icon_span = Some(ratatui::text::Span::styled("\u{1f3be} ", Style::default().fg(Color::Rgb(144, 238, 144)))); // Tennis (light green)
-                } else if upper_display.contains("GOLF") || upper_display.contains("PGA") || upper_display.contains("MASTERS") {
-                     icon_span = Some(ratatui::text::Span::raw("\u{26f3} ")); // Golf flag
-                } else if upper_display.contains("SUPERCROSS") || upper_display.contains("MOTOCROSS") || upper_display.contains("F1") || upper_display.contains("NASCAR") || upper_display.contains("RACING") {
-                     icon_span = Some(ratatui::text::Span::styled("\u{1f3ce} ", Style::default().fg(Color::Rgb(255, 100, 100)))); // Racing car (light red)
-                } else if upper_display.contains("SOCCER") || upper_display.contains("EPL") || upper_display.contains("MLS") || upper_display.contains("PREMIER") || upper_display.contains("LALIGA") || upper_display.contains("FIFA") || upper_display.contains("UEFA") {
-                     icon_span = Some(ratatui::text::Span::styled("\u{26bd} ", Style::default().fg(Color::Rgb(255, 182, 193)))); // Soccer ball (light pink)
-                } else if upper_display.contains("RUGBY") || upper_display.contains("SIX NATIONS") {
-                     icon_span = Some(ratatui::text::Span::raw("\u{1f3c9} ")); // Rugby football
-                } else if upper_display.contains("EVENT") || upper_display.contains("PPV") || upper_display.contains("SHREDS") {
-                     icon_span = Some(ratatui::text::Span::raw("\u{1f3ab} ")); // Ticket
-                } else if upper_display.contains("ESPN") || upper_display.contains("DAZN") || upper_display.contains("B/R") || upper_display.contains("BALLY") || upper_display.contains("MAX SPORTS") {
-                     icon_span = Some(ratatui::text::Span::raw("\u{1f4fa} ")); // TV (sports network)
-                }
-            }
-
-            if let Some(s) = icon_span {
-                spans.push(s);
-            }
-
-            if let Some(ref country) = parsed.country {
-                // In American Mode, don't show the US or EN flag (redundant)
-                let is_us_en = country == "US" || country == "USA" || country == "AM" || country == "EN";
-                if !(app.config.playlist_mode.is_merica_variant() && is_us_en) {
-                    let flag = country_flag(country);
-                    if !flag.is_empty() {
-                        spans.push(ratatui::text::Span::raw(format!("{} ", flag)));
-                    }
-                }
-            }
-
             let is_league = parsed.country.as_ref().map(|cc| ["NBA", "NFL", "MLB", "NHL", "UFC", "SPORTS", "PPV"].contains(&cc.as_str())).unwrap_or(false);
             let name_color = if is_league {
                 parsed.country.as_ref().map(|cc| country_color(cc)).unwrap_or(Color::White)
             } else {
                 MATRIX_GREEN
             };
-            
-            // Icon & Name Style
-            let (icon, icon_color) = if app.current_screen == CurrentScreen::VodCategories || app.current_screen == CurrentScreen::VodStreams {
-                ("🎬", MATRIX_GREEN)
-            } else if app.current_screen == CurrentScreen::SeriesCategories || app.current_screen == CurrentScreen::SeriesStreams {
-                ("📺", MATRIX_GREEN)
-            } else {
-                ("📁", Color::White)
-            };
-            spans.insert(0, ratatui::text::Span::styled(format!("{} ", icon), Style::default().fg(icon_color)));
 
             let (styled_name, _) = stylize_channel_name(
                 &parsed.display_name,
@@ -143,6 +75,16 @@ pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
                 None,
                 Style::default().fg(name_color),
             );
+
+            // Icon & Name Style
+            let (icon, icon_color) = if app.current_screen == CurrentScreen::VodCategories || app.current_screen == CurrentScreen::VodStreams {
+                ("🎬", MATRIX_GREEN)
+            } else if app.current_screen == CurrentScreen::SeriesCategories || app.current_screen == CurrentScreen::SeriesStreams {
+                ("📺", MATRIX_GREEN)
+            } else {
+                ("📁", Color::White)
+            };
+            spans.push(ratatui::text::Span::styled(format!("{} ", icon), Style::default().fg(icon_color)));
 
             spans.extend(styled_name);
 
@@ -203,7 +145,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         .skip(adjusted_start)
         .take(end - adjusted_start)
         .map(|(_, s)| {
-            let parsed = parse_stream(&s.name, app.provider_timezone.as_deref());
+            let parsed = crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref());
             let now = Utc::now();
             let is_ended = parsed.stop_time.map(|t| now > t).unwrap_or(false);
             let is_live = parsed.start_time.map(|st| now >= st).unwrap_or(false) && !is_ended;
@@ -272,7 +214,13 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
 
             // 4. Name / Matchup
             let is_league = parsed.country.as_ref().map(|cc| ["NBA", "NFL", "MLB", "NHL", "UFC", "SPORTS", "PPV"].contains(&cc.as_str())).unwrap_or(false);
-            let name_color = if is_league {
+            
+            // Try to get team color from ESPN data first, otherwise use league color
+            let score_data_for_color = app.get_score_for_stream(&parsed.display_name);
+            let name_color = if let Some(score) = score_data_for_color {
+                // Use home team color from ESPN (already lightened by get_team_color_with_fallback)
+                crate::sports::get_team_color_with_fallback(&score.home_team, true)
+            } else if is_league {
                 parsed.country.as_ref().map(|cc| country_color(cc)).unwrap_or(Color::White)
             } else {
                 MATRIX_GREEN
@@ -295,31 +243,70 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             );
             spans.extend(styled_name);
 
-            // 5. Time Reference (e.g. [Today 09:00 PM])
-            if let Some(st) = parsed.start_time {
+            // 5. Intelligent Score Overlay (ESPN Integration)
+            // If we have a live score match, use it to drive the UI state (Live/Ended/Score)
+            let score_data = app.get_score_for_stream(&parsed.display_name);
+            
+            // Logic override based on Score Data
+            let (final_is_live, final_is_ended, status_text, score_text) = if let Some(score) = score_data {
+                let is_active = score.status_state == "in";
+                let is_finished = score.status_state == "post";
+                let clock = if is_finished {
+                    "Final".to_string()
+                } else if is_active {
+                     // Use specific clock if available, otherwise fallback to detail
+                     if !score.display_clock.is_empty() && score.display_clock != "00:00" {
+                         format!("{} {}", score.display_clock, score.status_detail.replace(&score.display_clock, "").trim())
+                     } else {
+                         score.status_detail.clone()
+                     }
+                } else {
+                    score.status_detail.clone() // e.g. "12:00 1st"
+                };
+                let display_score = format!(" {} - {} ", score.home_score, score.away_score);
+                (is_active, is_finished, Some(clock), Some(display_score))
+            } else {
+                (is_live, is_ended, None, None)
+            };
+
+            // 5b. Time Reference (or Game Clock)
+            if let Some(clock) = status_text {
+                 // Show Game Clock instead of Start Time
+                 let mut clock_style = Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD);
+                 if final_is_ended {
+                     clock_style = Style::default().fg(Color::Red).add_modifier(Modifier::CROSSED_OUT); 
+                 }
+                 spans.push(ratatui::text::Span::styled(format!(" [{}] ", clock), clock_style));
+            } else if let Some(st) = parsed.start_time {
                 let time_str = format!(" {} ", format_relative_time(st, &user_tz));
                 let mut time_style = Style::default().fg(Color::Rgb(150, 150, 150));
-                if is_ended {
+                if final_is_ended {
                     time_style = time_style.add_modifier(Modifier::CROSSED_OUT);
                 }
                 spans.push(ratatui::text::Span::styled(time_str, time_style));
             }
 
+            // 5c. Score Display
+            if let Some(score) = score_text {
+                spans.push(ratatui::text::Span::styled(score, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)));
+            }
+
             // 6. Live / Ended Badges
             let light_red = Color::Rgb(255, 120, 120);
             let dim_gray = Color::Rgb(60, 60, 60);
-            if is_live {
+            
+            if final_is_live {
                 let live_color = if is_blink_on { light_red } else { dim_gray };
                 let dot = if is_blink_on { "\u{1f534} " } else { "  " };
                 spans.push(ratatui::text::Span::styled(dot, Style::default().fg(live_color)));
                 spans.push(ratatui::text::Span::styled("LIVE NOW ", Style::default().fg(live_color).add_modifier(Modifier::BOLD)));
-            } else if is_ended {
+            } else if final_is_ended {
                 spans.push(ratatui::text::Span::styled("[ENDED] ", Style::default().fg(Color::Rgb(100, 100, 100)).add_modifier(Modifier::BOLD)));
             }
 
             // 7. Location (LOC) at the end - Skip for sports events (team abbrs handled by Intelligence)
             if parsed.sports_event.is_none() {
-                if let Some(loc) = parsed.location {
+                if let Some(loc) = &parsed.location {
                     spans.push(ratatui::text::Span::styled(format!("({})", loc), Style::default().fg(Color::LightBlue)));
                 }
             }
@@ -379,14 +366,14 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .skip(adjusted_start)
         .take(end - adjusted_start)
         .map(|(_, s)| {
-            let parsed = parse_stream(&s.name, app.provider_timezone.as_deref());
+            let parsed = crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref());
             let mut spans = vec![];
             
             // Icon & Name Style
             let (icon, icon_color) = match s.stream_type.as_str() {
                 "movie" => ("🎬 ", MATRIX_GREEN),
                 "series" => ("📺 ", MATRIX_GREEN),
-                _ => ("📻 ", MATRIX_GREEN),
+                _ => ("", MATRIX_GREEN),
             };
             spans.push(ratatui::text::Span::styled(icon, Style::default().fg(icon_color)));
 
@@ -463,10 +450,24 @@ pub fn render_stream_details_pane(f: &mut Frame, app: &mut App, area: Rect, bord
         app.streams.get(selected_idx)
     };
 
-    // Only render for sports events
     let Some(s) = focused_stream else { return };
     let parsed = parse_stream(&s.name, app.provider_timezone.as_deref());
-    let Some(event) = &parsed.sports_event else { return };
+    
+    // Attempt to get Live Score Info if available
+    let score_data = app.get_score_for_stream(&parsed.display_name);
+    
+    // Need either a parsed sports event OR ESPN score data to render
+    let event = parsed.sports_event.clone();
+    if event.is_none() && score_data.is_none() { return }
+    
+    // Create synthetic event from ESPN data if no parsed event
+    let (team1, team2) = if let Some(ref ev) = event {
+        (ev.team1.clone(), ev.team2.clone())
+    } else if let Some(ref sd) = score_data {
+        (sd.home_team.clone(), sd.away_team.clone())
+    } else {
+        return;
+    };
 
     let title = " // MATCH_INTELLIGENCE ";
     let inner_area = crate::ui::common::render_matrix_box(f, area, title, border_color);
@@ -474,38 +475,150 @@ pub fn render_stream_details_pane(f: &mut Frame, app: &mut App, area: Rect, bord
     let sub_chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage(50),
-            Constraint::Percentage(50),
+            Constraint::Percentage(55),
+            Constraint::Percentage(45),
         ])
         .split(inner_area);
 
-    // --- LEFT SIDE: TEAMS ---
+    // --- LEFT SIDE: TEAMS, SCORE & VISUAL BAR ---
     let mut left = Vec::new();
-    left.push(Line::from(vec![
-        Span::styled("HOME: ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-        Span::styled(&event.team1, Style::default().fg(crate::sports::get_team_color_with_fallback(&event.team1, true))),
-    ]));
-    left.push(Line::from(vec![
-        Span::styled("AWAY: ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-        Span::styled(&event.team2, Style::default().fg(crate::sports::get_team_color_with_fallback(&event.team2, false))),
-    ]));
+    
+    // Scores if available
+    let (h_score, a_score, _h_abbr, _a_abbr) = if let Some(score) = score_data {
+        (score.home_score.as_str(), score.away_score.as_str(), 
+         score.home_abbr.as_str(), score.away_abbr.as_str())
+    } else {
+        ("-", "-", "", "")
+    };
+    
+    // Parse scores for lead indicator
+    let h_num: i32 = h_score.parse().unwrap_or(0);
+    let a_num: i32 = a_score.parse().unwrap_or(0);
+    
+    let is_game_active = score_data.map(|s| s.status_state == "in" || s.status_state == "post").unwrap_or(false);
+    let has_scoring = h_num > 0 || a_num > 0;
+
+    // 1. Status Line (Top Left - Moved from Right)
+    if let Some(score) = score_data {
+        if score.status_state == "in" {
+            // Live Game with clock
+            let display_clock = if !score.display_clock.is_empty() && score.display_clock != "00:00" {
+                format!("{} - {}", score.display_clock, score.status_detail)
+            } else {
+                score.status_detail.clone()
+            };
+            
+            left.push(Line::from(vec![
+                Span::styled("⏱ CLOCK: ", Style::default().fg(Color::Rgb(255, 120, 120))),
+                Span::styled(display_clock, Style::default().fg(Color::Rgb(255, 150, 150)).add_modifier(Modifier::BOLD)),
+            ]));
+        } else if score.status_state == "post" {
+            left.push(Line::from(vec![
+                Span::styled("✓ FINAL", Style::default().fg(Color::Rgb(180, 180, 180))),
+            ]));
+        }
+    }
+
+    // Team rows with score
+    let mut team1_spans = vec![
+        Span::styled(&team1, Style::default().fg(crate::sports::get_team_color_with_fallback(&team1, true)).add_modifier(Modifier::BOLD)),
+    ];
+    if has_scoring || is_game_active {
+        team1_spans.push(Span::styled(format!("  {} ", h_score), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+    }
+    left.push(Line::from(team1_spans));
+    
+    let mut team2_spans = vec![
+        Span::styled(&team2, Style::default().fg(crate::sports::get_team_color_with_fallback(&team2, false)).add_modifier(Modifier::BOLD)),
+    ];
+    if has_scoring || is_game_active {
+        team2_spans.push(Span::styled(format!("  {} ", a_score), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+    }
+    left.push(Line::from(team2_spans));
+
     f.render_widget(Paragraph::new(left), sub_chunks[0]);
 
-    // --- RIGHT SIDE: TIME & CONTROLS ---
+    // --- RIGHT SIDE: INTELLIGENCE DATA ---
     let mut right = Vec::new();
-    if let Some(st) = parsed.start_time {
+    
+    // Win Probability / Betting Odds (its own line item)
+    if let Some(score) = score_data {
+        
+        // Win Probability / Betting Odds (its own line item)
+        if let (Some(hwp), Some(awp)) = (score.home_win_pct, score.away_win_pct) {
+            right.push(Line::from(vec![
+                Span::styled("📊 ODDS: ", Style::default().fg(Color::Rgb(150, 200, 255))),
+                Span::styled(format!("{} ", score.home_abbr), Style::default().fg(Color::Rgb(200, 220, 255))),
+                Span::styled(format!("{:.0}%", hwp * 100.0), Style::default().fg(if hwp > 0.5 { Color::Rgb(150, 255, 150) } else { Color::Rgb(180, 180, 180) })),
+                Span::styled(" | ", Style::default().fg(Color::Rgb(100, 100, 100))),
+                Span::styled(format!("{} ", score.away_abbr), Style::default().fg(Color::Rgb(200, 220, 255))),
+                Span::styled(format!("{:.0}%", awp * 100.0), Style::default().fg(if awp > 0.5 { Color::Rgb(150, 255, 150) } else { Color::Rgb(180, 180, 180) })),
+            ]));
+        }
+        
+        // Series Summary (for playoffs)
+        if let Some(series) = &score.series_summary {
+            right.push(Line::from(vec![
+                Span::styled("🏆 SERIES: ", Style::default().fg(Color::Rgb(255, 220, 100))),
+                Span::styled(series, Style::default().fg(Color::Rgb(255, 230, 150))),
+            ]));
+        }
+        
+        // Top Scorer / Game Leader
+        if let Some(scorer) = &score.top_scorer {
+            right.push(Line::from(vec![
+                Span::styled("⭐ STAR: ", Style::default().fg(Color::Rgb(255, 150, 255))),
+                Span::styled(scorer, Style::default().fg(Color::Rgb(255, 180, 255))),
+            ]));
+        }
+        
+        // Headline (post-game recap)
+        if score.status_state == "post" {
+            if let Some(hl) = &score.headline {
+                let truncated = if hl.len() > 45 { format!("{}...", &hl[..42]) } else { hl.clone() };
+                right.push(Line::from(vec![
+                    Span::styled("📰 RECAP: ", Style::default().fg(Color::Rgb(220, 220, 220))),
+                    Span::styled(truncated, Style::default().fg(Color::Rgb(240, 240, 240))),
+                ]));
+            }
+        }
+        
+        // Last Play (live games)
+        if score.status_state == "in" {
+            if let Some(lp) = &score.last_play {
+                let truncated = if lp.len() > 35 { format!("{}...", &lp[..32]) } else { lp.clone() };
+                right.push(Line::from(vec![
+                    Span::styled("▶ PLAY: ", Style::default().fg(Color::Rgb(100, 220, 255))),
+                    Span::styled(truncated, Style::default().fg(Color::Rgb(150, 230, 255))),
+                ]));
+            }
+        }
+        
+        // Broadcasts
+        if !score.broadcasts.is_empty() {
+            let channels = score.broadcasts.iter().take(2).cloned().collect::<Vec<_>>().join(", ");
+            right.push(Line::from(vec![
+                Span::styled("📺 TV: ", Style::default().fg(Color::Rgb(120, 180, 255))),
+                Span::styled(channels, Style::default().fg(Color::Rgb(150, 200, 255))),
+            ]));
+        }
+    } else {
+        // No live data - show start time if available
         let user_tz_str = app.config.get_user_timezone();
         let user_tz: Tz = user_tz_str.parse().unwrap_or(chrono_tz::UTC);
-        let time_str = format_relative_time(st, &user_tz);
-        right.push(Line::from(vec![
-            Span::styled("START: ", Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
-            Span::styled(time_str, Style::default().fg(MATRIX_GREEN)),
-        ]));
+        
+        if let Some(st) = parsed.start_time {
+            let time_str = format_relative_time(st, &user_tz);
+            right.push(Line::from(vec![
+                Span::styled("⏰ ", Style::default().fg(MATRIX_GREEN)),
+                Span::styled(time_str, Style::default().fg(MATRIX_GREEN)),
+            ]));
+        }
     }
+
     right.push(Line::from(vec![
-        Span::styled("Press ", Style::default().fg(Color::Gray)),
-        Span::styled("Enter", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
-        Span::styled(" to play", Style::default().fg(Color::Gray)),
+        Span::styled("[Enter] ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled("Watch", Style::default().fg(Color::Gray)),
     ]));
     f.render_widget(Paragraph::new(right), sub_chunks[1]);
 }
