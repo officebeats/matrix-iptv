@@ -130,14 +130,19 @@ pub async fn handle_key_event(
                     app.loading_message = Some(format!("Preparing: {}...", title));
                     let tx = tx.clone();
                     let player = player.clone();
+                    let engine = app.config.preferred_player;
+                    let smooth = app.config.smooth_motion;
                     let use_default = app.config.use_default_mpv;
                     tokio::spawn(async move {
                         let _ = tx.send(AsyncAction::LoadingMessage("Connecting...".to_string())).await;
-                        match player.play(&url, use_default) {
+                        match player.play(&url, engine, use_default, smooth).await {
                             Ok(_) => {
                                 match player.wait_for_playback(10000).await {
                                     Ok(true) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
-                                    _ => { let _ = tx.send(AsyncAction::PlayerFailed("Failed to start".to_string())).await; }
+                                    _ => { 
+                                        let log_err = player.get_last_error_from_log().unwrap_or_else(|| "Failed to start".to_string());
+                                        let _ = tx.send(AsyncAction::PlayerFailed(log_err)).await; 
+                                    }
                                 }
                             }
                             Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(e.to_string())).await; }
@@ -473,26 +478,8 @@ pub async fn handle_key_event(
                             app.search_state.query.clear();
                             app.update_search();
 
-                            // Auto-load first category's streams for cached "ALL"
-                            if !app.categories.is_empty() {
-                                let cat_id = app.categories[app.selected_category_index].category_id.clone();
-                                if cat_id == "ALL" && !app.global_all_streams.is_empty() {
-                                    app.all_streams = app.global_all_streams.clone();
-                                    app.streams = app.all_streams.clone();
-                                } else if let Some(client) = &app.current_client {
-                                    let client = client.clone();
-                                    let tx = tx.clone();
-                                    let pms = app.config.processing_modes.clone();
-                                    let favs = app.config.favorites.streams.clone();
-                                    let acc_name = account_name.clone();
-                                    tokio::spawn(async move {
-                                        if let Ok(mut streams) = client.get_live_streams(&cat_id).await {
-                                            crate::preprocessing::preprocess_streams(&mut streams, &favs, &pms, true, &acc_name);
-                                            let _ = tx.send(AsyncAction::StreamsLoaded(streams, cat_id)).await;
-                                        }
-                                    });
-                                }
-                            }
+                            // Auto-load removed by user request - wait for manual selection
+                            // if !app.categories.is_empty() { ... }
                         }
                         1 => {
                             app.current_screen = CurrentScreen::VodCategories;
@@ -883,6 +870,53 @@ pub async fn handle_key_event(
                                         app.active_pane = Pane::Streams;
                                         app.selected_stream_index = 0;
                                         app.stream_list_state.select(Some(0));
+                                    } else if cat_id == "ALL" {
+                                        // Background scan hasn't completed yet — use parallel fetch
+                                        if let Some(client) = &app.current_client {
+                                            let client = client.clone();
+                                            let tx = tx.clone();
+                                            let pms = app.config.processing_modes.clone();
+                                            let favs = app.config.favorites.streams.clone();
+                                            let account_name = account_name.clone();
+                                            app.state_loading = true;
+                                            app.loading_message = Some("Loading all channels...".to_string());
+                                            tokio::spawn(async move {
+                                                let _ = tx.send(AsyncAction::LoadingMessage("Fetching categories...".to_string())).await;
+                                                let cats = match client.get_live_categories().await {
+                                                    Ok(cats) => cats,
+                                                    Err(e) => {
+                                                        let _ = tx.send(AsyncAction::Error(format!("Failed to load categories: {}", e))).await;
+                                                        return;
+                                                    }
+                                                };
+                                                let _ = tx.send(AsyncAction::LoadingMessage(format!("Fetching {} categories in parallel...", cats.len()))).await;
+                                                let mut handles = Vec::with_capacity(cats.len());
+                                                for cat in &cats {
+                                                    let c = client.clone();
+                                                    let cat_id = cat.category_id.clone();
+                                                    handles.push(tokio::spawn(async move {
+                                                        c.get_live_streams(&cat_id).await.unwrap_or_default()
+                                                    }));
+                                                }
+                                                let mut all_streams = Vec::new();
+                                                for handle in handles {
+                                                    if let Ok(streams) = handle.await {
+                                                        all_streams.extend(streams);
+                                                    }
+                                                }
+                                                {
+                                                    use std::collections::HashSet;
+                                                    let mut seen = HashSet::with_capacity(all_streams.len());
+                                                    all_streams.retain(|s| {
+                                                        let id = crate::api::get_id_str(&s.stream_id);
+                                                        seen.insert(id)
+                                                    });
+                                                }
+                                                let _ = tx.send(AsyncAction::LoadingMessage(format!("Processing {} channels...", all_streams.len()))).await;
+                                                preprocessing::preprocess_streams(&mut all_streams, &favs, &pms, true, &account_name);
+                                                let _ = tx.send(AsyncAction::TotalChannelsLoaded(all_streams)).await;
+                                            });
+                                        }
                                     } else if let Some(client) = &app.current_client {
                                         let client = client.clone();
                                         let tx = tx.clone();
@@ -918,16 +952,21 @@ pub async fn handle_key_event(
                                         let player = player.clone();
                                         let stream_url = url.clone();
                                         let use_default = app.config.use_default_mpv;
+                                        let engine = app.config.preferred_player;
+                                        let smooth = app.config.smooth_motion;
                                         tokio::spawn(async move {
                                             let _ = tx.send(AsyncAction::LoadingMessage("Connecting to stream server...".to_string())).await;
-                                            match player.play(&stream_url, use_default) {
+                                            match player.play(&stream_url, engine, use_default, smooth).await {
                                                 Ok(_) => {
                                                     let _ = tx.send(AsyncAction::LoadingMessage("Handshaking with player...".to_string())).await;
                                                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                                                     let _ = tx.send(AsyncAction::LoadingMessage("Buffering video stream...".to_string())).await;
                                                     match player.wait_for_playback(10000).await {
                                                         Ok(true) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
-                                                        Ok(false) => { let _ = tx.send(AsyncAction::PlayerFailed("Stream failed to start - MPV exited unexpectedly".to_string())).await; }
+                                                        Ok(false) => { 
+                                                            let log_err = player.get_last_error_from_log().unwrap_or_else(|| "MPV exited unexpectedly".to_string());
+                                                            let _ = tx.send(AsyncAction::PlayerFailed(format!("Player failed: {}", log_err))).await; 
+                                                        }
                                                         Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(format!("Playback error: {}", e))).await; }
                                                     }
                                                 }
@@ -1527,7 +1566,7 @@ pub async fn handle_key_event(
                                 let url = match stream.stream_type.as_str() {
                                     "movie" => client.get_vod_url(&id, extension),
                                     "series" => client.get_series_url(&id, extension),
-                                    _ => client.get_stream_url(&id, extension),
+                                    _ => client.get_stream_url(&id, "ts"), // Force TS for live streams
                                 };
 
                                 if stream.stream_type == "movie" || stream.stream_type == "series" {
@@ -1542,14 +1581,19 @@ pub async fn handle_key_event(
                                     let player = player.clone();
                                     let stream_url = url.clone();
                                     let use_default = app.config.use_default_mpv;
+                                    let engine = app.config.preferred_player;
+                                    let smooth = app.config.smooth_motion;
                                     tokio::spawn(async move {
                                         let _ = tx.send(AsyncAction::LoadingMessage("Connecting to stream...".to_string())).await;
-                                        match player.play(&stream_url, use_default) {
+                                        match player.play(&stream_url, engine, use_default, smooth).await {
                                             Ok(_) => {
                                                 let _ = tx.send(AsyncAction::LoadingMessage("Buffering...".to_string())).await;
                                                 match player.wait_for_playback(10000).await {
                                                     Ok(true) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
-                                                    Ok(false) => { let _ = tx.send(AsyncAction::PlayerFailed("Failed to start - MPV exited unexpectedly".to_string())).await; }
+                                                                                                         Ok(false) => { 
+                                                         let log_err = player.get_last_error_from_log().unwrap_or_else(|| "MPV exited unexpectedly".to_string());
+                                                         let _ = tx.send(AsyncAction::PlayerFailed(format!("Player failed: {}", log_err))).await; 
+                                                     }
                                                     Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(format!("Playback error: {}", e))).await; }
                                                 }
                                             }
@@ -1611,27 +1655,39 @@ pub async fn handle_key_event(
                                 app.video_mode_list_state.select(Some(idx));
                             }
                             5 => { 
+                                // Open Player Engine selection dropdown
+                                app.settings_state = SettingsState::PlayerEngineSelection;
+                                let engines = crate::config::PlayerEngine::all();
+                                let idx = engines.iter().position(|e| *e == app.config.preferred_player).unwrap_or(0);
+                                app.player_engine_list_state.select(Some(idx));
+                            }
+                            6 => { 
+                                // Toggle Smooth Motion
+                                app.config.smooth_motion = !app.config.smooth_motion;
+                                let _ = app.config.save();
+                                app.refresh_settings_options();
+                            }
+                            7 => { 
                                 // Open Auto-Refresh selection
                                 app.settings_state = SettingsState::AutoRefreshSelection;
-                                // Options: 0=Off, 1=6h, 2=12h, 3=24h, 4=48h
                                 let idx = match app.config.auto_refresh_hours {
                                     0 => 0,
                                     6 => 1,
                                     12 => 2,
                                     24 => 3,
                                     48 => 4,
-                                    _ => 2, // Default to 12h
+                                    _ => 2,
                                 };
                                 app.auto_refresh_list_state.select(Some(idx));
                             }
-                            6 => { 
+                            8 => { 
                                 // Enable Matrix Rain Screensaver
                                 app.show_matrix_rain = true;
                                 app.matrix_rain_screensaver_mode = true;
                                 app.matrix_rain_start_time = None;
                                 app.matrix_rain_columns.clear();
                             }
-                            7 => { 
+                            9 => { 
                                 app.state_loading = true;
                                 app.loading_message = Some("Checking for updates...".to_string());
                                 let tx = tx.clone();
@@ -1639,7 +1695,7 @@ pub async fn handle_key_event(
                                     crate::setup::check_for_updates(tx, true).await;
                                 });
                             }
-                            8 => { app.settings_state = SettingsState::About; }
+                            10 => { app.settings_state = SettingsState::About; }
                             _ => {}
                         }
                     }
@@ -1746,6 +1802,35 @@ pub async fn handle_key_event(
                         if let Some(idx) = app.video_mode_list_state.selected() {
                             app.config.use_default_mpv = idx == 1; // 0 = Enhanced, 1 = MPV Default
                             let _ = app.config.save();
+                        }
+                        app.settings_state = SettingsState::Main;
+                        app.refresh_settings_options();
+                    }
+                    _ => {}
+                }
+                SettingsState::PlayerEngineSelection => match key.code {
+                    KeyCode::Esc | KeyCode::Backspace => { app.settings_state = SettingsState::Main; }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        let engines = crate::config::PlayerEngine::all();
+                        if let Some(idx) = app.player_engine_list_state.selected() {
+                            let new_idx = if idx == 0 { engines.len() - 1 } else { idx - 1 };
+                            app.player_engine_list_state.select(Some(new_idx));
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        let engines = crate::config::PlayerEngine::all();
+                        if let Some(idx) = app.player_engine_list_state.selected() {
+                            let new_idx = if idx >= engines.len() - 1 { 0 } else { idx + 1 };
+                            app.player_engine_list_state.select(Some(new_idx));
+                        }
+                    }
+                    KeyCode::Enter => {
+                        let engines = crate::config::PlayerEngine::all();
+                        if let Some(idx) = app.player_engine_list_state.selected() {
+                            if idx < engines.len() {
+                                app.config.preferred_player = engines[idx];
+                                let _ = app.config.save();
+                            }
                         }
                         app.settings_state = SettingsState::Main;
                         app.refresh_settings_options();
@@ -2032,13 +2117,18 @@ pub async fn handle_key_event(
                         let tx = tx.clone();
                         let player = player.clone();
                         let use_default = app.config.use_default_mpv;
+                        let engine = app.config.preferred_player;
+                        let smooth = app.config.smooth_motion;
                         tokio::spawn(async move {
-                            match player.play(&url, use_default) {
+                            match player.play(&url, engine, use_default, smooth).await {
                                 Ok(_) => {
-                                    match player.wait_for_playback(10000).await {
-                                        Ok(true) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
-                                        _ => { let _ = tx.send(AsyncAction::PlayerFailed("Failed to start".to_string())).await; }
-                                    }
+                                     match player.wait_for_playback(10000).await {
+                                         Ok(true) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
+                                         _ => { 
+                                             let log_err = player.get_last_error_from_log().unwrap_or_else(|| "Failed to start".to_string());
+                                             let _ = tx.send(AsyncAction::PlayerFailed(log_err)).await; 
+                                         }
+                                     }
                                 }
                                 Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(e.to_string())).await; }
                             }

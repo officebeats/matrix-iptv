@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 use crate::parser::{Quality, ContentType};
-use crate::ui::colors::{CP_GREEN, MATRIX_GREEN};
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 use crate::sports::SportsEvent;
 
 pub fn stylize_channel_name(
@@ -21,10 +21,11 @@ pub fn stylize_channel_name(
     let mut spans = Vec::new();
     
     let (ppv_color, vip_color, raw_color, hd_color, fhd_color, fps_color) = if is_ended {
-        let dim = Color::Rgb(100, 100, 100);
+        let dim = TEXT_DIM;
         (dim, dim, dim, dim, dim, dim)
     } else {
-        (Color::Rgb(255, 105, 180), Color::Yellow, Color::Cyan, Color::Cyan, CP_GREEN, Color::Yellow)
+        // Restrained palette: green accents + white text
+        (Color::Rgb(255, 105, 180), Color::Rgb(255, 200, 80), MATRIX_GREEN, MATRIX_GREEN, MATRIX_GREEN, Color::Rgb(255, 200, 80))
     };
 
     let mut base_style = base_style;
@@ -60,10 +61,10 @@ pub fn stylize_channel_name(
              if !detected_sport_icon.is_empty() { break; }
         }
 
-        // HOME = Matrix Green, AWAY = White (Simple, readable contrast)
+        // Sports matchup: Home green, Away white
         spans.push(Span::styled(format!("{}", event.team1), base_style.fg(MATRIX_GREEN)));
-        spans.push(Span::styled(" vs ", Style::default().fg(Color::Gray)));
-        spans.push(Span::styled(format!("{}", event.team2), base_style.fg(Color::White)));
+        spans.push(Span::styled(" vs ", Style::default().fg(TEXT_SECONDARY)));
+        spans.push(Span::styled(format!("{}", event.team2), base_style.fg(TEXT_PRIMARY)));
         
     } else {
         let words: Vec<&str> = name.split_whitespace().collect();
@@ -83,41 +84,39 @@ pub fn stylize_channel_name(
 
                 match check_word {
                     "MULTI-SUB" | "MULTISUB" | "MULTI-AUDIO" | "MULTIAUDIO" | "MULTILANG" | "MULTI-LANG" | "MULTI" => {
-                        // Skip these tags
                         continue;
                     }
                     "PPV" => {
                         found_ppv = true;
-                        spans.push(Span::styled("(PPV)", base_style.fg(ppv_color).add_modifier(Modifier::BOLD)));
+                        spans.push(Span::styled("PPV", base_style.fg(ppv_color).add_modifier(Modifier::BOLD)));
                     }
                     "VIP" => {
                         found_vip = true;
-                        spans.push(Span::styled("(VIP)", base_style.fg(vip_color).add_modifier(Modifier::BOLD)));
+                        spans.push(Span::styled("VIP", base_style.fg(vip_color).add_modifier(Modifier::BOLD)));
                     }
                     "RAW" => {
-                        spans.push(Span::styled("(RAW)", base_style.fg(raw_color).add_modifier(Modifier::BOLD)));
+                        spans.push(Span::styled("RAW", base_style.fg(raw_color)));
                     }
                     "HD" | "HQ" => {
                         found_hd = true;
-                        spans.push(Span::styled("(HD)", base_style.fg(hd_color).add_modifier(Modifier::BOLD)));
+                        spans.push(Span::styled("HD", base_style.fg(hd_color)));
                     }
                     "FHD" | "1080" | "1080P" => {
                         found_fhd = true;
-                        spans.push(Span::styled("(FHD)", base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
+                        spans.push(Span::styled("FHD", base_style.fg(fhd_color)));
                     }
                     val if ["4K", "UHD", "HEVC"].contains(&val) => {
                         found_4k = true;
-                        spans.push(Span::styled(format!("({})", val), base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
+                        spans.push(Span::styled(format!("{}", val), base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
                     }
                     val if val.ends_with("FPS") && val.len() > 3 => {
-                        spans.push(Span::styled(format!("({})", val.to_lowercase()), base_style.fg(fps_color).add_modifier(Modifier::BOLD)));
+                        spans.push(Span::styled(format!("{}", val.to_lowercase()), base_style.fg(fps_color)));
                     }
                     _ => {
-                        // Check if this sub-part is a year in parentheses (YYYY) or brackets [YYYY]
                         let is_year = ((sub.starts_with('(') && sub.ends_with(')')) || (sub.starts_with('[') && sub.ends_with(']'))) && sub.len() == 6 && sub[1..5].chars().all(|c| c.is_digit(10));
                         
                         if is_year {
-                            spans.push(Span::styled(format!("{}", sub), Style::default().fg(MATRIX_GREEN)));
+                            spans.push(Span::styled(format!("{}", sub), Style::default().fg(TEXT_SECONDARY)));
                         } else {
                             if detected_sport_icon.is_empty() {
                                 detected_sport_icon = match check_word {
@@ -144,25 +143,23 @@ pub fn stylize_channel_name(
         }
     }
 
-    // Icon insertion removed here as we handle it in panes.rs for better categorization
-
     if is_vip && !found_vip {
-         spans.push(Span::styled(" (VIP)", base_style.fg(vip_color).add_modifier(Modifier::BOLD)));
+         spans.push(Span::styled(" VIP", base_style.fg(vip_color).add_modifier(Modifier::BOLD)));
     }
     
     if let Some(ct) = content_type {
         if ct == ContentType::PPV && !found_ppv {
-             spans.push(Span::styled(" (PPV)", base_style.fg(ppv_color).add_modifier(Modifier::BOLD)));
+             spans.push(Span::styled(" PPV", base_style.fg(ppv_color).add_modifier(Modifier::BOLD)));
         }
     }
     
     if let Some(q) = quality {
         if (q == Quality::UHD4K) && !found_4k {
-             spans.push(Span::styled(" (4K)", base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
+             spans.push(Span::styled(" 4K", base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
         } else if (q == Quality::FHD) && !found_fhd {
-             spans.push(Span::styled(" (FHD)", base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
+             spans.push(Span::styled(" FHD", base_style.fg(fhd_color)));
         } else if (q == Quality::HD) && !found_hd {
-             spans.push(Span::styled(" (HD)", base_style.fg(hd_color).add_modifier(Modifier::BOLD)));
+             spans.push(Span::styled(" HD", base_style.fg(hd_color)));
         }
     }
 
@@ -170,48 +167,24 @@ pub fn stylize_channel_name(
     (spans, icon_ret)
 }
 
-/// Renders a "Composite" double border: Outer line is White, Inner line is Matrix Green.
-/// Since a single terminal cell cannot have two colors, we simulate this by nesting blocks.
-pub fn render_composite_block(f: &mut Frame, area: Rect, title: Option<&str>) -> Rect {
-    // 1. Draw outer White border (The "Outer" line of the double effect)
-    let outer_block = Block::default()
+/// Modern rounded border box (Claude Code / Gemini CLI style)
+pub fn render_matrix_box(f: &mut Frame, area: Rect, title: &str, border_color: Color) -> Rect {
+    let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::White));
-    
-    let inner_area = outer_block.inner(area);
-    f.render_widget(outer_block, area);
+        .border_style(Style::default().fg(border_color))
+        .title(Span::styled(
+            format!(" {} ", title.trim().trim_matches('/')),
+            Style::default().fg(border_color).add_modifier(Modifier::BOLD)
+        ));
 
-    // 2. Draw inner Matrix Green border (The "Inner" line of the double effect)
-    let mut inner_block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Plain)
-        .border_style(Style::default().fg(MATRIX_GREEN));
-
-    if let Some(t) = title {
-        inner_block = inner_block.title(t);
-    }
-
-    let final_content_area = inner_block.inner(inner_area);
-    f.render_widget(inner_block, inner_area);
-
-    final_content_area
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    inner
 }
 
-/// A specialized version for the main layout borders that uses the composite style.
-pub fn render_matrix_box(f: &mut Frame, area: Rect, title: &str, border_color: Color) -> Rect {
-    // If border_color is MATRIX_GREEN, we use the composite style.
-    // Otherwise, we fall back to standard block to avoid breaking other themes (if any).
-    if border_color == MATRIX_GREEN {
-        render_composite_block(f, area, Some(title))
-    } else {
-        let block = Block::default()
-            .title(title)
-            .borders(Borders::ALL)
-            .border_type(BorderType::Double)
-            .border_style(Style::default().fg(border_color));
-        let inner = block.inner(area);
-        f.render_widget(block, area);
-        inner
-    }
+/// Deprecated: Mapped to standard modern box
+pub fn render_composite_block(f: &mut Frame, area: Rect, title: Option<&str>) -> Rect {
+    let t = title.unwrap_or("");
+    render_matrix_box(f, area, t, SOFT_GREEN)
 }

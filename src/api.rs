@@ -3,6 +3,7 @@ use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
 use once_cell::sync::Lazy;
 
+
 static FUZZY_MATCHER: Lazy<SkimMatcherV2> = Lazy::new(SkimMatcherV2::default);
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -279,14 +280,15 @@ impl XtreamClient {
         };
 
         // Build client with User-Agent and timeouts
+        // Updated to mimic Chrome to avoid provider blocking
         let builder = reqwest::Client::builder()
-            .user_agent("IPTV Smarters Pro")
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .danger_accept_invalid_certs(true);
         
         #[cfg(not(target_arch = "wasm32"))]
         let builder = builder
             .timeout(std::time::Duration::from_secs(60))
-            .connect_timeout(std::time::Duration::from_secs(10))
+            .connect_timeout(std::time::Duration::from_secs(30)) // Increased to 30s
             .tcp_keepalive(std::time::Duration::from_secs(60))
             .gzip(true)
             .brotli(true);
@@ -324,10 +326,10 @@ impl XtreamClient {
         // If System DNS, skip custom resolver
         if dns_provider == DnsProvider::System {
             let client = reqwest::Client::builder()
-                .user_agent("IPTV Smarters Pro")
+                .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                 .danger_accept_invalid_certs(true)
                 .timeout(std::time::Duration::from_secs(60))
-                .connect_timeout(std::time::Duration::from_secs(10))
+                .connect_timeout(std::time::Duration::from_secs(30))
                 .tcp_keepalive(std::time::Duration::from_secs(60))
                 .gzip(true)
                 .brotli(true)
@@ -397,11 +399,11 @@ impl XtreamClient {
         }
 
         let client = reqwest::Client::builder()
-            .user_agent("IPTV Smarters Pro")
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .danger_accept_invalid_certs(true)
             .dns_resolver(Arc::new(DohResolver(async_resolver)))
             .timeout(std::time::Duration::from_secs(60))
-            .connect_timeout(std::time::Duration::from_secs(10))
+            .connect_timeout(std::time::Duration::from_secs(30))
             .tcp_keepalive(std::time::Duration::from_secs(60))
             .gzip(true)
             .brotli(true)
@@ -425,13 +427,15 @@ impl XtreamClient {
         
         let resp = self.client.get(&url).send().await.map_err(|e| {
             use crate::errors::ConnectionStage;
+            let err_str = e.to_string().to_lowercase();
             
-            if e.is_request() && e.to_string().contains("dns") {
+            // Prioritize DNS detection as it's the most common failure point with custom resolvers
+            if err_str.contains("dns") || err_str.contains("resolution") || err_str.contains("resolve") {
                 crate::errors::IptvError::DnsResolution(self.base_url.clone(), e.to_string())
-            } else if e.is_connect() {
-                crate::errors::IptvError::ConnectionFailed(ConnectionStage::TcpConnection, e.to_string())
             } else if e.is_timeout() {
                 crate::errors::IptvError::ConnectionTimeout(self.base_url.clone(), 60)
+            } else if e.is_connect() {
+                crate::errors::IptvError::ConnectionFailed(ConnectionStage::TcpConnection, e.to_string())
             } else {
                 crate::errors::IptvError::ConnectionFailed(ConnectionStage::HttpHandshake, e.to_string())
             }
@@ -519,17 +523,44 @@ impl XtreamClient {
                 self.base_url, self.username, self.password, category_id
             )
         };
-        let resp = self.client.get(&url).send().await
+
+        // Resilient Fetching: For the "ALL" category, use a higher timeout and 
+        // handle potential decompression issues by disabling compression on retry if it fails.
+        let is_all = category_id == "ALL";
+        let timeout = if is_all { 120 } else { 60 };
+        
+        let resp = self.client.get(&url)
+            .timeout(std::time::Duration::from_secs(timeout))
+            .send().await
             .map_err(|e| {
                 let mut msg = format!("Failed to fetch live streams (category {}): {}", category_id, e);
                 if e.is_connect() { msg = format!("Connection failed: {}", e); }
-                if e.is_timeout() { msg = format!("Request timed out: {}", e); }
+                if e.is_timeout() { msg = format!("Request timed out ({}s): {}", timeout, e); }
                 if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error: {}", e); }
                 anyhow::anyhow!(msg)
             })?;
         
-        let bytes = resp.bytes().await
-            .map_err(|e| anyhow::anyhow!("Failed to read live streams body (category {}): {}", category_id, e))?;
+        let bytes = match resp.bytes().await {
+            Ok(b) => b,
+            Err(_e) if is_all => {
+                // If decoding compressed body fails for ALL, OR if connection was reset/truncated,
+                // retry with no compression and a fresh client instance.
+                let builder = reqwest::Client::builder()
+                    .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .danger_accept_invalid_certs(true)
+                    .timeout(std::time::Duration::from_secs(120))
+                    .gzip(false)
+                    .brotli(false);
+
+                let no_comp_client = builder.build().unwrap_or_else(|_| self.client.clone());
+                let resp = no_comp_client.get(&url)
+                    .header("Accept-Encoding", "identity")
+                    .send().await
+                    .map_err(|e| anyhow::anyhow!("Decompression/Truncation retry failed: {}", e))?;
+                resp.bytes().await.map_err(|e| anyhow::anyhow!("Failed to read raw body on retry: {}", e))?
+            }
+            Err(e) => return Err(anyhow::anyhow!("Failed to read live streams body (category {}): {}", category_id, e)),
+        };
 
         if bytes.is_empty() || bytes == "{}" || bytes == "null" {
             return Ok(Vec::new());
@@ -600,32 +631,65 @@ impl XtreamClient {
     }
 
     pub async fn get_vod_streams(&self, category_id: &str) -> Result<Vec<Stream>, anyhow::Error> {
-        let url = format!(
-            "{}/player_api.php?username={}&password={}&action=get_vod_streams&category_id={}",
-            self.base_url, self.username, self.password, category_id
-        );
-        let resp = self.client.get(&url).send().await
-            .map_err(|e| {
-                let mut msg = format!("Failed to fetch VOD streams (category {}): {}", category_id, e);
-                if e.is_connect() { msg = format!("Connection failed: {}", e); }
-                if e.is_timeout() { msg = format!("Request timed out: {}", e); }
-                if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error: {}", e); }
-                anyhow::anyhow!(msg)
-            })?;
+        // Implementation with retry logic for VOD
+        let mut retry_count = 0;
+        let max_retries = 3;
         
-        let bytes = resp.bytes().await
-            .map_err(|e| anyhow::anyhow!("Failed to read VOD streams body (category {}): {}", category_id, e))?;
+        loop {
+            let url = format!(
+                "{}/player_api.php?username={}&password={}&action=get_vod_streams&category_id={}",
+                self.base_url, self.username, self.password, category_id
+            );
+            
+            let client = if retry_count > 0 {
+                // Disable compression on retry to handle truncation issues
+                reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(90))
+                    .gzip(false)
+                    .brotli(false)
+                    .build().unwrap_or(self.client.clone())
+            } else {
+                self.client.clone()
+            };
 
-        if bytes.is_empty() || bytes == "{}" || bytes == "null" {
-            return Ok(Vec::new());
+            let resp = client.get(&url).send().await
+                .map_err(|e| {
+                    let mut msg = format!("Failed to fetch VOD streams (category {}): {}", category_id, e);
+                    if e.is_connect() { msg = format!("Connection failed: {}", e); }
+                    if e.is_timeout() { msg = format!("Request timed out: {}", e); }
+                    anyhow::anyhow!(msg)
+                })?;
+            
+            let bytes = match resp.bytes().await {
+                Ok(b) => b,
+                Err(e) => {
+                    if retry_count < max_retries {
+                        retry_count += 1;
+                        continue;
+                    }
+                    return Err(anyhow::anyhow!("Failed to read VOD streams body (category {}): {}", category_id, e));
+                }
+            };
+
+            if bytes.is_empty() || bytes == "{}" || bytes == "null" {
+                return Ok(Vec::new());
+            }
+
+            let streams_res = tokio::task::spawn_blocking(move || {
+                serde_json::from_slice::<Vec<Stream>>(&bytes)
+            }).await;
+
+            match streams_res {
+                Ok(Ok(streams)) => return Ok(streams),
+                _ => {
+                    if retry_count < max_retries {
+                        retry_count += 1;
+                        continue;
+                    }
+                    return Err(anyhow::anyhow!("Failed to parse VOD streams JSON after {} retries", retry_count));
+                }
+            }
         }
-
-        let streams = tokio::task::spawn_blocking(move || {
-            serde_json::from_slice::<Vec<Stream>>(&bytes)
-        }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
-          .map_err(|e| anyhow::anyhow!("Failed to parse VOD streams JSON (category {}): {}", category_id, e))?;
-
-        Ok(streams)
     }
 
     pub async fn get_vod_streams_all(&self) -> Result<Vec<Stream>, anyhow::Error> {

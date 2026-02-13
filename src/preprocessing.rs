@@ -89,19 +89,20 @@ pub fn preprocess_categories(
         keep
     });
 
-    // 2. Clean names
-    let should_clean = use_merica; // Only clean names if in 'Merica mode
-    for c in cats.iter_mut() {
-        c.clean_name = if should_clean {
-            crate::parser::clean_american_name(&c.category_name)
+    // 2. Process (Clean names & Metadata) - Parallelized
+    use rayon::prelude::*;
+    cats.par_iter_mut().for_each(|c| {
+        if use_merica {
+            c.clean_name = crate::parser::clean_american_name(&c.category_name);
+            c.category_name = c.clean_name.clone(); // Update for display
         } else {
-            c.category_name.clone()
-        };
+            c.clean_name = c.category_name.clone();
+        }
         c.search_name = c.clean_name.to_lowercase();
-    }
+    });
 
-    // 3. Sort
-    cats.sort_by(|a, b| {
+    // 3. Sort - Parallelized
+    cats.par_sort_by(|a, b| {
         if a.category_id == "ALL" { return std::cmp::Ordering::Less; }
         if b.category_id == "ALL" { return std::cmp::Ordering::Greater; }
         let a_fav = favorites.contains(&a.category_id);
@@ -168,10 +169,11 @@ pub fn preprocess_streams(
     // 2. Process (Clean names & Metadata) - Parallelized
     let should_clean = use_merica;
     streams.par_iter_mut().for_each(|s| {
-        s.clean_name = if should_clean {
-            crate::parser::clean_american_name(&s.name)
+        if should_clean {
+            s.clean_name = crate::parser::clean_american_name(&s.name);
+            s.name = s.clean_name.clone(); // Critical: Update name for display consistency
         } else {
-            s.name.clone()
+            s.clean_name = s.name.clone();
         };
         
         // Sports Mode Icon Prefixing

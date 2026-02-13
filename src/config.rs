@@ -5,6 +5,31 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 
 
+
+/// Player engine options
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
+pub enum PlayerEngine {
+    Mpv,
+    #[default]
+    Vlc,
+}
+
+impl PlayerEngine {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            PlayerEngine::Mpv => "MPV (High Performance)",
+            PlayerEngine::Vlc => "VLC (High Stability)",
+        }
+    }
+
+    pub fn all() -> &'static [PlayerEngine] {
+        &[
+            PlayerEngine::Mpv,
+            PlayerEngine::Vlc,
+        ]
+    }
+}
+
 /// DNS-over-HTTPS provider options
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
 pub enum DnsProvider {
@@ -164,6 +189,12 @@ pub struct AppConfig {
     #[serde(default)]
     pub use_default_mpv: bool,  // Use default MPV settings instead of optimized
     
+    #[serde(default)]
+    pub preferred_player: PlayerEngine,
+
+    #[serde(default)]
+    pub smooth_motion: bool, // Enable high-frame-rate deinterlacing (Bob) for VLC
+    
     /// Auto-refresh playlist if older than this many hours. 0 = disabled.
     #[serde(default = "default_auto_refresh_hours")]
     pub auto_refresh_hours: u32,
@@ -187,6 +218,8 @@ impl Default for AppConfig {
             processing_modes: Vec::new(),
             dns_provider: DnsProvider::default(),
             use_default_mpv: use_default_mpv_default,
+            preferred_player: PlayerEngine::Vlc,
+            smooth_motion: true, // Default to smoothing ON for better UX
             auto_refresh_hours: 12,
         }
     }

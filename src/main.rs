@@ -54,7 +54,7 @@ async fn main() -> Result<(), anyhow::Error> {
         setup::check_and_install_dependencies()?;
         let player = player::Player::new();
         println!("Playing: {}", url);
-        player.play(&url, false)?; // Use optimized settings for CLI play
+        player.play(&url, matrix_iptv_lib::config::PlayerEngine::Vlc, false, true).await?; // Use optimized VLC with smoothing for CLI play
         return Ok(());
     }
 

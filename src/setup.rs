@@ -14,6 +14,15 @@ const MPV_CANDIDATE_PATHS: &[&str] = &[
     "/snap/bin/mpv",            // Snap on Linux
 ];
 
+/// Common locations where vlc might be installed on macOS/Linux
+#[cfg(not(target_arch = "wasm32"))]
+const VLC_CANDIDATE_PATHS: &[&str] = &[
+    "/Applications/VLC.app/Contents/MacOS/VLC", // macOS Standard
+    "/usr/bin/vlc",                             // Linux Standard
+    "/usr/local/bin/vlc",                       // Manual Install
+    "/snap/bin/vlc",                            // Snap on Linux
+];
+
 /// Checks if a given path points to an executable mpv binary
 #[cfg(not(target_arch = "wasm32"))]
 fn is_valid_mpv_at_path(path: &str) -> bool {
@@ -66,6 +75,43 @@ pub fn get_mpv_path() -> Option<String> {
     None
 }
 
+/// Returns the path to vlc executable, searching common locations if not in PATH
+#[cfg(not(target_arch = "wasm32"))]
+pub fn get_vlc_path() -> Option<String> {
+    // First, try standard PATH lookup
+    if Command::new("vlc")
+        .arg("--version")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+    {
+        return Some("vlc".to_string());
+    }
+    
+    // Windows specific common paths
+    if cfg!(windows) {
+        let win_paths = [
+            "C:\\Program Files\\VideoLAN\\VLC\\vlc.exe",
+            "C:\\Program Files (x86)\\VideoLAN\\VLC\\vlc.exe",
+        ];
+        for path in win_paths {
+            if Path::new(path).exists() {
+                return Some(path.to_string());
+            }
+        }
+    }
+    
+    // Fallback: search common installation paths
+    for candidate in VLC_CANDIDATE_PATHS {
+        let p = Path::new(candidate);
+        if p.exists() && p.is_file() {
+            return Some(candidate.to_string());
+        }
+    }
+    
+    None
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub fn check_and_install_dependencies() -> Result<(), anyhow::Error> {
     print!("Checking dependencies... ");
@@ -73,51 +119,44 @@ pub fn check_and_install_dependencies() -> Result<(), anyhow::Error> {
 
     if let Some(mpv_path) = get_mpv_path() {
         if mpv_path == "mpv" {
-            println!("✓ mpv found in PATH.");
+            print!("✓ mpv found. ");
         } else {
-            println!("✓ mpv found at: {}", mpv_path);
+            print!("✓ mpv found at: {}. ", mpv_path);
         }
-        return Ok(());
+    } else {
+        println!("\n✗ mpv NOT found.");
+        if cfg!(target_os = "windows") {
+            println!("Attempting to install mpv using winget...");
+            install_mpv_windows()?;
+        } else if cfg!(target_os = "macos") {
+            println!("Attempting to install mpv using homebrew...");
+            install_mpv_macos()?;
+        }
     }
 
-    println!("✗ mpv NOT found.");
-
-    if cfg!(target_os = "windows") {
-        println!("Attempting to install mpv using winget...");
-        install_mpv_windows()?;
-    } else if cfg!(target_os = "macos") {
-        println!("Attempting to install mpv using homebrew...");
-        install_mpv_macos()?;
-    } else {
-        println!(
-            "Please install mpv manually (e.g., 'sudo apt install mpv')."
-        );
-        return Err(anyhow::anyhow!(
-            "mpv is required but not found.\n\n\
-            Searched locations:\n  - PATH\n  {}\n\n\
-            On macOS with Homebrew, try: brew install mpv\n\
-            On Linux, try: sudo apt install mpv",
-            MPV_CANDIDATE_PATHS.join("\n  - ")
-        ));
-    }
-
-    // Double check after installation
-    if get_mpv_path().is_some() {
-        println!("✓ mpv install verified.");
-        Ok(())
-    } else {
-        let hint = if cfg!(target_os = "macos") {
-            "\n\nHint: On Apple Silicon, Homebrew installs to /opt/homebrew/bin.\n\
-             You may need to add this to your shell profile:\n\
-             export PATH=\"/opt/homebrew/bin:$PATH\""
+    if let Some(vlc_path) = get_vlc_path() {
+        if vlc_path == "vlc" {
+            println!("✓ vlc found.");
         } else {
-            ""
-        };
-        Err(anyhow::anyhow!(
-            "mpv was installed but still not found. You may need to restart your terminal or add it to PATH manually.{}", 
-            hint
-        ))
+            println!("✓ vlc found at: {}", vlc_path);
+        }
+    } else {
+        println!("\n✗ vlc NOT found.");
+        if cfg!(target_os = "windows") {
+            println!("Attempting to install vlc using winget...");
+            install_vlc_windows()?;
+        } else if cfg!(target_os = "macos") {
+            println!("Attempting to install vlc using homebrew...");
+            install_vlc_macos()?;
+        }
     }
+
+    Ok(())
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn get_vlc_path() -> Option<String> {
+    None
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -281,6 +320,48 @@ fn install_mpv_windows() -> Result<(), anyhow::Error> {
         Ok(())
     } else {
         Err(anyhow::anyhow!("Failed to install mpv via winget."))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn install_vlc_macos() -> Result<(), anyhow::Error> {
+    let brew_path = match find_brew() {
+        Some(path) => path,
+        None => install_homebrew()?,
+    };
+    
+    println!("Installing vlc via Homebrew Cask...");
+    let status = Command::new(&brew_path)
+        .args(&["install", "--cask", "vlc"])
+        .status()?;
+
+    if status.success() {
+        println!("✓ vlc installed successfully.");
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Failed to install vlc via Homebrew."))
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn install_vlc_windows() -> Result<(), anyhow::Error> {
+    println!("Running: winget install -e --id VideoLAN.VLC --accept-source-agreements --accept-package-agreements");
+    let status = Command::new("winget")
+        .args(&[
+            "install",
+            "-e",
+            "--id",
+            "VideoLAN.VLC",
+            "--accept-source-agreements",
+            "--accept-package-agreements",
+        ])
+        .status()?;
+
+    if status.success() {
+        println!("✓ vlc installed successfully.");
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Failed to install vlc via winget."))
     }
 }
 

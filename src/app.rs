@@ -1,6 +1,8 @@
 use crate::api::{Category, ServerInfo, Stream, UserInfo, IptvClient};
 use crate::config::AppConfig;
 use crate::errors::{SearchState, LoadingProgress};
+use std::sync::Arc;
+use rayon::prelude::*;
 // Parser imports removed as processing moved to background tasks in main.rs
 use ratatui::layout::Rect;
 use ratatui::widgets::ListState;
@@ -129,37 +131,37 @@ pub struct App {
     pub current_client: Option<IptvClient>,
 
     // Categories
-    pub all_categories: Vec<Category>,
-    pub categories: Vec<Category>,
+    pub all_categories: Vec<Arc<Category>>,
+    pub categories: Vec<Arc<Category>>,
     pub selected_category_index: usize,
     pub category_list_state: ListState,
 
     // Streams
-    pub all_streams: Vec<Stream>,
-    pub streams: Vec<Stream>,
+    pub all_streams: Vec<Arc<Stream>>,
+    pub streams: Vec<Arc<Stream>>,
     pub selected_stream_index: usize,
     pub stream_list_state: ListState,
 
     // VOD Categories
-    pub all_vod_categories: Vec<Category>,
-    pub vod_categories: Vec<Category>,
+    pub all_vod_categories: Vec<Arc<Category>>,
+    pub vod_categories: Vec<Arc<Category>>,
     pub selected_vod_category_index: usize,
     pub vod_category_list_state: ListState,
 
     // VOD Streams
-    pub all_vod_streams: Vec<Stream>,
-    pub vod_streams: Vec<Stream>,
+    pub all_vod_streams: Vec<Arc<Stream>>,
+    pub vod_streams: Vec<Arc<Stream>>,
     pub selected_vod_stream_index: usize,
     pub vod_stream_list_state: ListState,
 
     // Series Data
-    pub all_series_categories: Vec<Category>,
-    pub series_categories: Vec<Category>,
+    pub all_series_categories: Vec<Arc<Category>>,
+    pub series_categories: Vec<Arc<Category>>,
     pub selected_series_category_index: usize,
     pub series_category_list_state: ListState,
 
-    pub all_series_streams: Vec<Stream>, // Series are treated as 'Streams' for listing
-    pub series_streams: Vec<Stream>,
+    pub all_series_streams: Vec<Arc<Stream>>, // Series are treated as 'Streams' for listing
+    pub series_streams: Vec<Arc<Stream>>,
     pub selected_series_stream_index: usize,
     pub series_stream_list_state: ListState,
 
@@ -171,9 +173,9 @@ pub struct App {
     pub current_vod_info: Option<crate::api::VodInfo>,
     
     // Global caches for "ALL" categories
-    pub global_all_streams: Vec<Stream>,
-    pub global_all_vod_streams: Vec<Stream>,
-    pub global_all_series_streams: Vec<Stream>,
+    pub global_all_streams: Vec<Arc<Stream>>,
+    pub global_all_vod_streams: Vec<Arc<Stream>>,
+    pub global_all_series_streams: Vec<Arc<Stream>>,
 
     // Settings
     pub playlist_mode_list_state: ListState,
@@ -193,6 +195,9 @@ pub struct App {
 
     // Video Mode selection
     pub video_mode_list_state: ListState,
+
+    // Player Engine selection
+    pub player_engine_list_state: ListState,
 
     // Auto-Refresh selection
     pub auto_refresh_list_state: ListState,
@@ -259,7 +264,7 @@ pub struct App {
     pub focus_timestamp: Option<f64>,
 
     // Global Search
-    pub global_search_results: Vec<Stream>,
+    pub global_search_results: Vec<Arc<Stream>>,
     pub global_search_list_state: ListState,
 
     // Group Management
@@ -309,6 +314,7 @@ pub enum SettingsState {
     ManageAccounts,
     DnsSelection,
     VideoModeSelection,
+    PlayerEngineSelection,
     PlaylistModeSelection,
     AutoRefreshSelection,
     About,
@@ -435,6 +441,7 @@ impl App {
             timezone_list_state: ListState::default(),
             dns_list_state: ListState::default(),
             video_mode_list_state: ListState::default(),
+            player_engine_list_state: ListState::default(),
             auto_refresh_list_state: ListState::default(),
 
             active_pane: Pane::Categories,
@@ -585,6 +592,14 @@ impl App {
                 }
             ),
             format!(
+                "Player Engine: {}",
+                self.config.preferred_player.display_name()
+            ),
+            format!(
+                "Smooth Motion (VLC): {}",
+                if self.config.smooth_motion { "ON" } else { "OFF" }
+            ),
+            format!(
                 "Auto-Refresh: {}",
                 if self.config.auto_refresh_hours == 0 {
                     "Disabled".to_string()
@@ -603,7 +618,9 @@ impl App {
             "Set your local timezone for accurate program scheduling.".to_string(),
             "Playlist Mode: Change how playlists are processed and displayed. e.g. 'merica mode for US sports, Sports mode for global athletics, etc.".to_string(),
             "Choose DNS provider for network requests. Quad9 recommended for privacy.".to_string(),
-            "Enhanced = Interpolation, upscaling, and soap opera effect for smoother video. MPV Default = Standard MPV settings with no enhancements.".to_string(),
+            "Enhanced = Interpolation/Upscaling (MPV only). MPV Default = No enhancements.".to_string(),
+            "Switch between MPV (High Performance) and VLC (High Stability) playback engines.".to_string(),
+            "VLC ONLY: Enables Bob-interpolation to double the perceived frame-rate of live TV.".to_string(),
             "How often to automatically refresh playlist data when logging in. Set to 0 to disable.".to_string(),
             "Launch the iconic Matrix digital rain animation.".to_string(),
             "Check if a newer version of Matrix IPTV is available for download.".to_string(),
@@ -619,11 +636,11 @@ impl App {
         self.config.accounts.get(self.selected_account_index)
     }
 
-    pub fn get_selected_category(&self) -> Option<&Category> {
+    pub fn get_selected_category(&self) -> Option<&Arc<Category>> {
         self.categories.get(self.selected_category_index)
     }
 
-    pub fn get_selected_stream(&self) -> Option<&Stream> {
+    pub fn get_selected_stream(&self) -> Option<&Arc<Stream>> {
         self.streams.get(self.selected_stream_index)
     }
 
@@ -902,32 +919,15 @@ impl App {
         let query = self.search_state.query.to_lowercase();
         let is_merica = self.config.playlist_mode.is_merica_variant();
 
-        // Debounce search to avoid frequent updates
-        if !self.search_state.should_search(&query, 300) {
-            return;
-        }
-
-        // Add query to search history
-        if !query.is_empty() {
-            self.search_state.add_to_history(query.clone());
-        }
-
         match self.current_screen {
             CurrentScreen::Categories | CurrentScreen::Streams => {
                 match self.active_pane {
                     Pane::Categories => {
-                        self.categories = self
-                            .all_categories
-                            .iter()
+                        self.categories = self.all_categories.par_iter()
                             .filter(|c| {
                                 c.search_name.contains(&query) && (!is_merica || c.is_american)
                             })
-                            .map(|c| {
-                                if !is_merica { return c.clone(); }
-                                let mut c_mod = c.clone();
-                                c_mod.category_name = c_mod.clean_name.clone();
-                                c_mod
-                            })
+                            .cloned()
                             .collect();
                         self.selected_category_index = 0;
                         if !self.categories.is_empty() {
@@ -937,38 +937,33 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        let filtered: Vec<Stream> = if query.is_empty() {
-                            self.all_streams.iter()
+                        if query.is_empty() {
+                            self.streams = self.all_streams.iter()
                                 .filter(|s| !is_merica || s.is_american)
                                 .take(1000)
                                 .cloned()
-                                .collect()
+                                .collect();
                         } else {
-                            // Multi-pass search prioritization
-                            let mut priority = Vec::new();
-                            let mut others = Vec::new();
-
-                            for s in &self.all_streams {
-                                if is_merica && !s.is_american { continue; }
-                                
-                                let lower_name = s.search_name.to_lowercase();
-                                let is_sports = crate::parser::is_sports_content(&s.name);
-                                
-                                // Priority 1: Exact substring match in sports
-                                if is_sports && lower_name.contains(&query) {
-                                    priority.push(s.clone());
-                                } 
-                                // Priority 2: Fuzzy match with high threshold
-                                else if s.fuzzy_match(&query, 60) {
-                                    others.push(s.clone());
-                                }
-                            }
+                            // Multi-pass parallel search prioritization
+                            let mut results: Vec<Arc<Stream>> = self.all_streams.par_iter()
+                                .filter(|s| {
+                                    if is_merica && !s.is_american { return false; }
+                                    
+                                    // Layer 1: Substring match (Fast)
+                                    if s.search_name.contains(&query) { return true; }
+                                    
+                                    // Layer 2: Fuzzy match (Compute heavy, runs in parallel)
+                                    s.fuzzy_match(&query, 60)
+                                })
+                                .cloned()
+                                .collect();
                             
-                            priority.extend(others);
-                            priority.into_iter().take(1000).collect()
-                        };
+                            // Result classification (Sort exact matches higher)
+                            results.sort_by_cached_key(|s| !s.search_name.contains(&query));
+                            
+                            self.streams = results.into_iter().take(1000).collect();
+                        }
 
-                        self.streams = filtered;
                         self.selected_stream_index = 0;
                         if !self.streams.is_empty() {
                             self.stream_list_state.select(Some(0));
@@ -982,18 +977,11 @@ impl App {
             CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
                 match self.active_pane {
                     Pane::Categories => {
-                        self.vod_categories = self
-                            .all_vod_categories
-                            .iter()
+                        self.vod_categories = self.all_vod_categories.par_iter()
                             .filter(|c| {
                                 c.search_name.contains(&query) && (!is_merica || c.is_english)
                             })
-                            .map(|c| {
-                                if !is_merica { return c.clone(); }
-                                let mut c_mod = c.clone();
-                                c_mod.category_name = c_mod.clean_name.clone();
-                                c_mod
-                            })
+                            .cloned()
                             .collect();
                         self.selected_vod_category_index = 0;
                         if !self.vod_categories.is_empty() {
@@ -1003,21 +991,26 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        let filtered: Vec<Stream> = self
-                            .all_vod_streams
-                            .iter()
-                            .filter(|s| {
-                                s.fuzzy_match(&query, 0) && (!is_merica || s.is_english)
-                            })
-                            .take(1000)
-                            .map(|s| {
-                                if !is_merica { return s.clone(); }
-                                let mut s_mod = s.clone();
-                                s_mod.name = s_mod.clean_name.clone();
-                                s_mod
-                            })
-                            .collect();
-                        self.vod_streams = filtered;
+                        if query.is_empty() {
+                            self.vod_streams = self.all_vod_streams.iter()
+                                .filter(|s| !is_merica || s.is_english)
+                                .take(1000)
+                                .cloned()
+                                .collect();
+                        } else {
+                            let mut results: Vec<Arc<Stream>> = self.all_vod_streams.par_iter()
+                                .filter(|s| {
+                                    if is_merica && !s.is_english { return false; }
+                                    if s.search_name.contains(&query) { return true; }
+                                    s.fuzzy_match(&query, 60)
+                                })
+                                .cloned()
+                                .collect();
+                            
+                            results.sort_by_cached_key(|s| !s.search_name.contains(&query));
+                            self.vod_streams = results.into_iter().take(1000).collect();
+                        }
+
                         self.selected_vod_stream_index = 0;
                         if !self.vod_streams.is_empty() {
                             self.vod_stream_list_state.select(Some(0));
@@ -1031,18 +1024,11 @@ impl App {
             CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
                 match self.active_pane {
                     Pane::Categories => {
-                        self.series_categories = self
-                            .all_series_categories
-                            .iter()
+                        self.series_categories = self.all_series_categories.par_iter()
                             .filter(|c| {
                                 c.search_name.contains(&query) && (!is_merica || c.is_english)
                             })
-                            .map(|c| {
-                                if !is_merica { return c.clone(); }
-                                let mut c_mod = c.clone();
-                                c_mod.category_name = c_mod.clean_name.clone();
-                                c_mod
-                            })
+                            .cloned()
                             .collect();
                         self.selected_series_category_index = 0;
                         if !self.series_categories.is_empty() {
@@ -1052,21 +1038,26 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        let filtered: Vec<Stream> = self
-                            .all_series_streams
-                            .iter()
-                            .filter(|s| {
-                                s.fuzzy_match(&query, 0) && (!is_merica || s.is_english)
-                            })
-                            .take(1000)
-                            .map(|s| {
-                                if !is_merica { return s.clone(); }
-                                let mut s_mod = s.clone();
-                                s_mod.name = s_mod.clean_name.clone();
-                                s_mod
-                            })
-                            .collect();
-                        self.series_streams = filtered;
+                        if query.is_empty() {
+                            self.series_streams = self.all_series_streams.iter()
+                                .filter(|s| !is_merica || s.is_english)
+                                .take(1000)
+                                .cloned()
+                                .collect();
+                        } else {
+                            let mut results: Vec<Arc<Stream>> = self.all_series_streams.par_iter()
+                                .filter(|s| {
+                                    if is_merica && !s.is_english { return false; }
+                                    if s.search_name.contains(&query) { return true; }
+                                    s.fuzzy_match(&query, 60)
+                                })
+                                .cloned()
+                                .collect();
+
+                            results.sort_by_cached_key(|s| !s.search_name.contains(&query));
+                            self.series_streams = results.into_iter().take(1000).collect();
+                        }
+
                         self.selected_series_stream_index = 0;
                         if !self.series_streams.is_empty() {
                             self.series_stream_list_state.select(Some(0));
@@ -1078,47 +1069,23 @@ impl App {
                 }
             }
             CurrentScreen::GlobalSearch => {
-                let mut results: Vec<_> = self.global_all_streams
-                    .iter()
-                    .filter(|s| s.fuzzy_match(&query, 0))
-                    .take(100)
-                    .map(|s| {
-                        if !is_merica { return s.clone(); }
-                        let mut s_mod = s.clone();
-                        s_mod.name = s_mod.clean_name.clone();
-                        s_mod
-                    })
-                    .collect();
-
-                if results.len() < 100 {
-                    let movie_results: Vec<_> = self.global_all_vod_streams
-                        .iter()
-                        .filter(|s| s.fuzzy_match(&query, 0))
-                        .take(100 - results.len())
-                        .map(|s| {
-                            if !is_merica { return s.clone(); }
-                            let mut s_mod = s.clone();
-                            s_mod.name = s_mod.clean_name.clone();
-                            s_mod
-                        })
+                let results = if query.is_empty() {
+                    Vec::new()
+                } else {
+                    // Multi-pass prioritized search
+                    let mut hits: Vec<Arc<Stream>> = self.global_all_streams.par_iter()
+                        .filter(|s| s.search_name.contains(&query) || s.fuzzy_match(&query, 70))
+                        .chain(self.global_all_vod_streams.par_iter()
+                            .filter(|s| s.search_name.contains(&query) || s.fuzzy_match(&query, 70)))
+                        .chain(self.global_all_series_streams.par_iter()
+                            .filter(|s| s.search_name.contains(&query) || s.fuzzy_match(&query, 70)))
+                        .cloned()
                         .collect();
-                    results.extend(movie_results);
-                }
 
-                if results.len() < 100 {
-                    let series_results: Vec<_> = self.global_all_series_streams
-                        .iter()
-                        .filter(|s| s.fuzzy_match(&query, 0))
-                        .take(100 - results.len())
-                        .map(|s| {
-                            if !is_merica { return s.clone(); }
-                            let mut s_mod = s.clone();
-                            s_mod.name = s_mod.clean_name.clone();
-                            s_mod
-                        })
-                        .collect();
-                    results.extend(series_results);
-                }
+                    // Prioritize exact substring matches
+                    hits.sort_by_cached_key(|s| !s.search_name.contains(&query));
+                    hits.into_iter().take(100).collect()
+                };
 
                 self.global_search_results = results;
                 self.selected_stream_index = 0;
@@ -1619,18 +1586,18 @@ mod tests {
         app.state_loading = false;
         app.current_screen = CurrentScreen::SeriesCategories;
         app.series_categories = vec![
-            Category {
+            Arc::new(Category {
                 category_id: "1".into(),
                 category_name: "Action".into(),
                 parent_id: serde_json::Value::Null,
                 ..Default::default()
-            },
-            Category {
+            }),
+            Arc::new(Category {
                 category_id: "2".into(),
                 category_name: "Comedy".into(),
                 parent_id: serde_json::Value::Null,
                 ..Default::default()
-            },
+            }),
         ];
         // In real app, the AsyncAction handler sets this to 0
         app.series_category_list_state.select(Some(0));

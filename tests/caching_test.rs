@@ -1,5 +1,6 @@
 use matrix_iptv_lib::api::Stream;
 use matrix_iptv_lib::app::{App, CurrentScreen, Pane};
+use std::sync::Arc;
 
 #[test]
 fn test_stream_caching_logic() {
@@ -15,7 +16,7 @@ fn test_stream_caching_logic() {
         stream_id: serde_json::json!(1),
         ..Default::default()
     };
-    app.all_streams = vec![stream];
+    app.all_streams = vec![Arc::new(stream)];
     
     // Trigger the caching logic
     app.update_search();

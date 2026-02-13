@@ -1,6 +1,7 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use matrix_iptv_lib::app::{App, CurrentScreen};
 use tokio::runtime::Runtime;
+use std::sync::Arc;
 
 fn make_key(code: KeyCode) -> KeyEvent {
     KeyEvent {
@@ -116,7 +117,7 @@ async fn run_qa() {
                         }
 
                         // UI Navigation Logic Test
-                        app.series_categories = cats;
+                        app.series_categories = cats.into_iter().map(Arc::new).collect();
                         app.current_screen = CurrentScreen::SeriesCategories;
                         app.series_category_list_state.select(Some(0)); // Correct Init
 

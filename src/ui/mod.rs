@@ -19,7 +19,7 @@ use ratatui::{
 };
 
 use crate::app::{App, CurrentScreen};
-use crate::ui::colors::MATRIX_GREEN;
+use crate::ui::colors::SOFT_GREEN;
 use crate::ui::utils::calculate_two_column_split;
 
 pub fn ui(f: &mut Frame, app: &mut App) {
@@ -101,10 +101,11 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 }
 
 fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
+    let header_height = if app.search_mode { 3 } else { 2 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // Header
+            Constraint::Length(header_height), // Header
             Constraint::Min(0),     // Content
             Constraint::Length(1), // Footer
         ])
@@ -130,7 +131,7 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                 .split(content_area);
 
             // Categories takes full height on left
-            panes::render_categories_pane(f, app, h_chunks[0], MATRIX_GREEN);
+            panes::render_categories_pane(f, app, h_chunks[0], SOFT_GREEN);
 
             // Check if focused stream is a sports event OR has ESPN score data
             let is_sports_event = app.streams.get(app.selected_stream_index)
@@ -153,11 +154,11 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                     ])
                     .split(h_chunks[1]);
 
-                panes::render_streams_pane(f, app, right_chunks[0], MATRIX_GREEN);
-                panes::render_stream_details_pane(f, app, right_chunks[1], MATRIX_GREEN);
+                panes::render_streams_pane(f, app, right_chunks[0], SOFT_GREEN);
+                panes::render_stream_details_pane(f, app, right_chunks[1], SOFT_GREEN);
             } else {
                 // No sports event: streams takes full right side
-                panes::render_streams_pane(f, app, h_chunks[1], MATRIX_GREEN);
+                panes::render_streams_pane(f, app, h_chunks[1], SOFT_GREEN);
             }
         }
         CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
@@ -192,7 +193,7 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                     .split(content_area);
 
                 panes::render_global_search_pane(f, app, layout_chunks[0]);
-                panes::render_stream_details_pane(f, app, layout_chunks[1], MATRIX_GREEN);
+                panes::render_stream_details_pane(f, app, layout_chunks[1], SOFT_GREEN);
             } else {
                 panes::render_global_search_pane(f, app, content_area);
             }

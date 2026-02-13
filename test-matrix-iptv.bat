@@ -5,7 +5,10 @@ echo [*] DEBUG: Script: %~f0
 echo [*] DEBUG: Workspace: %~dp0
 
 :: Force kill everything to unlock files
-taskkill /F /IM matrix-iptv.exe /IM node.exe /IM mpv.exe 2>nul
+echo [*] Killing previous instances...
+taskkill /F /IM matrix-iptv.exe 2>nul && echo     - Killed matrix-iptv.exe
+taskkill /F /IM node.exe 2>nul && echo     - Killed node.exe
+taskkill /F /IM mpv.exe 2>nul && echo     - Killed mpv.exe
 timeout /t 1 /nobreak >nul
 
 :: Set local target dir to avoid OneDrive sync locks

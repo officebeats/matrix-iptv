@@ -6,40 +6,83 @@ use ratatui::{
     Frame,
 };
 use crate::app::{App, CurrentScreen, Guide, Pane};
-use crate::ui::colors::{MATRIX_GREEN, DARK_GREEN, BRIGHT_GREEN};
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 use crate::ui::utils::centered_rect;
 
 pub fn render_help_popup(f: &mut Frame, area: Rect) {
     let area = centered_rect(60, 60, area);
     f.render_widget(Clear, area);
-    let inner_area = crate::ui::common::render_composite_block(f, area, Some(" // COMMAND_LEGEND "));
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(2)
-        .constraints([
-            Constraint::Length(8),
-            Constraint::Min(0),
-        ])
-        .split(inner_area);
+    let inner_area = crate::ui::common::render_composite_block(f, area, Some("keyboard shortcuts"));
 
-    let shortcuts = vec![
-        "Keyboard Shortcuts:",
-        "",
-        "  /       - Toggle Search",
-        "  Tab     - Switch Panes (Categories/Streams)",
-        "  m       - Switch Mode (Live TV / VOD)",
-        "  f       - Toggle Favorite",
-        "  Enter   - Select / Play",
-        "  j / k   - Navigate Down / Up",
-        "  q       - Quit",
+    let help_text = vec![
+        Line::from(vec![
+            Span::styled("  navigation", Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  ↑↓ / j/k   ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("navigate items", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  ←→ / h/l   ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("switch panes", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  enter       ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("select / confirm", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  esc         ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("back / cancel", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  q           ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("quit", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  features", Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  ctrl+space  ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("search current view", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  f           ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("toggle filter active/all", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  v           ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("toggle favorite", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  m           ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("change content mode", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  R           ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("force refresh data", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  x           ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("settings", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  press esc to close", Style::default().fg(TEXT_DIM)),
+        ]),
     ];
-    let shortcuts_p = Paragraph::new(shortcuts.join("\n")).style(Style::default().fg(ratatui::style::Color::White));
-    f.render_widget(shortcuts_p, chunks[0]);
+
+    f.render_widget(
+        Paragraph::new(help_text).wrap(Wrap { trim: true }),
+        inner_area,
+    );
 }
 
 pub fn render_guide_popup(f: &mut Frame, app: &App, area: Rect) {
-    if let Some(guide) = app.show_guide {
+    if let Some(guide) = &app.show_guide {
         let content = match guide {
             Guide::WhatIsApp => include_str!("../content/what_is_this_app.md"),
             Guide::HowToGetPlaylists => include_str!("../content/how_to_get_playlists.md"),
@@ -48,131 +91,116 @@ pub fn render_guide_popup(f: &mut Frame, app: &App, area: Rect) {
 
         let lines: Vec<Line> = content
             .lines()
-            .map(|l| {
-                if l.is_empty() {
-                    return Line::from("");
-                }
+            .map(|line| {
+                if line.starts_with("# ") {
+                    Line::from(Span::styled(
+                        line.trim_start_matches("# ").trim(),
+                        Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD),
+                    ))
+                } else if line.starts_with("## ") {
+                    Line::from(Span::styled(
+                        line.trim_start_matches("## ").trim(),
+                        Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD),
+                    ))
+                } else if line.starts_with("### ") {
+                    Line::from(Span::styled(
+                        line.trim_start_matches("### ").trim(),
+                        Style::default().fg(SOFT_GREEN).add_modifier(Modifier::BOLD),
+                    ))
+                } else if line.starts_with("- ") || line.starts_with("* ") {
+                    let content = line.trim_start_matches("- ").trim_start_matches("* ");
+                    Line::from(vec![
+                        Span::styled("  ▸ ", Style::default().fg(SOFT_GREEN)),
+                        Span::raw(content.to_string()),
+                    ])
+                } else if line.trim().is_empty() {
+                    Line::from("")
+                } else {
+                    // Parse inline markdown
+                    let mut spans = Vec::new();
+                    let mut current_text = String::new();
+                    let mut chars = line.chars().peekable();
 
-                if l.starts_with("---") {
-                    return Line::from(Span::styled(
-                        "─".repeat(area.width as usize),
-                        Style::default().fg(DARK_GREEN)
-                    ));
-                }
-
-                if l.starts_with("# ") {
-                    return Line::from(Span::styled(
-                        l.trim_start_matches("# ").to_uppercase(),
-                        Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)
-                    ));
-                }
-                
-                if l.starts_with("## ") {
-                    return Line::from(Span::styled(
-                        l.trim_start_matches("## ").to_uppercase(),
-                        Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
-                    ));
-                }
-
-                if l.starts_with("### ") {
-                    return Line::from(Span::styled(
-                        l.trim_start_matches("### ").to_uppercase(),
-                        Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD).add_modifier(Modifier::UNDERLINED)
-                    ));
-                }
-
-                // Robust state-machine based character parser (UTF-8 safe)
-                let mut spans = Vec::new();
-                let mut chars = l.chars().peekable();
-                let mut current_text = String::new();
-
-                while let Some(c) = chars.next() {
-                    match c {
-                        // Check for bold ** or italic *
-                        '*' => {
-                            if chars.peek() == Some(&'*') {
-                                // Bold detected
-                                chars.next(); // Consume second '*'
+                    while let Some(c) = chars.next() {
+                        match c {
+                            '*' => {
                                 if !current_text.is_empty() {
-                                    spans.push(Span::raw(current_text.clone()));
+                                    spans.push(Span::styled(current_text.clone(), Style::default().fg(TEXT_SECONDARY)));
                                     current_text.clear();
                                 }
-                                let mut bold_content = String::new();
-                                while let Some(&nc) = chars.peek() {
-                                    if nc == '*' {
-                                        chars.next();
-                                        if chars.peek() == Some(&'*') {
+                                if chars.peek() == Some(&'*') {
+                                    chars.next();
+                                    let mut bold_content = String::new();
+                                    while let Some(&nc) = chars.peek() {
+                                        if nc == '*' {
+                                            chars.next();
+                                            if chars.peek() == Some(&'*') {
+                                                chars.next();
+                                                break;
+                                            } else {
+                                                bold_content.push('*');
+                                            }
+                                        } else {
+                                            bold_content.push(chars.next().unwrap());
+                                        }
+                                    }
+                                    spans.push(Span::styled(
+                                        bold_content,
+                                        Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
+                                    ));
+                                } else {
+                                    let mut italic_content = String::new();
+                                    while let Some(&nc) = chars.peek() {
+                                        if nc == '*' {
                                             chars.next();
                                             break;
                                         } else {
-                                            bold_content.push('*');
+                                            italic_content.push(chars.next().unwrap());
                                         }
-                                    } else {
-                                        bold_content.push(chars.next().unwrap());
                                     }
+                                    spans.push(Span::styled(
+                                        italic_content,
+                                        Style::default().fg(TEXT_DIM).add_modifier(Modifier::ITALIC)
+                                    ));
                                 }
-                                spans.push(Span::styled(
-                                    bold_content,
-                                    Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
-                                ));
-                            } else {
-                                // Italic detected (single *)
+                            }
+                            '`' => {
                                 if !current_text.is_empty() {
-                                    spans.push(Span::raw(current_text.clone()));
+                                    spans.push(Span::styled(current_text.clone(), Style::default().fg(TEXT_SECONDARY)));
                                     current_text.clear();
                                 }
-                                let mut italic_content = String::new();
+                                let mut code_content = String::new();
                                 while let Some(&nc) = chars.peek() {
-                                    if nc == '*' {
+                                    if nc == '`' {
                                         chars.next();
                                         break;
                                     } else {
-                                        italic_content.push(chars.next().unwrap());
+                                        code_content.push(chars.next().unwrap());
                                     }
                                 }
                                 spans.push(Span::styled(
-                                    italic_content,
-                                    Style::default().fg(ratatui::style::Color::DarkGray).add_modifier(Modifier::ITALIC)
+                                    code_content,
+                                    Style::default().fg(MATRIX_GREEN).bg(ratatui::style::Color::Rgb(20, 20, 20))
                                 ));
                             }
-                        }
-                        // Check for inline code `
-                        '`' => {
-                            if !current_text.is_empty() {
-                                spans.push(Span::raw(current_text.clone()));
-                                current_text.clear();
+                            _ => {
+                                current_text.push(c);
                             }
-                            let mut code_content = String::new();
-                            while let Some(&nc) = chars.peek() {
-                                if nc == '`' {
-                                    chars.next();
-                                    break;
-                                } else {
-                                    code_content.push(chars.next().unwrap());
-                                }
-                            }
-                            spans.push(Span::styled(
-                                code_content,
-                                Style::default().fg(ratatui::style::Color::Cyan).bg(ratatui::style::Color::Rgb(20, 20, 20))
-                            ));
-                        }
-                        _ => {
-                            current_text.push(c);
                         }
                     }
-                }
-                
-                if !current_text.is_empty() {
-                    spans.push(Span::raw(current_text));
-                }
+                    
+                    if !current_text.is_empty() {
+                        spans.push(Span::styled(current_text, Style::default().fg(TEXT_SECONDARY)));
+                    }
 
-                Line::from(spans)
+                    Line::from(spans)
+                }
             })
             .collect();
 
         let area = centered_rect(80, 80, area);
         f.render_widget(Clear, area);
-        let inner_area = crate::ui::common::render_composite_block(f, area, Some(" // SYSTEM_PROTOCOLS "));
+        let inner_area = crate::ui::common::render_composite_block(f, area, Some("guide"));
 
         let p = Paragraph::new(lines)
             .wrap(Wrap { trim: true })
@@ -185,7 +213,7 @@ pub fn render_guide_popup(f: &mut Frame, app: &App, area: Rect) {
 pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
     let area = centered_rect(70, 50, area);
     f.render_widget(Clear, area);
-    let inner = crate::ui::common::render_composite_block(f, area, Some(" // CHOOSE_PATH "));
+    let inner = crate::ui::common::render_composite_block(f, area, Some("select library"));
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -196,48 +224,54 @@ pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
         .margin(1)
         .split(inner);
 
-    let title = Paragraph::new("Select Content Type:")
+    let title = Paragraph::new("Select content type:")
         .alignment(Alignment::Center)
-        .style(Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD));
+        .style(Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD));
     f.render_widget(title, layout[0]);
 
     let selected = app.selected_content_type_index;
     let items: Vec<ListItem> = vec![
-        (0, "(=====)", "LIVE CHANNELS", "[Red Pill]", ratatui::style::Color::Red),
-        (1, "(=====)", "MOVIES (VOD)", "[Blue Pill]", ratatui::style::Color::Cyan),
-        (2, "(=====)", "SERIES (VOD)", "[White Rabbit]", ratatui::style::Color::White),
+        (0, "◆", "Live Channels", "Real-time broadcasts"),
+        (1, "◆", "Movies (VOD)", "On-demand library"),
+        (2, "◆", "TV Series", "Episodic content"),
     ]
     .into_iter()
-    .map(|(i, icon, label, sub, color)| {
+    .map(|(i, icon, label, sub)| {
         let is_selected = i == selected;
-        let icon_style = Style::default().fg(color).add_modifier(Modifier::BOLD);
-        let text_style = if is_selected { Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD) } else { Style::default().fg(ratatui::style::Color::White) };
+        let text_style = if is_selected { Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD) } else { Style::default().fg(TEXT_PRIMARY) };
         ListItem::new(Line::from(vec![
-            Span::styled(format!("  {} ", icon), icon_style),
+            Span::styled(format!("  {} ", icon), Style::default().fg(SOFT_GREEN)),
             Span::styled(label, text_style),
-            Span::styled(format!(" {}", sub), Style::default().fg(color)),
+            Span::styled(format!("  · {}", sub), Style::default().fg(TEXT_SECONDARY)),
         ]))
     })
     .collect();
 
     let mut list_state = ratatui::widgets::ListState::default();
     list_state.select(Some(selected));
-    f.render_stateful_widget(List::new(items).highlight_symbol(">> "), layout[1], &mut list_state);
+    f.render_stateful_widget(
+        List::new(items)
+            .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
+            .highlight_symbol(" ▎"),
+        layout[1],
+        &mut list_state
+    );
 
-    let (quote, color) = match selected {
-        0 => ("\"You take the red pill... you stay in Wonderland,\nand I show you how deep the rabbit hole goes.\"", ratatui::style::Color::Red),
-        1 => ("\"You take the blue pill... the story ends,\nyou wake up in your bed and believe whatever you want to believe.\"", ratatui::style::Color::Cyan),
-        _ => ("\"Follow the white rabbit.\"", ratatui::style::Color::White),
+    let quote = match selected {
+        0 => "Access global live TV streams via IPTV protocol.",
+        1 => "Browse and watch movies from your provider's VOD library.",
+        _ => "Watch TV series and binge-watch seasonal content.",
     };
 
-    f.render_widget(Paragraph::new(quote).alignment(Alignment::Center).wrap(Wrap { trim: true }).style(Style::default().fg(color).add_modifier(Modifier::ITALIC)), layout[2]);
+    f.render_widget(Paragraph::new(quote).alignment(Alignment::Center).wrap(Wrap { trim: true }).style(Style::default().fg(TEXT_SECONDARY)), layout[2]);
 }
+
 pub fn render_error_popup(f: &mut Frame, area: Rect, error: &str) {
     let block = Block::default()
-        .title(Span::styled(" // SYSTEM_ERROR_OVERRIDE ", Style::default().fg(ratatui::style::Color::Red).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(" error ", Style::default().fg(ratatui::style::Color::Rgb(255, 100, 100)).add_modifier(Modifier::BOLD)))
         .borders(Borders::ALL)
-        .border_type(BorderType::Thick)
-        .border_style(Style::default().fg(ratatui::style::Color::Red));
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(ratatui::style::Color::Rgb(255, 100, 100)));
 
     let area = centered_rect(60, 30, area);
     f.render_widget(Clear, area);
@@ -246,19 +280,16 @@ pub fn render_error_popup(f: &mut Frame, area: Rect, error: &str) {
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Min(0), Constraint::Length(3)])
         .split(area);
 
     let error_text = Paragraph::new(error)
-        .style(Style::default().fg(ratatui::style::Color::White))
+        .style(Style::default().fg(TEXT_PRIMARY))
         .wrap(Wrap { trim: true })
         .alignment(Alignment::Center);
 
-    let dismiss_text = Paragraph::new("Press [Esc] to Acknowledge")
-        .style(Style::default().fg(DARK_GREEN))
+    let dismiss_text = Paragraph::new("press esc to dismiss")
+        .style(Style::default().fg(TEXT_DIM))
         .alignment(Alignment::Center);
 
     f.render_widget(error_text, layout[0]);
@@ -268,14 +299,14 @@ pub fn render_error_popup(f: &mut Frame, area: Rect, error: &str) {
 pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
     let area = centered_rect(75, 80, area);
     f.render_widget(Clear, area);
-    let inner = crate::ui::common::render_composite_block(f, area, Some(" // CONTENT_CONFIRMATION "));
+    let inner = crate::ui::common::render_composite_block(f, area, Some("confirm"));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
         .constraints([
-            Constraint::Length(1), // Title
-            Constraint::Min(0),    // Details
-            Constraint::Length(3), // Controls
+            Constraint::Length(1),
+            Constraint::Min(0),
+            Constraint::Length(3),
         ])
         .split(inner);
 
@@ -291,16 +322,15 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
         };
 
         f.render_widget(
-            Paragraph::new(Span::styled(display_title.to_uppercase(), Style::default().fg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD)))
+            Paragraph::new(Span::styled(&display_title, Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)))
                 .alignment(Alignment::Center),
             chunks[0]
         );
     }
 
     let mut details = Vec::new();
-
-    // 1. Try episode-specific info if in series/episodes view
     let mut metadata_found = false;
+
     if app.current_screen == CurrentScreen::SeriesStreams && app.active_pane == Pane::Episodes {
         if !app.series_episodes.is_empty() {
             let ep = &app.series_episodes[app.selected_series_episode_index.min(app.series_episodes.len() - 1)];
@@ -313,7 +343,6 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
         }
     }
 
-    // 2. Fallback/Complement with VOD or Series level info
     if let Some(vod_info) = &app.current_vod_info {
         if let Some(info) = &vod_info.info {
             if let Some(map) = info.as_object() {
@@ -326,16 +355,14 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
     } else if let Some(series_info) = &app.current_series_info {
         if let Some(info) = &series_info.info {
             if let Some(map) = info.as_object() {
-                // For episodes, we might want to append series cast/rating if not already found in episode info
                 if !metadata_found {
                     add_metadata_lines(&mut details, map);
                     metadata_found = true;
                 } else {
-                    // Just add cast if missing from episode info
-                    if !details.iter().any(|l| l.spans.iter().any(|s| s.content.contains("CAST:"))) {
+                    if !details.iter().any(|l| l.spans.iter().any(|s| s.content.contains("cast"))) {
                         if let Some(cast) = map.get("cast").and_then(|v| v.as_str()).or_else(|| map.get("actors").and_then(|v| v.as_str())) {
                             details.push(Line::from(vec![
-                                Span::styled("CAST:    ", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
+                                Span::styled("cast     ", Style::default().fg(TEXT_SECONDARY)),
                                 Span::styled(cast, Style::default().fg(MATRIX_GREEN)),
                             ]));
                         }
@@ -347,7 +374,7 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
 
     if !metadata_found {
         details.push(Line::from(vec![
-            Span::styled("No additional metadata available.", Style::default().fg(DARK_GREEN).add_modifier(Modifier::ITALIC))
+            Span::styled("No additional metadata available.", Style::default().fg(TEXT_DIM))
         ]));
     }
 
@@ -360,10 +387,10 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
 
     let controls = Paragraph::new(vec![
         Line::from(vec![
-            Span::styled(" [Enter] ", Style::default().fg(ratatui::style::Color::Black).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
-            Span::styled(" PLAY NOW   ", Style::default().fg(ratatui::style::Color::White)),
-            Span::styled(" [Esc] ", Style::default().fg(ratatui::style::Color::Black).bg(ratatui::style::Color::Red).add_modifier(Modifier::BOLD)),
-            Span::styled(" ABORT MISSION ", Style::default().fg(ratatui::style::Color::White)),
+            Span::styled("enter", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(" play   ", Style::default().fg(TEXT_PRIMARY)),
+            Span::styled("esc", Style::default().fg(ratatui::style::Color::Rgb(255, 100, 100)).add_modifier(Modifier::BOLD)),
+            Span::styled(" cancel", Style::default().fg(TEXT_PRIMARY)),
         ])
     ]).alignment(Alignment::Center);
 
@@ -371,7 +398,6 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn add_metadata_lines(details: &mut Vec<Line>, info: &serde_json::Map<String, serde_json::Value>) {
-    // Rating
     if let Some(rating) = info.get("rating").and_then(|v| {
         match v {
             serde_json::Value::String(s) => Some(s.clone()),
@@ -380,12 +406,11 @@ fn add_metadata_lines(details: &mut Vec<Line>, info: &serde_json::Map<String, se
         }
     }) {
         details.push(Line::from(vec![
-            Span::styled("RATING:  ", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("⭐ {} / 10", rating), Style::default().fg(ratatui::style::Color::Cyan)),
+            Span::styled("rating   ", Style::default().fg(TEXT_SECONDARY)),
+            Span::styled(format!("{} / 10", rating), Style::default().fg(MATRIX_GREEN)),
         ]));
     }
 
-    // Runtime
     if let Some(runtime) = info.get("runtime").and_then(|v| {
         match v {
             serde_json::Value::String(s) => Some(s.clone()),
@@ -394,36 +419,30 @@ fn add_metadata_lines(details: &mut Vec<Line>, info: &serde_json::Map<String, se
         }
     }) {
         details.push(Line::from(vec![
-            Span::styled("RUNTIME: ", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
-            Span::styled(format!("{} min", runtime), Style::default().fg(ratatui::style::Color::White)),
+            Span::styled("runtime  ", Style::default().fg(TEXT_SECONDARY)),
+            Span::styled(format!("{} min", runtime), Style::default().fg(TEXT_PRIMARY)),
         ]));
     }
 
-    // Release Date
     if let Some(date) = info.get("releasedate").and_then(|v| v.as_str()) {
         details.push(Line::from(vec![
-            Span::styled("RELEASE: ", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
-            Span::styled(date.to_string(), Style::default().fg(ratatui::style::Color::LightYellow)),
+            Span::styled("released ", Style::default().fg(TEXT_SECONDARY)),
+            Span::styled(date.to_string(), Style::default().fg(TEXT_PRIMARY)),
         ]));
     }
 
-    // Cast
     if let Some(cast) = info.get("cast").and_then(|v| v.as_str()).or_else(|| info.get("actors").and_then(|v| v.as_str())) {
         details.push(Line::from(vec![
-            Span::styled("CAST:    ", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled("cast     ", Style::default().fg(TEXT_SECONDARY)),
             Span::styled(cast.to_string(), Style::default().fg(MATRIX_GREEN)),
         ]));
     }
 
     details.push(Line::from(""));
 
-    // Synopsis
     if let Some(plot) = info.get("plot").and_then(|v| v.as_str()).or_else(|| info.get("description").and_then(|v| v.as_str())) {
         details.push(Line::from(vec![
-            Span::styled("SYNOPSIS:", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
-        ]));
-        details.push(Line::from(vec![
-            Span::styled(plot.to_string(), Style::default().fg(MATRIX_GREEN)),
+            Span::styled(plot.to_string(), Style::default().fg(TEXT_SECONDARY)),
         ]));
     }
 }
@@ -431,14 +450,11 @@ fn add_metadata_lines(details: &mut Vec<Line>, info: &serde_json::Map<String, se
 pub fn render_update_prompt(f: &mut Frame, app: &App, area: Rect) {
     let area_rect = centered_rect(65, 45, area);
     f.render_widget(Clear, area_rect);
-    let inner = crate::ui::common::render_composite_block(f, area_rect, Some(" // SYSTEM_UPDATE_DETECTED "));
+    let inner = crate::ui::common::render_composite_block(f, area_rect, Some("update available"));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(3),
-        ])
+        .constraints([Constraint::Min(0), Constraint::Length(3)])
         .split(inner);
 
     let new_version = app.new_version_available.as_deref().unwrap_or("Unknown");
@@ -446,23 +462,20 @@ pub fn render_update_prompt(f: &mut Frame, app: &App, area: Rect) {
 
     let text = vec![
         Line::from(vec![
-            Span::styled("A newer version of Matrix IPTV is available!", Style::default().fg(ratatui::style::Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled("A newer version of Matrix IPTV is available!", Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  Current Version: ", Style::default().fg(DARK_GREEN)),
-            Span::styled(current_version, Style::default().fg(ratatui::style::Color::White)),
+            Span::styled("  current  ", Style::default().fg(TEXT_SECONDARY)),
+            Span::styled(current_version, Style::default().fg(TEXT_PRIMARY)),
         ]),
         Line::from(vec![
-            Span::styled("  New Version:     ", Style::default().fg(DARK_GREEN)),
-            Span::styled(new_version, Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled("  new      ", Style::default().fg(TEXT_SECONDARY)),
+            Span::styled(new_version, Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("The update will be downloaded and installed automatically.", Style::default().fg(ratatui::style::Color::Gray)),
-        ]),
-        Line::from(vec![
-            Span::styled("You will be returned to the app once the update is complete.", Style::default().fg(ratatui::style::Color::Gray)),
+            Span::styled("The update will be downloaded and installed automatically.", Style::default().fg(TEXT_SECONDARY)),
         ]),
     ];
 
@@ -470,33 +483,31 @@ pub fn render_update_prompt(f: &mut Frame, app: &App, area: Rect) {
 
     let controls = Paragraph::new(vec![
         Line::from(vec![
-            Span::styled(" [Enter/U] ", Style::default().fg(ratatui::style::Color::Black).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
-            Span::styled(" UPDATE NOW   ", Style::default().fg(ratatui::style::Color::White)),
-            Span::styled(" [Esc/L] ", Style::default().fg(ratatui::style::Color::Black).bg(ratatui::style::Color::Red).add_modifier(Modifier::BOLD)),
-            Span::styled(" LATER ", Style::default().fg(ratatui::style::Color::White)),
+            Span::styled("enter/u", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(" update   ", Style::default().fg(TEXT_PRIMARY)),
+            Span::styled("esc/l", Style::default().fg(ratatui::style::Color::Rgb(255, 100, 100)).add_modifier(Modifier::BOLD)),
+            Span::styled(" later", Style::default().fg(TEXT_PRIMARY)),
         ])
     ]).alignment(Alignment::Center);
 
     f.render_widget(controls, chunks[1]);
 }
 
-/// Renders a popup for selecting Chromecast devices to cast to
 pub fn render_cast_picker_popup(f: &mut Frame, app: &App, area: Rect) {
     let area = centered_rect(50, 50, area);
     f.render_widget(Clear, area);
-    let inner = crate::ui::common::render_composite_block(f, area, Some(" // CAST_TARGET_SELECTION "));
+    let inner = crate::ui::common::render_composite_block(f, area, Some("cast to device"));
     
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
         .constraints([
-            Constraint::Length(2), // Title
-            Constraint::Min(0),    // Device list
-            Constraint::Length(3), // Controls
+            Constraint::Length(2),
+            Constraint::Min(0),
+            Constraint::Length(3),
         ])
         .split(inner);
 
-    // Title
     let title_text = if app.cast_discovering {
         "⟳ Scanning for Chromecast devices..."
     } else if app.cast_devices.is_empty() {
@@ -507,58 +518,43 @@ pub fn render_cast_picker_popup(f: &mut Frame, app: &App, area: Rect) {
     
     let title = Paragraph::new(title_text)
         .alignment(Alignment::Center)
-        .style(Style::default().fg(BRIGHT_GREEN).add_modifier(Modifier::BOLD));
+        .style(Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD));
     f.render_widget(title, chunks[0]);
 
-    // Device list
     if app.cast_devices.is_empty() {
-        let empty_msg = if app.cast_discovering {
-            "Please wait..."
-        } else {
-            "Press [R] to rescan or check your network"
-        };
+        let empty_msg = if app.cast_discovering { "Please wait..." } else { "Press R to rescan or check your network" };
         let empty = Paragraph::new(empty_msg)
             .alignment(Alignment::Center)
-            .style(Style::default().fg(DARK_GREEN).add_modifier(Modifier::ITALIC));
+            .style(Style::default().fg(TEXT_DIM));
         f.render_widget(empty, chunks[1]);
     } else {
         let items: Vec<ListItem> = app.cast_devices
             .iter()
-            .enumerate()
-            .map(|(i, device)| {
-                let is_selected = i == app.selected_cast_device_index;
-                let icon = if is_selected { "▶ " } else { "  " };
+            .map(|device| {
                 let model_str = device.model.as_deref().unwrap_or("Chromecast");
-                
-                let style = if is_selected {
-                    Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(ratatui::style::Color::White)
-                };
-                
                 ListItem::new(Line::from(vec![
-                    Span::styled(icon, style),
-                    Span::styled(&device.name, style),
-                    Span::styled(format!("  ({})", model_str), Style::default().fg(DARK_GREEN)),
+                    Span::styled("  ◆ ", Style::default().fg(SOFT_GREEN)),
+                    Span::styled(&device.name, Style::default().fg(TEXT_PRIMARY)),
+                    Span::styled(format!("  ({})", model_str), Style::default().fg(TEXT_DIM)),
                 ]))
             })
             .collect();
 
         let mut list_state = app.cast_device_list_state.clone();
         let list = List::new(items)
-            .highlight_style(Style::default().bg(DARK_GREEN).fg(ratatui::style::Color::Black));
+            .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
+            .highlight_symbol(" ▎");
         f.render_stateful_widget(list, chunks[1], &mut list_state);
     }
 
-    // Controls
     let controls = Paragraph::new(vec![
         Line::from(vec![
-            Span::styled(" [Enter] ", Style::default().fg(ratatui::style::Color::Black).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
-            Span::styled(" CAST   ", Style::default().fg(ratatui::style::Color::White)),
-            Span::styled(" [R] ", Style::default().fg(ratatui::style::Color::Black).bg(ratatui::style::Color::Cyan).add_modifier(Modifier::BOLD)),
-            Span::styled(" RESCAN   ", Style::default().fg(ratatui::style::Color::White)),
-            Span::styled(" [Esc] ", Style::default().fg(ratatui::style::Color::Black).bg(ratatui::style::Color::Red).add_modifier(Modifier::BOLD)),
-            Span::styled(" CANCEL ", Style::default().fg(ratatui::style::Color::White)),
+            Span::styled("enter", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(" cast   ", Style::default().fg(TEXT_PRIMARY)),
+            Span::styled("r", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(" rescan   ", Style::default().fg(TEXT_PRIMARY)),
+            Span::styled("esc", Style::default().fg(ratatui::style::Color::Rgb(255, 100, 100)).add_modifier(Modifier::BOLD)),
+            Span::styled(" cancel", Style::default().fg(TEXT_PRIMARY)),
         ])
     ]).alignment(Alignment::Center);
 

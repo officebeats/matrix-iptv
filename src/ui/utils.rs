@@ -1,7 +1,8 @@
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use crate::api::{Category, Stream, SeriesEpisode};
+use std::sync::Arc;
 
-pub fn calculate_max_category_width(categories: &[Category], total_width: u16) -> u16 {
+pub fn calculate_max_category_width(categories: &[Arc<Category>], total_width: u16) -> u16 {
     if categories.is_empty() {
         return 25; // Minimum default width
     }
@@ -21,7 +22,7 @@ pub fn calculate_max_category_width(categories: &[Category], total_width: u16) -
         .min(dynamic_max) 
 }
 
-pub fn calculate_two_column_split(categories: &[Category], total_width: u16) -> (u16, u16) {
+pub fn calculate_two_column_split(categories: &[Arc<Category>], total_width: u16) -> (u16, u16) {
     let cat_width = calculate_max_category_width(categories, total_width);
     let min_stream_width = 60; 
     
@@ -33,8 +34,8 @@ pub fn calculate_two_column_split(categories: &[Category], total_width: u16) -> 
 }
 
 pub fn calculate_three_column_split(
-    categories: &[Category],
-    series: &[Stream],
+    categories: &[Arc<Category>],
+    series: &[Arc<Stream>],
     episodes: &[SeriesEpisode],
     total_width: u16,
 ) -> (u16, u16, u16) {
@@ -82,8 +83,8 @@ pub fn calculate_three_column_split(
 }
 
 pub fn calculate_vod_three_column_split(
-    categories: &[Category],
-    streams: &[Stream],
+    categories: &[Arc<Category>],
+    streams: &[Arc<Stream>],
     total_width: u16,
 ) -> (u16, u16, u16) {
     let cat_width = calculate_max_category_width(categories, total_width);

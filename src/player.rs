@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+use crate::config::PlayerEngine;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::process::{Child, Command, Stdio};
@@ -37,10 +38,67 @@ impl Player {
         }
     }
 
-    /// Start MPV and return the IPC pipe path for monitoring
+    /// Start the selected player engine and return the IPC pipe path for monitoring
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn play(&self, url: &str, use_default_mpv: bool) -> Result<(), anyhow::Error> {
+    pub async fn play(&self, url: &str, engine: PlayerEngine, use_default_mpv: bool, _smooth_motion: bool) -> Result<(), anyhow::Error> {
+        // Pre-flight check: Verify stream is reachable before launching player
+        // This detects dead redirects/DNS issues early and notifies the user
+        self.check_stream_health(url).await?;
+
         self.stop();
+
+        match engine {
+            PlayerEngine::Mpv => self.play_mpv(url, use_default_mpv),
+            PlayerEngine::Vlc => self.play_vlc(url, _smooth_motion),
+        }
+    }
+
+    async fn check_stream_health(&self, url: &str) -> Result<(), anyhow::Error> {
+        // Build a client that mimics the player's behavior (Chrome UA)
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(10))
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .danger_accept_invalid_certs(true)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        let mut req = client.get(url); // Use GET with streaming disabled to follow redirects
+        
+        // Add Referer (Manual extraction to match play_vlc logic)
+        if let Some(scheme_end) = url.find("://") {
+            let rest = &url[scheme_end + 3..];
+            if let Some(path_start) = rest.find('/') {
+                let host = &rest[..path_start];
+                let base = format!("{}://{}/", &url[..scheme_end], host);
+                req = req.header("Referer", base);
+            }
+        }
+
+        // We use a stream request but abort immediately to check connectivity/headers
+        // HEAD often fails on some IPTV servers, so a started GET is safer logic-wise, 
+        // but we just want to follow the redirect chain.
+        
+        match req.send().await {
+            Ok(resp) => {
+                if resp.status().is_success() || resp.status().is_redirection() {
+                    Ok(())
+                } else {
+                    Err(anyhow::anyhow!("Stream returned error status: {} (Server might be offline/blocking)", resp.status()))
+                }
+            },
+            Err(e) => {
+                // Provide a user-friendly error description
+                if e.is_connect() || e.is_timeout() || e.to_string().to_lowercase().contains("dns") {
+                     Err(anyhow::anyhow!("Stream Server Unreachable. The redirect target likely does not exist (DNS Error). Details: {}", e))
+                } else {
+                     Err(anyhow::anyhow!("Stream Check Failed: {}", e))
+                }
+            }
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn play_mpv(&self, url: &str, use_default_mpv: bool) -> Result<(), anyhow::Error> {
 
         // Find mpv executable, checking PATH and common installation locations
         let mpv_path = crate::setup::get_mpv_path().ok_or_else(|| {
@@ -71,7 +129,8 @@ impl Player {
         cmd.arg(url)
            .arg("--geometry=1280x720") // Start in 720p window (user preference)
            .arg("--force-window")      // Ensure window opens even if audio-only initially
-           .arg("--osc=yes");  // Enable On Screen Controller for usability
+           .arg("--no-fs")             // DISABLING FULLSCREEN - Force Windowed Mode
+           .arg("--osc=yes");          // Enable On Screen Controller for usability
 
         // Only apply optimizations if not using default MPV settings
         if !use_default_mpv {
@@ -80,20 +139,24 @@ impl Player {
                .arg("--tscale=linear")     // Soap opera effect - smooth motion blending (GPU friendly)
                .arg("--tscale-clamp=0.0")  // Allow full blending for maximum smoothness
                .arg("--cache=yes")
-               .arg("--demuxer-max-bytes=256MiB") // Increased Cache
-               .arg("--demuxer-max-back-bytes=64MiB")
-               .arg("--demuxer-readahead-secs=20") // Buffer stability
-               .arg("--framedrop=vo")              // Drop frames gracefully if GPU lags
-               .arg("--vd-lavc-fast")              // Enable fast decoding optimizations
-               .arg("--vd-lavc-skiploopfilter=all") // Major CPU saver for low-end machines
-               .arg("--vd-lavc-threads=0")         // Maximize thread usage for decoding
+               // NETWORK TURBO MODE: Aggressive Caching for Stability
+               .arg("--demuxer-max-bytes=512MiB")      // Doubled cache to 512MB
+               .arg("--demuxer-max-back-bytes=128MiB") // Increase back buffer for seeking/rewind
+               .arg("--demuxer-readahead-secs=60")     // Buffer 1 full minute ahead (Adaptive Buffering)
+               .arg("--stream-buffer-size=2MiB")       // Low-level socket buffer
+               .arg("--framedrop=vo")                  // Drop frames gracefully if GPU lags
+               .arg("--vd-lavc-fast")                  // Enable fast decoding optimizations
+               .arg("--vd-lavc-skiploopfilter=all")    // Major CPU saver for low-end machines
+               .arg("--vd-lavc-threads=0")             // Maximize thread usage for decoding
                // LOW-END FRIENDLY UPSCALING (catmull_rom: good quality, low GPU cost)
                .arg("--scale=catmull_rom")         // Clean upscaling, ~25% faster than spline36
                .arg("--cscale=catmull_rom")        // Matching chroma scaler
                .arg("--dscale=catmull_rom")        // Consistent downscaling
                .arg("--scale-antiring=0.7")        // Reduce haloing
                .arg("--cscale-antiring=0.7")
-               .arg("--hwdec=auto-copy");          // More compatible hardware decoding
+               .arg("--hwdec=auto-copy")           // More compatible hardware decoding
+               // RECONNECT TURBO: Auto-reconnect on network drops
+               .arg("--stream-lavf-o=reconnect_at_eof=1,reconnect_streamed=1,reconnect_delay_max=5");
 
             if cfg!(target_os = "windows") {
                 cmd.arg("--d3d11-flip=yes")            // Modern Windows presentation (faster)
@@ -108,10 +171,12 @@ impl Player {
            .arg("--term-status-msg=no")
            .arg("--input-terminal=no") // Ignore terminal for input
            .arg("--terminal=no")       // Completely disable terminal interactions
-           // Add User-Agent to masquerade as a browser (crucial for some IPTV providers)
-           .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
+           // USER AGENT MASQUERADE: Modern Chrome to avoid throttling
+           .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
            // Keep window open if playback fails to see error (optional, maybe off for prod)
            .arg("--keep-open=no")
+           // Logging for troubleshooting
+           .arg("--log-file=mpv_playback.log")
            // IPC for status monitoring
            .arg(format!("--input-ipc-server={}", pipe_name));
 
@@ -119,13 +184,6 @@ impl Player {
         cmd.stdin(Stdio::null())
            .stdout(Stdio::null())
            .stderr(Stdio::null());
-
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const DETACHED_PROCESS: u32 = 0x00000008;
-            cmd.creation_flags(DETACHED_PROCESS);
-        }
 
         let child = cmd.spawn();
 
@@ -162,6 +220,80 @@ impl Player {
                 ))
             }
         }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn play_vlc(&self, url: &str, _smooth_motion: bool) -> Result<(), anyhow::Error> {
+        // Find vlc executable
+        let vlc_path = crate::setup::get_vlc_path().ok_or_else(|| {
+            anyhow::anyhow!("VLC not found. Please install VLC.")
+        })?;
+
+        let mut cmd = Command::new(&vlc_path);
+        
+        // Add Referrer validation (Common anti-scraping measure)
+        // Manual parsing to avoid adding 'url' crate dependency
+        if let Some(scheme_end) = url.find("://") {
+            let rest = &url[scheme_end + 3..];
+            if let Some(path_start) = rest.find('/') {
+                let host = &rest[..path_start];
+                let base = format!("{}://{}/", &url[..scheme_end], host);
+                cmd.arg(format!("--http-referrer={}", base));
+            }
+        }
+
+        cmd.arg(url)
+           .arg("--no-video-title-show") 
+           .arg("--http-user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+           .arg("--http-reconnect")
+           .arg("--http-continuous")
+           .arg("--network-caching=3000"); // 3 second buffer for TS streams
+
+        // Optimization flags (Commented out for stability)
+        // cmd.arg("--hwdec=auto"); 
+
+        // DISCONNECT from terminal
+        cmd.stdin(Stdio::null())
+           .stdout(Stdio::null())
+           .stderr(Stdio::null());
+
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            const DETACHED_PROCESS: u32 = 0x00000008;
+            cmd.creation_flags(DETACHED_PROCESS);
+        }
+
+        let child = cmd.spawn()?;
+        
+        {
+            let mut guard = self.process.lock().map_err(|e| {
+                anyhow::anyhow!("Failed to lock process mutex: {}", e)
+            })?;
+            *guard = Some(child);
+        }
+        
+        Ok(())
+    }
+
+    /// Read the last few lines of the player logs to find errors
+    pub fn get_last_error_from_log(&self) -> Option<String> {
+        let logs = ["mpv_playback.log", "vlc_playback.log"];
+        
+        for log_file in logs {
+            if let Ok(content) = std::fs::read_to_string(log_file) {
+                let lines: Vec<&str> = content.lines().rev().take(15).collect();
+                for line in lines {
+                    let lower = line.to_lowercase();
+                    if lower.contains("error") || lower.contains("failed") || lower.contains("fatal") {
+                        // Clean up common VLC/MPV prefixes for cleaner UI display
+                        let cleaned = line.split("]: ").last().unwrap_or(line);
+                        return Some(cleaned.to_string());
+                    }
+                }
+            }
+        }
+        None
     }
 
     /// Check if MPV is still running (process alive)
@@ -216,7 +348,7 @@ impl Player {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn play(&self, url: &str, _use_default_mpv: bool) -> Result<(), anyhow::Error> {
+    pub fn play(&self, url: &str, _engine: PlayerEngine, _use_default_mpv: bool, _smooth_motion: bool) -> Result<(), anyhow::Error> {
         self.stop();
         if let Some(win) = window() {
             let _ = win.alert_with_message(&format!("Play stream: {}", url));
