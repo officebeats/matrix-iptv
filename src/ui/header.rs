@@ -2,21 +2,17 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::Paragraph,
     Frame,
 };
 use chrono::{Utc, TimeZone};
 use chrono_tz::Tz;
 use std::str::FromStr;
 use crate::app::{App, CurrentScreen};
-use crate::ui::colors::{MATRIX_GREEN, DARK_GREEN, SOFT_GREEN, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
+use crate::ui::colors::{MATRIX_GREEN, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 
-fn clean_val(v: &serde_json::Value) -> String {
-    let s = match v {
-        serde_json::Value::String(s) => s.clone(),
-        _ => v.to_string(),
-    };
-    s.replace('"', "")
+fn clean_val(v: &crate::flex_id::FlexId) -> String {
+    v.to_string_value().unwrap_or_default()
 }
 
 pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
@@ -29,15 +25,9 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         .split(area);
 
     if app.search_mode {
-        let search_text = format!(" >_ {}", app.search_state.query);
+        let search_text = format!("  >_ {}", app.search_state.query);
         let p = Paragraph::new(search_text)
-            .style(Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
-            .block(
-                Block::default()
-                    .borders(Borders::BOTTOM)
-                    .title(Span::styled(" search ", Style::default().fg(SOFT_GREEN)))
-                    .border_style(Style::default().fg(DARK_GREEN)),
-            );
+            .style(Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD));
         f.render_widget(p, area);
         return;
     }
@@ -61,7 +51,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
 
     let mut left_spans: Vec<Span> = Vec::new();
     left_spans.push(Span::styled(" ", Style::default()));
-    
+
     for (i, (part, is_active)) in breadcrumb_parts.iter().enumerate() {
         if i > 0 {
             left_spans.push(Span::styled(" › ", Style::default().fg(TEXT_DIM)));
@@ -77,14 +67,14 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
     if !app.config.processing_modes.is_empty() {
         left_spans.push(Span::styled("  ", Style::default()));
         left_spans.push(Span::styled("[", Style::default().fg(TEXT_DIM)));
-        
+
         let mut first = true;
         for mode in &app.config.processing_modes {
             if !first {
                 left_spans.push(Span::styled("+", Style::default().fg(TEXT_DIM)));
             }
             first = false;
-            
+
             match mode {
                 crate::config::ProcessingMode::Merica => {
                     left_spans.push(Span::styled("'merica", Style::default().fg(Color::Rgb(255, 200, 80)).add_modifier(Modifier::BOLD)));
@@ -97,15 +87,17 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
                 }
             }
         }
-        
+
         left_spans.push(Span::styled("]", Style::default().fg(TEXT_DIM)));
     }
 
-    let tabs = Paragraph::new(Line::from(left_spans)).block(
-        Block::default()
-            .borders(Borders::BOTTOM)
-            .border_style(Style::default().fg(DARK_GREEN)),
-    );
+    // Background refresh indicator - subtle "syncing..." in dim green
+    if app.background_refresh_active {
+        left_spans.push(Span::styled("  ", Style::default()));
+        left_spans.push(Span::styled("⟳ syncing...", Style::default().fg(Color::Rgb(80, 160, 80))));
+    }
+
+    let tabs = Paragraph::new(Line::from(left_spans));
     f.render_widget(tabs, chunks[0]);
 
     if let Some(_) = &app.current_client {
@@ -114,7 +106,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         let user_tz: Tz = Tz::from_str(&tz_str).unwrap_or(chrono_tz::Europe::London);
         let now = Utc::now().with_timezone(&user_tz);
         let time = now.format("%I:%M%p").to_string();
-        
+
         let (active, total, exp) = if let Some(info) = &app.account_info {
             let a = info.active_cons.as_ref().map(clean_val).unwrap_or_else(|| "0".to_string());
             let t = info.max_connections.as_ref().map(clean_val).unwrap_or_else(|| "1".to_string());
@@ -140,8 +132,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         right_spans.push(Span::styled(format!("{}/{}", active, total), Style::default().fg(MATRIX_GREEN)));
 
         let stats = Paragraph::new(Line::from(right_spans))
-            .alignment(Alignment::Right)
-            .block(Block::default().borders(Borders::BOTTOM).border_style(Style::default().fg(DARK_GREEN)));
+            .alignment(Alignment::Right);
         f.render_widget(stats, chunks[1]);
     }
 }

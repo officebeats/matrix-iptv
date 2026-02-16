@@ -32,7 +32,6 @@ fn render_sports_categories_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let items: Vec<ListItem> = app.sports_categories.iter().map(|cat| {
         let display = cat.to_uppercase().replace("-", " ");
         ListItem::new(Line::from(vec![
-            Span::styled("◆ ", Style::default().fg(SOFT_GREEN)),
             Span::styled(display, Style::default().fg(MATRIX_GREEN)),
         ]))
     }).collect();
@@ -63,7 +62,7 @@ fn render_sports_matches_pane(f: &mut Frame, app: &mut App, area: Rect) {
             "ufc" | "mma" => "🥊 ",
             "f1" | "racing" => "🏎️  ",
             "tennis" => "🎾 ",
-            _ => "◆ ",
+            _ => "  ",
         };
         spans.push(Span::styled(icon, Style::default()));
 

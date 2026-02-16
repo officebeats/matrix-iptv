@@ -320,11 +320,7 @@ impl WasmClient {
                             }
                             CurrentScreen::Streams => {
                                 if let Some(stream) = app.get_selected_stream() {
-                                     let stream_id = match &stream.stream_id {
-                                         serde_json::Value::String(s) => s.clone(),
-                                         serde_json::Value::Number(n) => n.to_string(),
-                                         _ => stream.stream_id.to_string(),
-                                     };
+                                     let stream_id = stream.stream_id.to_string_value().unwrap_or_default();
                                      let ext = stream.container_extension.clone().unwrap_or_else(|| "m3u8".to_string());
                                      
                                      if let Some(client) = &app.current_client {

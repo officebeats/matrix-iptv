@@ -32,11 +32,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("Stream ID: {:?}", show.stream_id);
             
             // Get series ID from stream_id
-            let series_id = match &show.stream_id {
-                serde_json::Value::Number(n) => n.to_string(),
-                serde_json::Value::String(s) => s.clone(),
-                _ => show.stream_id.to_string(),
-            };
+            let series_id = show.stream_id.to_string_value().unwrap_or_default();
             
             println!("\nFetching series info for ID: {}", series_id);
             

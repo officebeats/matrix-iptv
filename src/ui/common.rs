@@ -1,8 +1,8 @@
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
-    text::Span,
-    widgets::{Block, BorderType, Borders},
+    text::{Line, Span},
+    widgets::{Paragraph},
     Frame,
 };
 use crate::parser::{Quality, ContentType};
@@ -167,23 +167,36 @@ pub fn stylize_channel_name(
     (spans, icon_ret)
 }
 
-/// Modern rounded border box (Claude Code / Gemini CLI style)
+/// Modern minimal box (Claude Code style) — left border only for active panes
 pub fn render_matrix_box(f: &mut Frame, area: Rect, title: &str, border_color: Color) -> Rect {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(border_color))
-        .title(Span::styled(
-            format!(" {} ", title.trim().trim_matches('/')),
-            Style::default().fg(border_color).add_modifier(Modifier::BOLD)
-        ));
+    let clean_title = title.trim().trim_matches('/');
 
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-    inner
+    // Title line at top, then content below
+    if !clean_title.is_empty() {
+        let title_area = Rect { x: area.x, y: area.y, width: area.width, height: 1 };
+        let title_widget = Paragraph::new(Line::from(vec![
+            Span::styled("  ", Style::default()),
+            Span::styled(clean_title, Style::default().fg(border_color).add_modifier(Modifier::BOLD)),
+        ]));
+        f.render_widget(title_widget, title_area);
+
+        Rect {
+            x: area.x + 1,
+            y: area.y + 1,
+            width: area.width.saturating_sub(1),
+            height: area.height.saturating_sub(1),
+        }
+    } else {
+        Rect {
+            x: area.x + 1,
+            y: area.y,
+            width: area.width.saturating_sub(1),
+            height: area.height,
+        }
+    }
 }
 
-/// Deprecated: Mapped to standard modern box
+/// Minimal block with optional title — no borders
 pub fn render_composite_block(f: &mut Frame, area: Rect, title: Option<&str>) -> Rect {
     let t = title.unwrap_or("");
     render_matrix_box(f, area, t, SOFT_GREEN)

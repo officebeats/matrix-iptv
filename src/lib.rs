@@ -1,6 +1,8 @@
 pub mod api;
 pub mod app;
+pub mod cache;
 pub mod config;
+pub mod flex_id;
 pub mod parser;
 pub mod errors;
 #[cfg(not(target_arch = "wasm32"))]
@@ -15,6 +17,7 @@ pub mod preprocessing;
 pub mod matrix_rain;
 pub mod scores;
 pub mod handlers;
+pub mod state;
 
 // Wasm module
 #[cfg(target_arch = "wasm32")]
@@ -31,43 +34,6 @@ mod tests {
         assert_eq!(app.current_screen, CurrentScreen::Home);
     }
 
-    #[test]
-    fn test_update_account_logic() {
-        let mut app = App::new();
-        app.config.accounts.push(Account {
-            name: "Original".to_string(),
-            base_url: "x".to_string(),
-            username: "u".to_string(),
-            password: "p".to_string(),
-            epg_url: None,
-            last_refreshed: None,
-            total_channels: None,
-            total_movies: None,
-            total_series: None,
-            server_timezone: None,
-            account_type: Default::default(),
-        });
-
-        // Ensure we have at least one
-        if app.config.accounts.is_empty() {
-            return;
-        }
-
-        let new_acc = Account {
-            name: "Updated".to_string(),
-            base_url: "x".to_string(),
-            username: "u".to_string(),
-            password: "p".to_string(),
-            epg_url: None,
-            last_refreshed: None,
-            total_channels: None,
-            total_movies: None,
-            total_series: None,
-            server_timezone: None,
-            account_type: Default::default(),
-        };
-
-        app.config.update_account(0, new_acc);
-        assert_eq!(app.config.accounts[0].name, "Updated");
-    }
+    // test_update_account_logic removed to prevent overwriting user config.json
+    // TODO: Refactor AppConfig to accept a custom path for testing.
 }

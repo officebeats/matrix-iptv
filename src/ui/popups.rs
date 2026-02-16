@@ -231,16 +231,16 @@ pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
 
     let selected = app.selected_content_type_index;
     let items: Vec<ListItem> = vec![
-        (0, "◆", "Live Channels", "Real-time broadcasts"),
-        (1, "◆", "Movies (VOD)", "On-demand library"),
-        (2, "◆", "TV Series", "Episodic content"),
+        (0, "", "Live Channels", "Real-time broadcasts"),
+        (1, "", "Movies (VOD)", "On-demand library"),
+        (2, "", "TV Series", "Episodic content"),
     ]
     .into_iter()
-    .map(|(i, icon, label, sub)| {
+    .map(|(i, _icon, label, sub)| {
         let is_selected = i == selected;
         let text_style = if is_selected { Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD) } else { Style::default().fg(TEXT_PRIMARY) };
         ListItem::new(Line::from(vec![
-            Span::styled(format!("  {} ", icon), Style::default().fg(SOFT_GREEN)),
+            Span::styled("  ", Style::default()),
             Span::styled(label, text_style),
             Span::styled(format!("  · {}", sub), Style::default().fg(TEXT_SECONDARY)),
         ]))
@@ -533,7 +533,7 @@ pub fn render_cast_picker_popup(f: &mut Frame, app: &App, area: Rect) {
             .map(|device| {
                 let model_str = device.model.as_deref().unwrap_or("Chromecast");
                 ListItem::new(Line::from(vec![
-                    Span::styled("  ◆ ", Style::default().fg(SOFT_GREEN)),
+                    Span::styled("  ", Style::default()),
                     Span::styled(&device.name, Style::default().fg(TEXT_PRIMARY)),
                     Span::styled(format!("  ({})", model_str), Style::default().fg(TEXT_DIM)),
                 ]))

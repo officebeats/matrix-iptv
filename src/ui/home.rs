@@ -6,13 +6,13 @@ use ratatui::{
     Frame,
 };
 use crate::app::App;
-use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
+use crate::ui::colors::{MATRIX_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 
 pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
     let main_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5),   // Logo (compact)
+            Constraint::Length(4),   // Logo
             Constraint::Min(0),      // Content
             Constraint::Length(1),   // Footer
         ])
@@ -28,7 +28,6 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
         Line::from(vec![
             Span::styled("  Terminal streaming client", Style::default().fg(TEXT_DIM)),
         ]),
-        Line::from(""),
     ];
 
     f.render_widget(Paragraph::new(logo_lines), main_layout[0]);
@@ -44,17 +43,17 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
     let now = chrono::Utc::now().timestamp();
     let accounts: Vec<ListItem> = app.config.accounts.iter().map(|acc| {
         let mut spans = vec![
-            Span::styled("  ◆ ", Style::default().fg(SOFT_GREEN)),
+            Span::styled("  ", Style::default()),
             Span::styled(&acc.name, Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
         ];
-        
+
         // Sync status
         if let Some(last) = acc.last_refreshed {
             let secs_ago = now - last;
             let hours_ago = secs_ago / 3600;
             let days_ago = hours_ago / 24;
             let weeks_ago = days_ago / 7;
-            
+
             let (time_text, style) = if hours_ago < 1 {
                 ("just now".to_string(), Style::default().fg(MATRIX_GREEN))
             } else if hours_ago < 2 {
@@ -77,38 +76,45 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
                     (format!("{}mo ago", months_ago), Style::default().fg(Color::Rgb(255, 100, 100)))
                 }
             };
-            
+
             spans.push(Span::styled("  ", Style::default()));
             spans.push(Span::styled(time_text, style));
         } else {
             spans.push(Span::styled("  new", Style::default().fg(MATRIX_GREEN)));
         }
-        
+
         ListItem::new(Line::from(spans))
     }).collect();
 
     app.area_accounts = content_layout[0];
-    let inner_list_area = crate::ui::common::render_composite_block(f, content_layout[0], Some("playlists"));
-    
+
+    // Playlists title + list — no border box
+    let playlist_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(2),
+            Constraint::Min(0),
+        ])
+        .split(content_layout[0]);
+
+    let playlist_title = Paragraph::new(Line::from(vec![
+        Span::styled("  playlists", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+    ]));
+    f.render_widget(playlist_title, playlist_chunks[0]);
+
     f.render_stateful_widget(
         List::new(accounts)
             .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
-            .highlight_symbol(" ▎"), 
-        inner_list_area, 
+            .highlight_symbol(" ▎"),
+        playlist_chunks[1],
         &mut app.account_list_state
     );
 
-    let main_zone_chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Min(10),
-            Constraint::Length(0),
-        ])
-        .split(content_layout[1]);
-
+    // Right side — guides
     let mut guides_text = Vec::new();
     if app.config.accounts.is_empty() {
         guides_text.extend(vec![
+            Line::from(""),
             Line::from(vec![
                 Span::styled("  getting started", Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD))
             ]),
@@ -137,9 +143,6 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
         ]);
     } else {
         guides_text.extend(vec![
-            Line::from(vec![
-                Span::styled("  ready", Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD))
-            ]),
             Line::from(""),
             Line::from(vec![
                 Span::styled("  Select a playlist and press ", Style::default().fg(TEXT_SECONDARY)),
@@ -162,29 +165,13 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled("3", Style::default().fg(MATRIX_GREEN)),
                 Span::styled("  Understanding the IPTV Protocol", Style::default().fg(TEXT_PRIMARY))
             ]),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("  Playlists: ", Style::default().fg(TEXT_SECONDARY)),
-                Span::styled(format!("{}", app.config.accounts.len()), Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
-                Span::styled(" configured", Style::default().fg(TEXT_SECONDARY))
-            ]),
         ]);
     }
-
-    guides_text.extend(vec![
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("  ⚠ ", Style::default().fg(Color::Rgb(255, 200, 80))), 
-            Span::styled("Matrix IPTV is a client only.", Style::default().fg(TEXT_SECONDARY))
-        ]),
-    ]);
-
-    let inner_guides_area = crate::ui::common::render_composite_block(f, main_zone_chunks[0], None);
 
     f.render_widget(
         Paragraph::new(guides_text)
             .wrap(Wrap { trim: true }),
-        inner_guides_area
+        content_layout[1]
     );
 
     crate::ui::footer::render_footer(f, app, main_layout[2]);

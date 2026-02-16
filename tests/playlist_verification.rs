@@ -1,14 +1,14 @@
 use matrix_iptv_lib::app::{App, CurrentScreen, Pane};
 use matrix_iptv_lib::api::Category;
-use serde_json::json;
+use matrix_iptv_lib::flex_id::FlexId;
 use std::sync::Arc;
 
 #[test]
 fn test_navigation_sync_live_tv() {
     let mut app = App::new();
     app.all_categories = vec![
-        Arc::new(Category { category_id: "1".to_string(), category_name: "Action".to_string(), parent_id: json!(0), ..Default::default() }),
-        Arc::new(Category { category_id: "2".to_string(), category_name: "Drama".to_string(), parent_id: json!(0), ..Default::default() }),
+        Arc::new(Category { category_id: "1".to_string(), category_name: "Action".to_string(), search_name: "action".to_string(), parent_id: FlexId::Number(0), ..Default::default() }),
+        Arc::new(Category { category_id: "2".to_string(), category_name: "Drama".to_string(), search_name: "drama".to_string(), parent_id: FlexId::Number(0), ..Default::default() }),
     ];
     
     // Enter screen
@@ -39,7 +39,7 @@ fn test_navigation_sync_live_tv() {
 fn test_navigation_sync_vod() {
     let mut app = App::new();
     app.all_vod_categories = vec![
-        Arc::new(Category { category_id: "10".to_string(), category_name: "Movie1".to_string(), parent_id: json!(0), ..Default::default() }),
+        Arc::new(Category { category_id: "10".to_string(), category_name: "Movie1".to_string(), parent_id: FlexId::Number(0), ..Default::default() }),
     ];
     
     app.current_screen = CurrentScreen::VodCategories;
@@ -67,7 +67,7 @@ fn test_navigation_sync_vod() {
 fn test_navigation_sync_series() {
     let mut app = App::new();
     app.all_series_categories = vec![
-        Arc::new(Category { category_id: "20".to_string(), category_name: "Series1".to_string(), parent_id: json!(0), ..Default::default() }),
+        Arc::new(Category { category_id: "20".to_string(), category_name: "Series1".to_string(), parent_id: FlexId::Number(0), ..Default::default() }),
     ];
     
     app.current_screen = CurrentScreen::SeriesCategories;

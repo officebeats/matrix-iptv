@@ -118,47 +118,46 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
 
     match app.current_screen {
         CurrentScreen::Categories | CurrentScreen::Streams => {
-            // Calculate column widths
-            let (cat_width, stream_width) = calculate_two_column_split(&app.categories, content_area.width);
-            
-            // Split horizontally: Categories (left) | Streams+Intelligence (right)
-            let h_chunks = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([
-                    Constraint::Length(cat_width),
-                    Constraint::Min(stream_width),
-                ])
-                .split(content_area);
-
-            // Categories takes full height on left
-            panes::render_categories_pane(f, app, h_chunks[0], SOFT_GREEN);
-
-            // Check if focused stream is a sports event OR has ESPN score data
-            let is_sports_event = app.streams.get(app.selected_stream_index)
-                .map(|s| {
-                    let parsed = crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref());
-                    // Show Match Intelligence if it parses as sports event OR we have ESPN data
-                    parsed.sports_event.is_some() || app.get_score_for_stream(&parsed.display_name).is_some()
-                })
-                .unwrap_or(false);
-
-            if is_sports_event {
-                // Right side: Streams (top) + Intelligence (bottom)
-                // Height: 2 for borders + 8 for content (score bar, clock, probability, series, scorer, headline, broadcasts, action)
-                let intel_height = 10u16;
-                let right_chunks = Layout::default()
-                    .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Min(10),
-                        Constraint::Length(intel_height),
-                    ])
-                    .split(h_chunks[1]);
-
-                panes::render_streams_pane(f, app, right_chunks[0], SOFT_GREEN);
-                panes::render_stream_details_pane(f, app, right_chunks[1], SOFT_GREEN);
+            if app.active_pane == crate::app::Pane::Categories {
+                // Full-width grid view — no streams pane until a category is selected
+                panes::render_categories_pane(f, app, content_area, SOFT_GREEN);
             } else {
-                // No sports event: streams takes full right side
-                panes::render_streams_pane(f, app, h_chunks[1], SOFT_GREEN);
+                // 2-pane layout: Categories sidebar (list) | Streams
+                let (cat_width, stream_width) = calculate_two_column_split(&app.categories, content_area.width);
+                
+                let h_chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([
+                        Constraint::Length(cat_width),
+                        Constraint::Min(stream_width),
+                    ])
+                    .split(content_area);
+
+                panes::render_categories_pane(f, app, h_chunks[0], SOFT_GREEN);
+
+                // Check if focused stream is a sports event OR has ESPN score data
+                let is_sports_event = app.streams.get(app.selected_stream_index)
+                    .map(|s| {
+                        let parsed = crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref());
+                        parsed.sports_event.is_some() || app.get_score_for_stream(&parsed.display_name).is_some()
+                    })
+                    .unwrap_or(false);
+
+                if is_sports_event {
+                    let intel_height = 10u16;
+                    let right_chunks = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints([
+                            Constraint::Min(10),
+                            Constraint::Length(intel_height),
+                        ])
+                        .split(h_chunks[1]);
+
+                    panes::render_streams_pane(f, app, right_chunks[0], SOFT_GREEN);
+                    panes::render_stream_details_pane(f, app, right_chunks[1], SOFT_GREEN);
+                } else {
+                    panes::render_streams_pane(f, app, h_chunks[1], SOFT_GREEN);
+                }
             }
         }
         CurrentScreen::VodCategories | CurrentScreen::VodStreams => {

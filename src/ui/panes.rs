@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Rect, Layout, Constraint, Direction},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph},
+    widgets::{List, ListItem, Paragraph},
     Frame,
 };
 use crate::app::{App, CurrentScreen};
@@ -36,6 +36,121 @@ fn list_highlight_style() -> Style {
 }
 
 pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
+    if app.active_pane == crate::app::Pane::Categories && app.category_grid_view {
+        render_categories_grid(f, app, area, border_color);
+    } else {
+        render_categories_list(f, app, area, border_color);
+    }
+}
+
+fn render_categories_grid(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
+    let row_height: u16 = 3; // Box height (border + 1 line of content + border)
+    
+    let title = if app.categories.is_empty() {
+        "categories".to_string()
+    } else {
+        format!("categories [GRID VIEW] ({}/{})", app.selected_category_index.saturating_add(1), app.categories.len())
+    };
+    
+    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
+    
+    // Calculate dynamic column count based on longest category name
+    // Each cell needs: 2 border chars + 1 icon + 1 space + name length + padding
+    let max_name_len = app.categories.iter()
+        .map(|c| {
+            let parsed = parse_category(&c.category_name);
+            parsed.display_name.len()
+        })
+        .max()
+        .unwrap_or(10);
+    
+    // Min cell width = icon(2) + space(1) + name + padding(2) + borders(2)
+    let min_cell_width = (max_name_len as u16 + 7).max(12);
+    let cols = ((inner_area.width / min_cell_width) as usize).max(1).min(8); // Cap at 8 columns
+    app.grid_cols = cols; // Store for input handler navigation
+    
+    // Calculate how many rows actually fit in the available area
+    let max_rows = (inner_area.height / row_height).max(1) as usize;
+    let items_per_page = max_rows * cols;
+    let total = app.categories.len();
+    let selected = app.selected_category_index;
+
+    // Calculate pagination
+    let page = selected / items_per_page.max(1);
+    let start_idx = page * items_per_page;
+    let end_idx = (start_idx + items_per_page).min(total);
+    
+    // Calculate actual number of rows needed for this page
+    let page_items = end_idx - start_idx;
+    let num_rows = ((page_items as f32) / (cols as f32)).ceil() as usize;
+    
+    // Calculate cell dimensions
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints(vec![Constraint::Length(row_height); num_rows])
+        .split(inner_area);
+
+    for (i, chunk_row) in chunks.iter().enumerate() {
+        let cells = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(vec![Constraint::Ratio(1, cols as u32); cols])
+            .split(*chunk_row);
+
+        for (j, cell_area) in cells.iter().enumerate() {
+            let idx = start_idx + (i * cols) + j;
+            if idx >= end_idx { break; }
+            
+            let category = &app.categories[idx];
+            let is_selected = idx == selected;
+            
+            let block_style = if is_selected {
+                Style::default().fg(Color::Black).bg(MATRIX_GREEN)
+            } else {
+                Style::default().fg(MATRIX_GREEN).bg(Color::Black)
+            };
+            
+            let parsed = parse_category(&category.category_name);
+            
+            // Icon logic (simplified from existing)
+            let upper_cat = parsed.display_name.to_uppercase();
+            let icon = if upper_cat.contains("NBA") { "\u{1f3c0}" } 
+                else if upper_cat.contains("NFL") { "\u{1f3c8}" }
+                else if upper_cat.contains("MLB") { "\u{26be}" }
+                else if upper_cat.contains("NHL") { "\u{1f3d2}" }
+                else if upper_cat.contains("UFC") { "\u{1f94a}" }
+                else if upper_cat.contains("SOCCER") { "\u{26bd}" }
+                else if upper_cat.contains("MOVIES") { "\u{1f3ac}" }
+                else if upper_cat.contains("SERIES") { "\u{1f4fa}" }
+                else if upper_cat.contains("XXX") || upper_cat.contains("ADULT") { "\u{1f51e}" }
+                else { "▪" };
+
+            let count_str = app.category_channel_counts.get(&category.category_id).map(|c| format!(" ({})", c)).unwrap_or_default();
+            
+            // Visual Card
+            let card_block = ratatui::widgets::Block::default()
+                .borders(ratatui::widgets::Borders::ALL)
+                .border_style(if is_selected { Style::default().fg(Color::Black) } else { Style::default().fg(TEXT_DIM) })
+                .style(block_style);
+            
+            let text_style = if is_selected { Style::default().fg(Color::Black).add_modifier(Modifier::BOLD) } else { Style::default().fg(TEXT_PRIMARY) };
+            let count_style = if is_selected { Style::default().fg(Color::Black) } else { Style::default().fg(MATRIX_GREEN) };
+            
+            let content = Paragraph::new(vec![
+                Line::from(vec![
+                    Span::styled(format!("{} ", icon), text_style),
+                    Span::styled(&parsed.display_name, text_style),
+                    Span::styled(&count_str, count_style),
+                ]),
+            ])
+            .block(card_block)
+            .alignment(ratatui::layout::Alignment::Left);
+            
+            f.render_widget(content, *cell_area);
+        }
+    }
+}
+
+fn render_categories_list(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
     let visible_height = area.height.saturating_sub(2) as usize;
     let total = app.categories.len();
     let selected = app.selected_category_index;
@@ -64,7 +179,7 @@ pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
             let mut spans = vec![];
 
             if app.config.favorites.categories.contains(&c.category_id) {
-                spans.push(ratatui::text::Span::styled("★ ", Style::default().fg(MATRIX_GREEN)));
+                spans.push(ratatui::text::Span::styled("* ", Style::default().fg(MATRIX_GREEN)));
             }
 
             let is_league = parsed.country.as_ref().map(|cc| ["NBA", "NFL", "MLB", "NHL", "UFC", "SPORTS", "PPV"].contains(&cc.as_str())).unwrap_or(false);
@@ -84,25 +199,59 @@ pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_c
                 Style::default().fg(name_color),
             );
 
-            // Clean icon prefix
-            let icon = if app.current_screen == CurrentScreen::VodCategories || app.current_screen == CurrentScreen::VodStreams {
-                "◆ "
-            } else if app.current_screen == CurrentScreen::SeriesCategories || app.current_screen == CurrentScreen::SeriesStreams {
-                "◆ "
+            // Sport-specific icon for category names
+            let upper_cat = parsed.display_name.to_uppercase();
+            let cat_icon: Option<ratatui::text::Span> = if upper_cat.contains("NBA") || upper_cat.contains("NCAAB") || upper_cat.contains("BASKETBALL") {
+                Some(ratatui::text::Span::styled("\u{1f3c0} ", Style::default().fg(Color::Rgb(255, 140, 0))))
+            } else if upper_cat.contains("NFL") || upper_cat.contains("NCAAF") || upper_cat.contains("FOOTBALL") {
+                Some(ratatui::text::Span::styled("\u{1f3c8} ", Style::default().fg(Color::Rgb(210, 180, 140))))
+            } else if upper_cat.contains("MLB") || upper_cat.contains("MILB") || upper_cat.contains("BASEBALL") {
+                Some(ratatui::text::Span::raw("\u{26be} "))
+            } else if upper_cat.contains("NHL") || upper_cat.contains("HOCKEY") {
+                Some(ratatui::text::Span::raw("\u{1f3d2} "))
+            } else if upper_cat.contains("UFC") || upper_cat.contains("FIGHT") || upper_cat.contains("BOXING") {
+                Some(ratatui::text::Span::raw("\u{1f94a} "))
+            } else if upper_cat.contains("TENNIS") || upper_cat.contains("ATP") || upper_cat.contains("WTA") {
+                Some(ratatui::text::Span::styled("\u{1f3be} ", Style::default().fg(Color::Rgb(144, 238, 144))))
+            } else if upper_cat.contains("GOLF") || upper_cat.contains("PGA") || upper_cat.contains("MASTERS") {
+                Some(ratatui::text::Span::raw("\u{26f3} "))
+            } else if upper_cat.contains("NASCAR") || upper_cat.contains("F1") || upper_cat.contains("RACING") || upper_cat.contains("MOTOCROSS") {
+                Some(ratatui::text::Span::styled("\u{1f3ce} ", Style::default().fg(Color::Rgb(255, 100, 100))))
+            } else if upper_cat.contains("SOCCER") || upper_cat.contains("MLS") || upper_cat.contains("PREMIER") || upper_cat.contains("LALIGA") || upper_cat.contains("FIFA") {
+                Some(ratatui::text::Span::styled("\u{26bd} ", Style::default().fg(Color::Rgb(255, 182, 193))))
+            } else if upper_cat.contains("RUGBY") {
+                Some(ratatui::text::Span::raw("\u{1f3c9} "))
+            } else if upper_cat.contains("CRICKET") || upper_cat.contains("IPL") {
+                Some(ratatui::text::Span::raw("\u{1f3cf} "))
+            } else if upper_cat.contains("PPV") || upper_cat.contains("EVENT") {
+                Some(ratatui::text::Span::raw("\u{1f3ab} "))
+            } else if upper_cat.contains("ESPN") || upper_cat.contains("BALLY") || upper_cat.contains("DAZN") {
+                Some(ratatui::text::Span::raw("\u{1f4fa} "))
             } else {
-                "◆ "
+                None
             };
-            spans.push(ratatui::text::Span::styled(icon, Style::default().fg(SOFT_GREEN)));
+
+            if let Some(sport_icon) = cat_icon {
+                spans.push(sport_icon);
+            }
             spans.extend(styled_name);
+
+            // Append channel count from precomputed map
+            if let Some(&count) = app.category_channel_counts.get(&c.category_id) {
+                spans.push(ratatui::text::Span::styled(
+                    format!(" ({})", count),
+                    Style::default().fg(TEXT_DIM),
+                ));
+            }
 
             ListItem::new(Line::from(spans))
         })
         .collect();
 
     let title = if app.categories.is_empty() {
-        " categories ".to_string()
+        "categories".to_string()
     } else {
-        format!(" categories ({}) ", app.categories.len())
+        format!("categories [SIDEBAR] ({}/{})", selected.saturating_add(1), app.categories.len())
     };
     let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
     
@@ -147,7 +296,23 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         .skip(adjusted_start)
         .take(end - adjusted_start)
         .map(|(_, s)| {
-            let parsed = crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref());
+            let parsed = if let Some(ref cached) = s.cached_parsed {
+                cached.as_ref().clone()
+            } else {
+                crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref())
+            };
+            // Separator entries — render as dim section headers, not as channels
+            if parsed.is_separator {
+                let label = if parsed.display_name.is_empty() {
+                    "───".to_string()
+                } else {
+                    format!("─── {} ───", parsed.display_name)
+                };
+                return ListItem::new(Line::from(vec![
+                    ratatui::text::Span::styled(label, Style::default().fg(TEXT_DIM).add_modifier(Modifier::DIM)),
+                ]));
+            }
+
             let now = Utc::now();
             let is_ended = parsed.stop_time.map(|t| now > t).unwrap_or(false);
             let is_live = parsed.start_time.map(|st| now >= st).unwrap_or(false) && !is_ended;
@@ -235,11 +400,6 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 MATRIX_GREEN
             };
             
-            // Icon for VOD/Series Results
-            if app.current_screen == CurrentScreen::VodStreams || app.current_screen == CurrentScreen::SeriesStreams {
-                let icon = if app.current_screen == CurrentScreen::VodStreams { "◆ " } else { "◆ " };
-                spans.insert(0, ratatui::text::Span::styled(icon, Style::default().fg(SOFT_GREEN)));
-            }
             
             // SPLIT TEAM COLORING
             if let Some(score) = score_data_for_color {
@@ -402,8 +562,34 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         })
         .collect();
 
-    let title = format!(" streams ({}) · {} ", app.streams.len(), tz_display);
+    let title = if app.streams.is_empty() {
+        format!("streams · {}", tz_display)
+    } else {
+        format!("streams ({}/{}) · {}", selected.saturating_add(1), app.streams.len(), tz_display)
+    };
     let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
+
+    // Empty state messaging
+    if app.streams.is_empty() {
+        let msg = if app.loading_message.is_some() {
+            "Loading channels..."
+        } else if app.search_mode && !app.search_state.query.is_empty() {
+            "No matches — press esc to clear search"
+        } else {
+            "No channels — press esc to go back"
+        };
+        let empty_msg = Paragraph::new(msg)
+            .style(Style::default().fg(TEXT_DIM))
+            .alignment(ratatui::layout::Alignment::Center);
+        let centered = Rect {
+            x: inner_area.x,
+            y: inner_area.y + inner_area.height / 2,
+            width: inner_area.width,
+            height: 1,
+        };
+        f.render_widget(empty_msg, centered);
+        return;
+    }
 
     let list = List::new(items)
         .highlight_style(list_highlight_style())
@@ -445,16 +631,13 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .skip(adjusted_start)
         .take(end - adjusted_start)
         .map(|(_, s)| {
-            let parsed = crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref());
+            let parsed = if let Some(ref cached) = s.cached_parsed {
+                cached.as_ref().clone()
+            } else {
+                crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref())
+            };
             let mut spans = vec![];
             
-            // Clean type icon
-            let icon = match s.stream_type.as_str() {
-                "movie" => "◆ ",
-                "series" => "◇ ",
-                _ => "  ",
-            };
-            spans.push(ratatui::text::Span::styled(icon, Style::default().fg(SOFT_GREEN)));
 
             let (mut styled_name, _) = stylize_channel_name(
                 &parsed.display_name,
@@ -492,18 +675,13 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let title = if app.search_state.query.is_empty() {
-        format!(" search ({}) — type to filter ", app.global_search_results.len())
+        format!("search ({}) — type to filter", app.global_search_results.len())
     } else {
-        format!(" search: \"{}\" ({}) ", app.search_state.query, app.global_search_results.len())
+        format!("search: \"{}\" ({}/{})", app.search_state.query, selected.saturating_add(1), app.global_search_results.len())
     };
+    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, SOFT_GREEN);
+
     let list = List::new(items)
-        .block(
-            Block::default()
-                .title(Span::styled(format!(" {} ", title), Style::default().fg(SOFT_GREEN).add_modifier(Modifier::BOLD)))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(SOFT_GREEN)),
-        )
         .highlight_style(list_highlight_style())
         .highlight_symbol(" ▎");
 
@@ -512,7 +690,7 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
         adjusted_state.select(Some(selected - adjusted_start));
     }
 
-    f.render_stateful_widget(list, area, &mut adjusted_state);
+    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }
 
 fn latency_to_bars(latency: Option<u64>) -> ratatui::text::Span<'static> {
@@ -533,7 +711,11 @@ pub fn render_stream_details_pane(f: &mut Frame, app: &mut App, area: Rect, bord
     };
 
     let Some(s) = focused_stream else { return };
-    let parsed = parse_stream(&s.name, app.provider_timezone.as_deref());
+    let parsed = if let Some(ref cached) = s.cached_parsed {
+        cached.as_ref().clone()
+    } else {
+        parse_stream(&s.name, app.provider_timezone.as_deref())
+    };
     
     let score_data = app.get_score_for_stream(&parsed.display_name);
     

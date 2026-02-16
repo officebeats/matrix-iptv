@@ -1,6 +1,7 @@
 use crate::app::{App, AsyncAction, CurrentScreen, Pane, InputMode, LoginField, Guide, SettingsState};
 use crate::api::get_id_str;
 use crate::{preprocessing, player};
+use crate::cache::CachedCatalog;
 #[cfg(feature = "chromecast")]
 use crate::cast;
 use crate::config::Account;
@@ -40,6 +41,7 @@ pub async fn handle_key_event(
         app.current_screen = CurrentScreen::GlobalSearch;
         app.search_mode = true;
         app.search_state.query.clear();
+        app.last_search_query.clear(); // Reset for fresh search
         app.update_search();
         // Force screensaver off
         app.show_matrix_rain = false;
@@ -265,6 +267,11 @@ pub async fn handle_key_event(
                 app.state_loading = true;
                 app.loading_message = Some("Refreshing playlist...".to_string());
 
+                // Invalidate cache for current account
+                if let Some(account) = app.config.accounts.get(app.selected_account_index) {
+                    CachedCatalog::invalidate(&account.name);
+                }
+
                 app.categories.clear();
                 app.all_categories.clear();
                 app.streams.clear();
@@ -350,6 +357,10 @@ pub async fn handle_key_event(
                 }
                 KeyCode::Char('d') => {
                     if !app.config.accounts.is_empty() {
+                        // Invalidate cache for the account being deleted
+                        if let Some(account) = app.config.accounts.get(app.selected_account_index) {
+                            CachedCatalog::invalidate(&account.name);
+                        }
                         app.config.remove_account(app.selected_account_index);
                         if app.selected_account_index >= app.config.accounts.len() && !app.config.accounts.is_empty() {
                             app.selected_account_index = app.config.accounts.len() - 1;
@@ -437,6 +448,7 @@ pub async fn handle_key_event(
                     app.active_pane = Pane::Categories;
                     app.search_mode = false;
                     app.search_state.query.clear();
+                    app.last_search_query.clear();
                     app.update_search();
                 }
                 KeyCode::Char('2') => {
@@ -444,6 +456,7 @@ pub async fn handle_key_event(
                     app.active_pane = Pane::Categories;
                     app.search_mode = false;
                     app.search_state.query.clear();
+                    app.last_search_query.clear();
                     app.update_search();
                 }
                 KeyCode::Char('3') => {
@@ -451,6 +464,7 @@ pub async fn handle_key_event(
                     app.active_pane = Pane::Categories;
                     app.search_mode = false;
                     app.search_state.query.clear();
+                    app.last_search_query.clear();
                     app.update_search();
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
@@ -476,16 +490,15 @@ pub async fn handle_key_event(
                             app.active_pane = Pane::Categories;
                             app.search_mode = false;
                             app.search_state.query.clear();
+                            app.last_search_query.clear();
                             app.update_search();
-
-                            // Auto-load removed by user request - wait for manual selection
-                            // if !app.categories.is_empty() { ... }
                         }
                         1 => {
                             app.current_screen = CurrentScreen::VodCategories;
                             app.active_pane = Pane::Categories;
                             app.search_mode = false;
                             app.search_state.query.clear();
+                            app.last_search_query.clear();
                             app.update_search();
                         }
                         2 => {
@@ -493,6 +506,7 @@ pub async fn handle_key_event(
                             app.active_pane = Pane::Categories;
                             app.search_mode = false;
                             app.search_state.query.clear();
+                            app.last_search_query.clear();
                             app.update_search();
                         }
                         _ => {}
@@ -674,6 +688,12 @@ pub async fn handle_key_event(
                                             server_timezone: None,
                                         };
                                         if let Some(idx) = app.editing_account_index {
+                                            // Invalidate cache for the old account name if name changed
+                                            if let Some(old_account) = app.config.accounts.get(idx) {
+                                                if old_account.name != acc.name {
+                                                    CachedCatalog::invalidate(&old_account.name);
+                                                }
+                                            }
                                             app.config.update_account(idx, acc);
                                         } else {
                                             app.config.add_account(acc);
@@ -756,6 +776,7 @@ pub async fn handle_key_event(
                     KeyCode::Esc => {
                         app.search_mode = false;
                         app.search_state.query.clear();
+                        app.last_search_query.clear(); // Reset for next search
                         app.update_search();
                     }
                     KeyCode::Enter => {
@@ -776,6 +797,7 @@ pub async fn handle_key_event(
                     KeyCode::Char('/') | KeyCode::Char('f') => {
                         app.search_mode = true;
                         app.search_state.query.clear();
+                        app.last_search_query.clear();
                         app.update_search();
                     }
                     KeyCode::Esc | KeyCode::Backspace => {
@@ -787,6 +809,7 @@ pub async fn handle_key_event(
                             app.stream_list_state.select(None);
                             app.search_mode = false;
                             app.search_state.query.clear();
+                            app.last_search_query.clear();
                         } else {
                             app.streams.clear();
                             app.all_streams.clear();
@@ -796,6 +819,7 @@ pub async fn handle_key_event(
                             app.category_list_state.select(None);
                             app.search_mode = false;
                             app.search_state.query.clear();
+                            app.last_search_query.clear();
                             app.current_screen = CurrentScreen::ContentTypeSelection;
                         }
                     }
@@ -806,17 +830,86 @@ pub async fn handle_key_event(
                             _ => {}
                         }
                     }
-                    KeyCode::Left | KeyCode::Char('c') => { app.active_pane = Pane::Categories; }
-                    KeyCode::Right | KeyCode::Char('s') => { if !app.streams.is_empty() { app.active_pane = Pane::Streams; } }
                     KeyCode::Char('j') | KeyCode::Down => match app.active_pane {
-                        Pane::Categories => app.next_category(),
+                        Pane::Categories => {
+                            if app.category_grid_view {
+                                // Grid navigation: Down = jump by columns
+                                let cols = app.grid_cols.max(1);
+                                let new_idx = app.selected_category_index + cols;
+                                if new_idx < app.categories.len() {
+                                    app.selected_category_index = new_idx;
+                                    app.category_list_state.select(Some(new_idx));
+                                } else if app.selected_category_index < app.categories.len().saturating_sub(1) {
+                                    app.selected_category_index = app.categories.len() - 1;
+                                    app.category_list_state.select(Some(app.selected_category_index));
+                                }
+                            } else {
+                                // List navigation: Down = +1
+                                if app.selected_category_index < app.categories.len().saturating_sub(1) {
+                                    app.selected_category_index += 1;
+                                    app.category_list_state.select(Some(app.selected_category_index));
+                                }
+                            }
+                        },
                         Pane::Streams => app.next_stream(),
                         _ => {}
                     },
                     KeyCode::Char('k') | KeyCode::Up => match app.active_pane {
-                        Pane::Categories => app.previous_category(),
+                        Pane::Categories => {
+                            if app.category_grid_view {
+                                // Grid navigation: Up = jump by columns
+                                let cols = app.grid_cols.max(1);
+                                if app.selected_category_index >= cols {
+                                    app.selected_category_index -= cols;
+                                } else {
+                                    app.selected_category_index = 0;
+                                }
+                                app.category_list_state.select(Some(app.selected_category_index));
+                            } else {
+                                // List navigation: Up = -1
+                                if app.selected_category_index > 0 {
+                                    app.selected_category_index -= 1;
+                                    app.category_list_state.select(Some(app.selected_category_index));
+                                }
+                            }
+                        },
                         Pane::Streams => app.previous_stream(),
                         _ => {}
+                    },
+                    KeyCode::Left => {
+                        if app.active_pane == Pane::Categories && app.category_grid_view {
+                            // Grid: move left one cell
+                            if app.selected_category_index > 0 {
+                                app.selected_category_index -= 1;
+                                app.category_list_state.select(Some(app.selected_category_index));
+                            }
+                        } else if app.active_pane == Pane::Streams {
+                            app.active_pane = Pane::Categories; 
+                        }
+                    },
+                    KeyCode::Right => {
+                        if app.active_pane == Pane::Categories && app.category_grid_view {
+                            // Grid: move right one cell
+                            if app.selected_category_index < app.categories.len().saturating_sub(1) {
+                                app.selected_category_index += 1;
+                                app.category_list_state.select(Some(app.selected_category_index));
+                            }
+                        } else if app.active_pane == Pane::Streams && !app.streams.is_empty() {
+                            app.active_pane = Pane::Streams;
+                        }
+                    },
+                    KeyCode::Char('g') => {
+                        if app.active_pane == Pane::Categories {
+                            app.category_grid_view = !app.category_grid_view;
+                        } else if app.active_pane == Pane::Streams && !app.streams.is_empty() {
+                            let stream = &app.streams[app.selected_stream_index];
+                            let stream_id = get_id_str(&stream.stream_id);
+                            app.pending_stream_for_group = Some(stream_id);
+                            app.selected_group_index = 0;
+                            app.group_list_state.select(Some(0));
+                            app.previous_screen = Some(app.current_screen.clone());
+                            app.current_screen = CurrentScreen::GroupPicker;
+                        }
                     },
                     KeyCode::Char('v') => match app.active_pane {
                         Pane::Categories => {
@@ -864,14 +957,14 @@ pub async fn handle_key_event(
                                 if !app.categories.is_empty() {
                                     let cat_id = app.categories[app.selected_category_index].category_id.clone();
                                     if cat_id == "ALL" && !app.global_all_streams.is_empty() {
-                                        app.all_streams = app.global_all_streams.clone();
-                                        app.streams = app.all_streams.clone();
+                                        // Fast path: use cached global streams with proper filtering
+                                        app.select_category(app.selected_category_index);
                                         app.current_screen = CurrentScreen::Streams;
                                         app.active_pane = Pane::Streams;
                                         app.selected_stream_index = 0;
                                         app.stream_list_state.select(Some(0));
                                     } else if cat_id == "ALL" {
-                                        // Background scan hasn't completed yet — use parallel fetch
+                                        // Background scan hasn't completed — fetch sequentially to avoid ISP throttling
                                         if let Some(client) = &app.current_client {
                                             let client = client.clone();
                                             let tx = tx.clone();
@@ -882,22 +975,62 @@ pub async fn handle_key_event(
                                             app.loading_message = Some("Loading all channels...".to_string());
                                             tokio::spawn(async move {
                                                 let _ = tx.send(AsyncAction::LoadingMessage("Fetching categories...".to_string())).await;
-                                                let cats = match client.get_live_categories().await {
+                                                let mut cats = match client.get_live_categories().await {
                                                     Ok(cats) => cats,
                                                     Err(e) => {
                                                         let _ = tx.send(AsyncAction::Error(format!("Failed to load categories: {}", e))).await;
                                                         return;
                                                     }
                                                 };
-                                                let _ = tx.send(AsyncAction::LoadingMessage(format!("Fetching {} categories in parallel...", cats.len()))).await;
-                                                let mut handles = Vec::with_capacity(cats.len());
+                                                // In 'merica mode, pre-filter categories to only scan American ones
+                                                let use_merica = pms.contains(&crate::config::ProcessingMode::Merica);
+                                                let use_all_english = pms.contains(&crate::config::ProcessingMode::AllEnglish);
+                                                if use_merica {
+                                                    let before = cats.len();
+                                                    cats.retain(|c| crate::parser::is_american_live(&c.category_name));
+                                                    let _ = tx.send(AsyncAction::LoadingMessage(format!(
+                                                        "'merica mode: scanning {}/{} categories", cats.len(), before
+                                                    ))).await;
+                                                } else if use_all_english {
+                                                    let before = cats.len();
+                                                    cats.retain(|c| crate::parser::is_english_live(&c.category_name));
+                                                    let _ = tx.send(AsyncAction::LoadingMessage(format!(
+                                                        "English mode: scanning {}/{} categories", cats.len(), before
+                                                    ))).await;
+                                                }
+                                                let total_cats = cats.len();
+                                                let scan_start = std::time::Instant::now();
+                                                let completed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                                                let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(3));
+                                                let mut handles = Vec::with_capacity(total_cats);
+
                                                 for cat in &cats {
                                                     let c = client.clone();
                                                     let cat_id = cat.category_id.clone();
+                                                    let cat_name = cat.category_name.clone();
+                                                    let tx2 = tx.clone();
+                                                    let sem2 = sem.clone();
+                                                    let completed2 = completed.clone();
+                                                    let start = scan_start;
+
                                                     handles.push(tokio::spawn(async move {
-                                                        c.get_live_streams(&cat_id).await.unwrap_or_default()
+                                                        let _permit = sem2.acquire().await.unwrap();
+                                                        let streams = c.get_live_streams(&cat_id).await.unwrap_or_default();
+                                                        let done = completed2.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                                                        let elapsed = start.elapsed().as_secs_f64();
+                                                        let avg = elapsed / done as f64;
+                                                        let remaining = (total_cats - done) as f64 * avg;
+                                                        let eta_secs = remaining.ceil() as u64;
+                                                        let pct = (done * 100) / total_cats;
+                                                        let _ = tx2.send(AsyncAction::ScanProgress { current: done, total: total_cats, eta_secs }).await;
+                                                        let _ = tx2.send(AsyncAction::LoadingMessage(format!(
+                                                            "{}% [{}/{}] · {} · ETA {}s",
+                                                            pct, done, total_cats, cat_name, eta_secs
+                                                        ))).await;
+                                                        streams
                                                     }));
                                                 }
+
                                                 let mut all_streams = Vec::new();
                                                 for handle in handles {
                                                     if let Ok(streams) = handle.await {
@@ -980,18 +1113,7 @@ pub async fn handle_key_event(
                         }
                     }
                     KeyCode::Char('x') => { app.current_screen = CurrentScreen::Settings }
-                    KeyCode::Char('g') => {
-                        // Add to group - open group picker
-                        if app.active_pane == Pane::Streams && !app.streams.is_empty() {
-                            let stream = &app.streams[app.selected_stream_index];
-                            let stream_id = get_id_str(&stream.stream_id);
-                            app.pending_stream_for_group = Some(stream_id);
-                            app.selected_group_index = 0;
-                            app.group_list_state.select(Some(0));
-                            app.previous_screen = Some(app.current_screen.clone());
-                            app.current_screen = CurrentScreen::GroupPicker;
-                        }
-                    }
+
                     KeyCode::Char('G') => {
                         // Open group management
                         app.previous_screen = Some(app.current_screen.clone());
@@ -1039,6 +1161,7 @@ pub async fn handle_key_event(
                     KeyCode::Esc => {
                         app.search_mode = false;
                         app.search_state.query.clear();
+                        app.last_search_query.clear();
                         app.update_search();
                     }
                     KeyCode::Enter => { app.search_mode = false; }
@@ -1052,6 +1175,7 @@ pub async fn handle_key_event(
                         app.search_mode = true;
                         app.active_pane = Pane::Categories;
                         app.search_state.query.clear();
+                        app.last_search_query.clear();
                         app.update_search();
                     }
                     KeyCode::Esc | KeyCode::Backspace => {
@@ -1063,6 +1187,7 @@ pub async fn handle_key_event(
                         app.vod_stream_list_state.select(None);
                         app.search_mode = false;
                         app.search_state.query.clear();
+                        app.last_search_query.clear();
                         app.current_screen = CurrentScreen::ContentTypeSelection;
                     }
                     KeyCode::Char('j') | KeyCode::Down => app.next_vod_category(),
@@ -1187,7 +1312,7 @@ pub async fn handle_key_event(
         CurrentScreen::VodStreams => {
             if app.search_mode {
                 match key.code {
-                    KeyCode::Esc => { app.search_mode = false; app.search_state.query.clear(); app.update_search(); }
+                    KeyCode::Esc => { app.search_mode = false; app.search_state.query.clear(); app.last_search_query.clear(); app.update_search(); }
                     KeyCode::Enter => { app.search_mode = false; }
                     KeyCode::Backspace => { app.search_state.query.pop(); app.update_search(); }
                     KeyCode::Char(c) => { app.search_state.query.push(c); app.update_search(); }
@@ -1195,7 +1320,7 @@ pub async fn handle_key_event(
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.active_pane = Pane::Streams; app.search_state.query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.active_pane = Pane::Streams; app.search_state.query.clear(); app.last_search_query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace => {
                         app.vod_streams.clear();
                         app.all_vod_streams.clear();
@@ -1304,7 +1429,7 @@ pub async fn handle_key_event(
         CurrentScreen::SeriesCategories => {
             if app.search_mode {
                 match key.code {
-                    KeyCode::Esc => { app.search_mode = false; app.search_state.query.clear(); app.series_categories = app.all_series_categories.clone(); app.series_streams = app.all_series_streams.clone(); }
+                    KeyCode::Esc => { app.search_mode = false; app.search_state.query.clear(); app.last_search_query.clear(); app.series_categories = app.all_series_categories.clone(); app.series_streams = app.all_series_streams.clone(); }
                     KeyCode::Enter => { app.search_mode = false; }
                     KeyCode::Backspace => { app.search_state.query.pop(); app.update_search(); }
                     KeyCode::Char(c) => { app.search_state.query.push(c); app.update_search(); }
@@ -1312,7 +1437,7 @@ pub async fn handle_key_event(
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_state.query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_state.query.clear(); app.last_search_query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace => {
                         app.series_streams.clear();
                         app.all_series_streams.clear();
@@ -1322,6 +1447,7 @@ pub async fn handle_key_event(
                         app.series_stream_list_state.select(None);
                         app.search_mode = false;
                         app.search_state.query.clear();
+                        app.last_search_query.clear();
                         app.current_screen = CurrentScreen::ContentTypeSelection;
                     }
                     KeyCode::Char('j') | KeyCode::Down => app.next_series_category(),
@@ -1437,7 +1563,7 @@ pub async fn handle_key_event(
         CurrentScreen::SeriesStreams => {
              if app.search_mode {
                 match key.code {
-                    KeyCode::Esc => { app.search_mode = false; app.search_state.query.clear(); app.series_categories = app.all_series_categories.clone(); app.series_streams = app.all_series_streams.clone(); }
+                    KeyCode::Esc => { app.search_mode = false; app.search_state.query.clear(); app.last_search_query.clear(); app.series_categories = app.all_series_categories.clone(); app.series_streams = app.all_series_streams.clone(); }
                     KeyCode::Enter => { app.search_mode = false; }
                     KeyCode::Backspace => { app.search_state.query.pop(); app.update_search(); }
                     KeyCode::Char(c) => { app.search_state.query.push(c); app.update_search(); }
@@ -1445,12 +1571,12 @@ pub async fn handle_key_event(
                 }
             } else {
                  match key.code {
-                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_state.query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_state.query.clear(); app.last_search_query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace | KeyCode::Left => {
                         match app.active_pane {
-                            Pane::Episodes => { app.series_episodes.clear(); app.selected_series_episode_index = 0; app.series_episode_list_state.select(None); app.active_pane = Pane::Streams; app.search_mode = false; app.search_state.query.clear(); }
-                            Pane::Streams => { app.series_streams.clear(); app.all_series_streams.clear(); app.selected_series_stream_index = 0; app.series_stream_list_state.select(None); app.active_pane = Pane::Categories; app.search_mode = false; app.search_state.query.clear(); }
-                            Pane::Categories => { app.series_streams.clear(); app.all_series_streams.clear(); app.selected_series_stream_index = 0; app.series_stream_list_state.select(None); app.search_mode = false; app.search_state.query.clear(); app.current_screen = CurrentScreen::SeriesCategories; }
+                            Pane::Episodes => { app.series_episodes.clear(); app.selected_series_episode_index = 0; app.series_episode_list_state.select(None); app.active_pane = Pane::Streams; app.search_mode = false; app.search_state.query.clear(); app.last_search_query.clear(); }
+                            Pane::Streams => { app.series_streams.clear(); app.all_series_streams.clear(); app.selected_series_stream_index = 0; app.series_stream_list_state.select(None); app.active_pane = Pane::Categories; app.search_mode = false; app.search_state.query.clear(); app.last_search_query.clear(); }
+                            Pane::Categories => { app.series_streams.clear(); app.all_series_streams.clear(); app.selected_series_stream_index = 0; app.series_stream_list_state.select(None); app.search_mode = false; app.search_state.query.clear(); app.last_search_query.clear(); app.current_screen = CurrentScreen::SeriesCategories; }
                         }
                     }
                     KeyCode::Char('j') | KeyCode::Down => match app.active_pane {
@@ -1534,10 +1660,11 @@ pub async fn handle_key_event(
         CurrentScreen::GlobalSearch => {
             if app.search_mode {
                 match key.code {
-                    KeyCode::Esc => { 
-                        app.search_mode = false; 
-                        app.search_state.query.clear(); 
-                        app.global_search_results.clear(); 
+                    KeyCode::Esc => {
+                        app.search_mode = false;
+                        app.search_state.query.clear();
+                        app.last_search_query.clear();
+                        app.global_search_results.clear();
                         app.current_screen = app.previous_screen.clone().unwrap_or(CurrentScreen::Home);
                     }
                     KeyCode::Enter => { app.search_mode = false; }
@@ -1547,10 +1674,11 @@ pub async fn handle_key_event(
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_state.query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_state.query.clear(); app.last_search_query.clear(); app.update_search(); }
                     KeyCode::Esc | KeyCode::Backspace => {
                         app.search_mode = false;
                         app.search_state.query.clear();
+                        app.last_search_query.clear();
                         app.global_search_results.clear();
                         app.current_screen = app.previous_screen.clone().unwrap_or(CurrentScreen::Home);
                     }
@@ -1739,6 +1867,10 @@ pub async fn handle_key_event(
                     KeyCode::Char('d') | KeyCode::Delete => {
                         // Delete selected playlist
                         if !app.config.accounts.is_empty() && app.selected_account_index < app.config.accounts.len() {
+                            // Invalidate cache for the account being deleted
+                            if let Some(account) = app.config.accounts.get(app.selected_account_index) {
+                                CachedCatalog::invalidate(&account.name);
+                            }
                             app.config.accounts.remove(app.selected_account_index);
                             let _ = app.config.save();
                             if app.selected_account_index > 0 {
@@ -1872,6 +2004,11 @@ pub async fn handle_key_event(
                             } else {
                                 // Clicked "APPLY & SAVE"
                                 let _ = app.config.save();
+
+                                // Invalidate cache since processing modes changed
+                                if let Some(account) = app.config.accounts.get(app.selected_account_index) {
+                                    CachedCatalog::invalidate(&account.name);
+                                }
 
                                 // Exit settings back to wherever we were
                                 let return_screen = app.previous_screen.take().unwrap_or(CurrentScreen::Home);

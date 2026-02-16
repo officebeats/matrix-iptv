@@ -138,6 +138,18 @@ pub fn preprocess_streams(
     let use_sports = modes.contains(&crate::config::ProcessingMode::Sports);
     let use_all_english = modes.contains(&crate::config::ProcessingMode::AllEnglish);
 
+    // 0. Strip out provider-injected separator/header entries.
+    streams.retain(|s| {
+        let name = s.name.trim();
+        if name.is_empty() { return false; }
+        
+        let sep_chars: &[char] = &['❖', '#', '═', '●', '◆', '■', '▬', '━', '─', '☆', '★', '◇', '◈', '▶', '▷'];
+        let sep_count = name.chars().filter(|c| sep_chars.contains(c)).count();
+        if sep_count >= 2 { return false; }
+        if name.chars().all(|c| sep_chars.contains(&c) || c.is_whitespace()) { return false; }
+        true
+    });
+
     // 1. Filter
     streams.retain_mut(|s| {
         let mut keep = true;
@@ -171,7 +183,7 @@ pub fn preprocess_streams(
     streams.par_iter_mut().for_each(|s| {
         if should_clean {
             s.clean_name = crate::parser::clean_american_name(&s.name);
-            s.name = s.clean_name.clone(); // Critical: Update name for display consistency
+            s.name = s.clean_name.clone(); 
         } else {
             s.clean_name = s.name.clone();
         };
@@ -203,9 +215,12 @@ pub fn preprocess_streams(
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
             _ => {
-                let a_num = a.num.as_ref().and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
-                let b_num = b.num.as_ref().and_then(|v| v.as_u64()).unwrap_or(u64::MAX);
-                a_num.cmp(&b_num)
+                let a_num = a.num.as_ref().and_then(|v| v.as_i64()).unwrap_or(i64::MAX) as u64;
+                let b_num = b.num.as_ref().and_then(|v| v.as_i64()).unwrap_or(i64::MAX) as u64;
+                match a_num.cmp(&b_num) {
+                    std::cmp::Ordering::Equal => a.name.cmp(&b.name),
+                    other => other,
+                }
             }
         }
     });

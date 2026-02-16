@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::Line,
-    widgets::{Block, BorderType, Borders, List, ListItem},
+    widgets::{List, ListItem, Paragraph, Wrap},
     Frame,
 };
 use crate::app::{App, Pane};
@@ -52,35 +52,30 @@ pub fn render_vod_categories_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .take(end - adjusted_start)
         .map(|(_, c)| {
             let parsed = parse_category(&c.category_name);
-            let mut spans = vec![
-                ratatui::text::Span::styled("◆ ", Style::default().fg(SOFT_GREEN)),
-            ];
-            
             let (styled_name, _) = stylize_channel_name(
                 &parsed.display_name, parsed.is_vip, false,
                 parsed.quality, parsed.content_type, None,
                 Style::default().fg(MATRIX_GREEN),
             );
-            spans.extend(styled_name);
-            ListItem::new(Line::from(spans))
+            ListItem::new(Line::from(styled_name))
         }).collect();
 
-    let title = format!(" movies ({}) ", app.vod_categories.len());
+    let title = if total == 0 {
+        "movies".to_string()
+    } else {
+        format!("movies ({}/{})", selected.saturating_add(1), total)
+    };
     let is_active = app.active_pane == Pane::Categories;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
+    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
 
     let list = List::new(items)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
-            .border_type(BorderType::Rounded)
-            .title(ratatui::text::Span::styled(&title, Style::default().fg(border_color).add_modifier(Modifier::BOLD))))
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
         .highlight_symbol(" ▎");
 
     let mut adjusted_state = app.vod_category_list_state.clone();
     if adjusted_start > 0 { adjusted_state.select(Some(selected - adjusted_start)); }
-    f.render_stateful_widget(list, area, &mut adjusted_state);
+    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }
 
 pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
@@ -100,10 +95,8 @@ pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .take(end - adjusted_start)
         .map(|(_, s)| {
             let parsed = parse_stream(&s.name, app.provider_timezone.as_deref());
-            let mut spans = vec![
-                ratatui::text::Span::styled("◆ ", Style::default().fg(SOFT_GREEN)),
-            ];
-            
+            let mut spans = vec![];
+
             let mut name = parsed.display_name.clone();
             let re_year = regex::Regex::new(r"[\(\[](19|20)\d{2}[\)\]]").unwrap();
             if let Some(mat) = re_year.find(&s.name) {
@@ -120,17 +113,12 @@ pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
             );
             spans.extend(styled_name);
 
-            if let Some(rating_val) = &s.rating {
-                let rating_str = match rating_val {
-                    serde_json::Value::String(s) => s.clone(),
-                    serde_json::Value::Number(n) => n.to_string(),
-                    _ => String::new(),
-                };
-                let rating_f = rating_str.parse::<f32>().unwrap_or(0.0);
+            if let Some(rating_f) = s.rating {
                 if rating_f > 0.0 {
+                    let rating_str = format!("{:.1}", rating_f);
                     let rating_color = crate::ui::utils::get_rating_color(&rating_str);
                     spans.push(ratatui::text::Span::styled(
-                        format!(" {:.1}", rating_f),
+                        format!(" {}", rating_str),
                         Style::default().fg(rating_color),
                     ));
                 }
@@ -139,33 +127,26 @@ pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
             ListItem::new(Line::from(spans))
         }).collect();
 
-    let title = format!(" results ({}) ", app.vod_streams.len());
+    let title = if total == 0 {
+        "results".to_string()
+    } else {
+        format!("results ({}/{})", selected.saturating_add(1), total)
+    };
     let is_active = app.active_pane == Pane::Streams;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
+    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
 
     let list = List::new(items)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
-            .border_type(BorderType::Rounded)
-            .title(ratatui::text::Span::styled(&title, Style::default().fg(border_color).add_modifier(Modifier::BOLD))))
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
         .highlight_symbol(" ▎");
 
     let mut adjusted_state = app.vod_stream_list_state.clone();
     if adjusted_start > 0 { adjusted_state.select(Some(selected - adjusted_start)); }
-    f.render_stateful_widget(list, area, &mut adjusted_state);
+    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }
 
 pub fn render_vod_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
-    use ratatui::widgets::Paragraph;
-    use ratatui::widgets::Wrap;
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_style(Style::default().fg(DARK_GREEN))
-        .border_type(BorderType::Rounded)
-        .title(ratatui::text::Span::styled(" details ", Style::default().fg(SOFT_GREEN).add_modifier(Modifier::BOLD)));
+    let inner_area = crate::ui::common::render_matrix_box(f, area, "details", SOFT_GREEN);
 
     let mut details_text = Vec::new();
 
@@ -174,7 +155,7 @@ pub fn render_vod_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
             let mut title = info.get("name").and_then(|v| v.as_str()).map(|s| s.to_string())
                 .or_else(|| vod_info.movie_data.as_ref().and_then(|m| m.name.clone()))
                 .unwrap_or_default();
-            
+
             if !title.contains('(') && !title.contains('[') {
                 if let Some(stream) = app.vod_streams.get(app.selected_vod_stream_index) {
                     let re_year = regex::Regex::new(r"[\(\[](19|20)\d{2}[\)\]]").unwrap();
@@ -254,8 +235,7 @@ pub fn render_vod_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
     }
 
     let paragraph = Paragraph::new(details_text)
-        .block(block)
         .wrap(Wrap { trim: true });
 
-    f.render_widget(paragraph, area);
+    f.render_widget(paragraph, inner_area);
 }

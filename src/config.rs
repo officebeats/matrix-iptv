@@ -9,8 +9,8 @@ use std::fs;
 /// Player engine options
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
 pub enum PlayerEngine {
-    Mpv,
     #[default]
+    Mpv,
     Vlc,
 }
 
@@ -198,6 +198,10 @@ pub struct AppConfig {
     /// Auto-refresh playlist if older than this many hours. 0 = disabled.
     #[serde(default = "default_auto_refresh_hours")]
     pub auto_refresh_hours: u32,
+
+    /// Recently watched channels (stream_id, stream_name), most recent first, max 20
+    #[serde(default)]
+    pub recently_watched: Vec<(String, String)>,
 }
 
 fn default_auto_refresh_hours() -> u32 { 12 }
@@ -218,9 +222,10 @@ impl Default for AppConfig {
             processing_modes: Vec::new(),
             dns_provider: DnsProvider::default(),
             use_default_mpv: use_default_mpv_default,
-            preferred_player: PlayerEngine::Vlc,
+            preferred_player: PlayerEngine::Mpv,
             smooth_motion: true, // Default to smoothing ON for better UX
             auto_refresh_hours: 12,
+            recently_watched: Vec::new(),
         }
     }
 }

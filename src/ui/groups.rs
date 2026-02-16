@@ -2,11 +2,11 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph},
+    widgets::{Block, List, ListItem, Paragraph},
     Frame,
 };
 use crate::app::App;
-use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, DARK_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 
 /// Render the Group Management screen
 pub fn render_group_management(f: &mut Frame, app: &mut App, area: Rect) {
@@ -22,8 +22,7 @@ pub fn render_group_management(f: &mut Frame, app: &mut App, area: Rect) {
     let title = Paragraph::new(Line::from(vec![
         Span::styled("  groups", Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
         Span::styled(" · custom channel groups", Style::default().fg(TEXT_SECONDARY)),
-    ]))
-    .block(Block::default().borders(Borders::BOTTOM).border_style(Style::default().fg(DARK_GREEN)));
+    ]));
     f.render_widget(title, chunks[0]);
 
     let groups = &app.config.favorites.groups;
@@ -35,26 +34,24 @@ pub fn render_group_management(f: &mut Frame, app: &mut App, area: Rect) {
         ]))]
     } else {
         groups.iter().map(|g| {
-            let icon = g.icon.as_deref().unwrap_or("◆");
+            let icon = g.icon.as_deref().unwrap_or("");
             let count = g.stream_ids.len();
+            let prefix = if icon.is_empty() { "  ".to_string() } else { format!("  {} ", icon) };
             ListItem::new(Line::from(vec![
-                Span::styled(format!("  {} ", icon), Style::default().fg(SOFT_GREEN)),
+                Span::styled(prefix, Style::default().fg(SOFT_GREEN)),
                 Span::styled(&g.name, Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled(format!("  {} channels", count), Style::default().fg(TEXT_DIM)),
             ]))
         }).collect()
     };
 
+    let inner_area = crate::ui::common::render_matrix_box(f, chunks[1], &format!("groups ({})", groups.len()), SOFT_GREEN);
+
     let list = List::new(items)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(DARK_GREEN))
-            .title(Span::styled(format!(" groups ({}) ", groups.len()), Style::default().fg(SOFT_GREEN).add_modifier(Modifier::BOLD))))
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
         .highlight_symbol(" ▎");
 
-    f.render_stateful_widget(list, chunks[1], &mut app.group_list_state);
+    f.render_stateful_widget(list, inner_area, &mut app.group_list_state);
 
     let key_style = Style::default().fg(MATRIX_GREEN);
     let label_style = Style::default().fg(TEXT_SECONDARY);
@@ -94,14 +91,15 @@ pub fn render_group_picker(f: &mut Frame, app: &mut App, area: Rect) {
         Span::styled("add to group", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
     ]))
     .alignment(Alignment::Center)
-    .block(Block::default().borders(Borders::BOTTOM).border_style(Style::default().fg(DARK_GREEN)));
+    ;
     f.render_widget(title, chunks[0]);
 
     let groups = &app.config.favorites.groups;
     let mut items: Vec<ListItem> = groups.iter().map(|g| {
-        let icon = g.icon.as_deref().unwrap_or("◆");
+        let icon = g.icon.as_deref().unwrap_or("");
+        let prefix = if icon.is_empty() { "  ".to_string() } else { format!(" {} ", icon) };
         ListItem::new(Line::from(vec![
-            Span::styled(format!(" {} ", icon), Style::default().fg(SOFT_GREEN)),
+            Span::styled(prefix, Style::default().fg(SOFT_GREEN)),
             Span::styled(&g.name, Style::default().fg(MATRIX_GREEN)),
         ]))
     }).collect();
@@ -112,10 +110,6 @@ pub fn render_group_picker(f: &mut Frame, app: &mut App, area: Rect) {
     ])));
 
     let list = List::new(items)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(SOFT_GREEN)))
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
         .highlight_symbol(" ▎");
 
@@ -123,7 +117,7 @@ pub fn render_group_picker(f: &mut Frame, app: &mut App, area: Rect) {
 
     let help = Paragraph::new(Line::from(vec![
         Span::styled("enter", Style::default().fg(MATRIX_GREEN)),
-        Span::styled(" add  ", Style::default().fg(TEXT_SECONDARY)),
+        Span::styled(" add · ", Style::default().fg(TEXT_SECONDARY)),
         Span::styled("esc", Style::default().fg(MATRIX_GREEN)),
         Span::styled(" cancel", Style::default().fg(TEXT_SECONDARY)),
     ])).alignment(Alignment::Center);

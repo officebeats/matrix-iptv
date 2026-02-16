@@ -2,28 +2,28 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph},
+    widgets::{Clear, List, ListItem, Paragraph},
     Frame,
 };
 use crate::app::{App, LoginField, InputMode, SettingsState};
-use crate::ui::colors::{MATRIX_GREEN, DARK_GREEN, SOFT_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 
 pub fn render_login(f: &mut Frame, app: &App, area: Rect) {
     let title = if app.editing_account_index.is_some() {
-        " edit playlist "
+        "edit playlist"
     } else {
-        " add playlist "
+        "add playlist"
     };
-    
-    let block = Block::default()
-        .title(Span::styled(title, Style::default().fg(SOFT_GREEN).add_modifier(Modifier::BOLD)))
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(DARK_GREEN));
-    f.render_widget(block.clone(), area);
+
+    let title_area = Rect { x: area.x, y: area.y, width: area.width, height: 1 };
+    let title_widget = Paragraph::new(Line::from(vec![
+        Span::styled("  ", Style::default()),
+        Span::styled(title, Style::default().fg(SOFT_GREEN).add_modifier(Modifier::BOLD)),
+    ]));
+    f.render_widget(title_widget, title_area);
 
     let constraints = vec![
-        Constraint::Length(3), // Name
+        Constraint::Length(3), // Name (label + value + gap)
         Constraint::Length(3), // URL
         Constraint::Length(3), // User
         Constraint::Length(3), // Pass
@@ -32,11 +32,18 @@ pub fn render_login(f: &mut Frame, app: &App, area: Rect) {
         Constraint::Min(1),    // Error
     ];
 
+    let form_area = Rect {
+        x: area.x,
+        y: area.y + 2,
+        width: area.width,
+        height: area.height.saturating_sub(2),
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(2)
+        .margin(1)
         .constraints(constraints)
-        .split(area);
+        .split(form_area);
 
     let active = &app.login_field_focus;
     let mode = app.input_mode == InputMode::Editing;
@@ -86,38 +93,29 @@ pub fn render_login(f: &mut Frame, app: &App, area: Rect) {
 }
 
 fn render_input<'a>(label: &'a str, value: &'a str, is_active: bool, is_editing: bool, cursor_pos: usize, tick: u64) -> Paragraph<'a> {
-    let (title_style, border_style, content_style, border_type) = if is_active && is_editing {
-        // EDITING: Green border, content visible
+    let (label_style, content_style) = if is_active && is_editing {
         (
             Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD),
-            Style::default().fg(MATRIX_GREEN),
             Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD),
-            BorderType::Rounded,
         )
     } else if is_active {
-        // FOCUSED: Soft green border
         (
             Style::default().fg(SOFT_GREEN).add_modifier(Modifier::BOLD),
-            Style::default().fg(SOFT_GREEN),
             Style::default().fg(TEXT_PRIMARY),
-            BorderType::Rounded,
         )
     } else {
-        // NOT FOCUSED: Dark but visible
         (
             Style::default().fg(TEXT_DIM),
-            Style::default().fg(TEXT_DIM),
             Style::default().fg(TEXT_SECONDARY),
-            BorderType::Rounded,
         )
     };
 
     let mut display_value = if is_active && !is_editing && value.is_empty() {
-        "← press enter to edit".to_string()
+        "press enter to edit".to_string()
     } else {
         value.to_string()
     };
-    
+
     if is_active && is_editing && (tick / 15) % 2 == 0 {
         if cursor_pos >= display_value.len() {
             display_value.push('█');
@@ -130,21 +128,17 @@ fn render_input<'a>(label: &'a str, value: &'a str, is_active: bool, is_editing:
         }
     }
 
-    let title_text = if is_active && is_editing {
-        format!(" {} · editing ", label)
-    } else if is_active {
-        format!(" › {} ", label)
-    } else {
-        format!("   {} ", label)
-    };
+    let prompt = if is_active && is_editing { ">_ " } else if is_active { "> " } else { "  " };
 
-    Paragraph::new(display_value)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_type(border_type)
-            .title(Span::styled(title_text, title_style))
-            .border_style(border_style))
-        .style(content_style)
+    let lines = vec![
+        Line::from(Span::styled(format!("  {}", label), label_style)),
+        Line::from(vec![
+            Span::styled(format!("  {}", prompt), label_style),
+            Span::styled(display_value, content_style),
+        ]),
+    ];
+
+    Paragraph::new(lines)
 }
 
 /// Helper to render a settings sub-screen with list + description + hints
@@ -175,15 +169,11 @@ fn render_settings_subscreen(
     f.render_stateful_widget(list, inner_list_area, list_state);
 
     if !description.is_empty() {
+        let inner_desc = crate::ui::common::render_matrix_box(f, chunks[1], "info", TEXT_DIM);
         let desc_block = Paragraph::new(description)
-            .block(Block::default()
-                .title(Span::styled(" info ", Style::default().fg(TEXT_DIM)))
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(TEXT_DIM)))
             .style(Style::default().fg(TEXT_SECONDARY))
             .wrap(ratatui::widgets::Wrap { trim: true });
-        f.render_widget(desc_block, chunks[1]);
+        f.render_widget(desc_block, inner_desc);
     }
 
     let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
@@ -194,9 +184,10 @@ fn render_settings_subscreen(
 fn nav_hints() -> Line<'static> {
     let key_style = Style::default().fg(MATRIX_GREEN);
     let label_style = Style::default().fg(TEXT_SECONDARY);
+    let sep_style = Style::default().fg(TEXT_DIM);
     Line::from(vec![
-        Span::styled("↑↓", key_style), Span::styled(" navigate  ", label_style),
-        Span::styled("enter", key_style), Span::styled(" select  ", label_style),
+        Span::styled("enter", key_style), Span::styled(" select", label_style),
+        Span::styled(" · ", sep_style),
         Span::styled("esc", key_style), Span::styled(" back", label_style),
     ])
 }
@@ -256,15 +247,11 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             let desc = app.settings_descriptions.get(app.selected_settings_index)
                 .map(|s| s.as_str())
                 .unwrap_or("");
+            let inner_desc = crate::ui::common::render_matrix_box(f, chunks[1], "info", TEXT_DIM);
             let desc_block = Paragraph::new(desc)
-                .block(Block::default()
-                    .title(Span::styled(" info ", Style::default().fg(TEXT_DIM)))
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(TEXT_DIM)))
                 .style(Style::default().fg(TEXT_SECONDARY))
                 .wrap(ratatui::widgets::Wrap { trim: true });
-            f.render_widget(desc_block, chunks[1]);
+            f.render_widget(desc_block, inner_desc);
         }
         SettingsState::ManageAccounts => {
             let chunks = Layout::default()
@@ -274,26 +261,23 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
 
             let accounts: Vec<ListItem> = app.config.accounts.iter().map(|acc| {
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!("  ◆ {} ", acc.name), Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+                    Span::styled(format!("  {} ", acc.name), Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                     Span::styled(format!("({})", acc.base_url), Style::default().fg(TEXT_DIM)),
                 ]))
             }).collect();
+
+            let inner_area = crate::ui::common::render_matrix_box(f, chunks[0], &format!("playlists ({})", app.config.accounts.len()), SOFT_GREEN);
             let list = List::new(accounts)
-                .block(Block::default()
-                    .title(Span::styled(format!(" playlists ({}) ", app.config.accounts.len()), Style::default().fg(SOFT_GREEN).add_modifier(Modifier::BOLD)))
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(SOFT_GREEN)))
                 .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
                 .highlight_symbol(" ▎");
-            f.render_stateful_widget(list, chunks[0], &mut app.account_list_state);
+            f.render_stateful_widget(list, inner_area, &mut app.account_list_state);
 
             let key_style = Style::default().fg(MATRIX_GREEN);
             let label_style = Style::default().fg(TEXT_SECONDARY);
             let hints = Line::from(vec![
-                Span::styled("a", key_style), Span::styled(" add  ", label_style),
-                Span::styled("enter", key_style), Span::styled(" edit  ", label_style),
-                Span::styled("d", Style::default().fg(Color::Rgb(255, 100, 100))), Span::styled(" delete  ", label_style),
+                Span::styled("a", key_style), Span::styled(" add · ", label_style),
+                Span::styled("enter", key_style), Span::styled(" edit · ", label_style),
+                Span::styled("d", Style::default().fg(Color::Rgb(255, 100, 100))), Span::styled(" delete · ", label_style),
                 Span::styled("esc", key_style), Span::styled(" back", label_style),
             ]);
             let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
@@ -309,16 +293,12 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                     Line::from(Span::styled(line, Style::default().fg(MATRIX_GREEN)))
                 }
             }).collect();
+            f.render_widget(Clear, area);
+            let inner_area = crate::ui::common::render_matrix_box(f, area, "about", SOFT_GREEN);
             let p = Paragraph::new(about_lines)
                 .alignment(Alignment::Center)
-                .block(Block::default()
-                    .title(Span::styled(" about ", Style::default().fg(SOFT_GREEN).add_modifier(Modifier::BOLD)))
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .border_style(Style::default().fg(DARK_GREEN)))
                 .scroll((app.about_scroll, 0));
-            f.render_widget(Clear, area);
-            f.render_widget(p, area);
+            f.render_widget(p, inner_area);
         }
         SettingsState::DnsSelection => {
             let providers = crate::config::DnsProvider::all();
@@ -399,9 +379,10 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
 
             let key_style = Style::default().fg(MATRIX_GREEN);
             let label_style = Style::default().fg(TEXT_SECONDARY);
+            let sep_style = Style::default().fg(TEXT_DIM);
             let hints = Line::from(vec![
-                Span::styled("↑↓", key_style), Span::styled(" navigate  ", label_style),
-                Span::styled("space", key_style), Span::styled(" toggle  ", label_style),
+                Span::styled("space", key_style), Span::styled(" toggle", label_style),
+                Span::styled(" · ", sep_style),
                 Span::styled("enter", key_style), Span::styled(" done", label_style),
             ]);
             

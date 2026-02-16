@@ -2,7 +2,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::Line,
-    widgets::{Block, BorderType, Borders, List, ListItem},
+    widgets::{List, ListItem},
     Frame,
 };
 use crate::app::{App, Pane};
@@ -18,7 +18,7 @@ pub fn render_series_view(f: &mut Frame, app: &mut App, area: Rect) {
         &app.series_episodes,
         area.width,
     );
-    
+
     let chunks = ratatui::layout::Layout::default()
         .direction(ratatui::layout::Direction::Horizontal)
         .constraints([
@@ -27,7 +27,7 @@ pub fn render_series_view(f: &mut Frame, app: &mut App, area: Rect) {
             ratatui::layout::Constraint::Min(episode_width),
         ])
         .split(area);
-    
+
     app.area_categories = chunks[0];
     app.area_streams = chunks[1];
 
@@ -53,35 +53,30 @@ fn render_series_categories_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .take(end - adjusted_start)
         .map(|(_, c)| {
             let parsed = parse_category(&c.category_name);
-            let mut spans = vec![
-                ratatui::text::Span::styled("◆ ", Style::default().fg(SOFT_GREEN)),
-            ];
-            
             let (styled_name, _) = stylize_channel_name(
                 &parsed.display_name, parsed.is_vip, false,
                 parsed.quality, parsed.content_type, None,
                 Style::default().fg(MATRIX_GREEN),
             );
-            spans.extend(styled_name);
-            ListItem::new(Line::from(spans))
+            ListItem::new(Line::from(styled_name))
         }).collect();
 
-    let title = format!(" categories ({}) ", app.series_categories.len());
+    let title = if total == 0 {
+        "categories".to_string()
+    } else {
+        format!("categories ({}/{})", selected.saturating_add(1), total)
+    };
     let is_active = app.active_pane == Pane::Categories;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
+    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
 
     let list = List::new(items)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
-            .border_type(BorderType::Rounded)
-            .title(ratatui::text::Span::styled(&title, Style::default().fg(border_color).add_modifier(Modifier::BOLD))))
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
         .highlight_symbol(" ▎");
 
     let mut adjusted_state = app.series_category_list_state.clone();
     if adjusted_start > 0 { adjusted_state.select(Some(selected - adjusted_start)); }
-    f.render_stateful_widget(list, area, &mut adjusted_state);
+    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }
 
 fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
@@ -101,10 +96,8 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .take(end - adjusted_start)
         .map(|(_, s)| {
             let parsed = parse_stream(&s.name, app.provider_timezone.as_deref());
-            let mut spans = vec![
-                ratatui::text::Span::styled("◇ ", Style::default().fg(SOFT_GREEN)),
-            ];
-            
+            let mut spans = vec![];
+
             let mut name = parsed.display_name.clone();
             let re_year = regex::Regex::new(r"[\(\[](19|20)\d{2}[\)\]]").unwrap();
             if let Some(mat) = re_year.find(&s.name) {
@@ -121,17 +114,12 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
             );
             spans.extend(styled_name);
 
-            if let Some(rating_val) = &s.rating {
-                let rating_str = match rating_val {
-                    serde_json::Value::String(s) => s.clone(),
-                    serde_json::Value::Number(n) => n.to_string(),
-                    _ => String::new(),
-                };
-                let rating_f = rating_str.parse::<f32>().unwrap_or(0.0);
+            if let Some(rating_f) = s.rating {
                 if rating_f > 0.0 {
+                    let rating_str = format!("{:.1}", rating_f);
                     let rating_color = crate::ui::utils::get_rating_color(&rating_str);
                     spans.push(ratatui::text::Span::styled(
-                        format!(" {:.1}", rating_f),
+                        format!(" {}", rating_str),
                         Style::default().fg(rating_color),
                     ));
                 }
@@ -140,22 +128,22 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
             ListItem::new(Line::from(spans))
         }).collect();
 
-    let title = format!(" series ({}) ", app.series_streams.len());
+    let title = if total == 0 {
+        "series".to_string()
+    } else {
+        format!("series ({}/{})", selected.saturating_add(1), total)
+    };
     let is_active = app.active_pane == Pane::Streams;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
+    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
 
     let list = List::new(items)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
-            .border_type(BorderType::Rounded)
-            .title(ratatui::text::Span::styled(&title, Style::default().fg(border_color).add_modifier(Modifier::BOLD))))
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
         .highlight_symbol(" ▎");
 
     let mut adjusted_state = app.series_stream_list_state.clone();
     if adjusted_start > 0 { adjusted_state.select(Some(selected - adjusted_start)); }
-    f.render_stateful_widget(list, area, &mut adjusted_state);
+    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }
 
 fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
@@ -176,7 +164,6 @@ fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|(_, ep)| {
             let title = ep.title.as_deref().unwrap_or("Untitled");
             let spans = vec![
-                ratatui::text::Span::styled("▸ ", Style::default().fg(SOFT_GREEN)),
                 ratatui::text::Span::styled(
                     format!("S{:02}E{:02}", ep.season, ep.episode_num),
                     Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
@@ -187,20 +174,20 @@ fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
             ListItem::new(Line::from(spans))
         }).collect();
 
-    let title = format!(" episodes ({}) ", app.series_episodes.len());
+    let title = if total == 0 {
+        "episodes".to_string()
+    } else {
+        format!("episodes ({}/{})", selected.saturating_add(1), total)
+    };
     let is_active = app.active_pane == Pane::Episodes;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
+    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
 
     let list = List::new(items)
-        .block(Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(border_color))
-            .border_type(BorderType::Rounded)
-            .title(ratatui::text::Span::styled(&title, Style::default().fg(border_color).add_modifier(Modifier::BOLD))))
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
         .highlight_symbol(" ▎");
 
     let mut adjusted_state = app.series_episode_list_state.clone();
     if adjusted_start > 0 { adjusted_state.select(Some(selected - adjusted_start)); }
-    f.render_stateful_widget(list, area, &mut adjusted_state);
+    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }

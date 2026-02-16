@@ -1,7 +1,14 @@
 use crate::api::{Category, ServerInfo, Stream, UserInfo, IptvClient};
+use crate::flex_id::FlexId;
 use crate::config::AppConfig;
 use crate::errors::{SearchState, LoadingProgress};
+use crate::state::{
+    SessionState, ContentState, SeriesState, VodState, LoginFormState,
+    UiState, SportsState, MatrixRainState, SearchState as DecomposedSearchState,
+    GroupManagementState,
+};
 use std::sync::Arc;
+use std::collections::VecDeque;
 use rayon::prelude::*;
 // Parser imports removed as processing moved to background tasks in main.rs
 use ratatui::layout::Rect;
@@ -47,6 +54,7 @@ pub enum AsyncAction {
     SportsMatchesLoaded(Vec<crate::sports::StreamedMatch>),
     SportsStreamsLoaded(Vec<crate::sports::StreamedStream>),
     ScoresLoaded(Vec<crate::scores::ScoreGame>),
+    ScanProgress { current: usize, total: usize, eta_secs: u64 },
     // Chromecast casting
     CastDevicesDiscovered(Vec<CastDevice>),
     CastStarted(String), // Device name
@@ -207,10 +215,13 @@ pub struct App {
 
     // 2-Pane Navigation
     pub active_pane: Pane,
+    pub category_grid_view: bool, // true = grid tiles, false = list
+    pub grid_cols: usize,         // set by renderer, read by input handler
 
     // Search/Filter
     pub search_state: SearchState,
     pub search_mode: bool,
+    pub last_search_query: String, // Track last query for incremental narrowing
     
     // Loading progress
     pub loading_progress: Option<LoadingProgress>,
@@ -231,6 +242,7 @@ pub struct App {
     pub provider_timezone: Option<String>,
     pub loading_message: Option<String>,
     pub player_error: Option<String>,
+    pub loading_log: std::collections::VecDeque<String>,
 
     // Account details
     pub account_info: Option<UserInfo>,
@@ -297,6 +309,39 @@ pub struct App {
     pub show_cast_picker: bool,
     pub cast_discovering: bool,
     pub selected_cast_device_index: usize,
+
+    // UX improvements
+    #[cfg(not(target_arch = "wasm32"))]
+    pub scan_start_time: Option<std::time::Instant>,   // For loading ETA
+    #[cfg(not(target_arch = "wasm32"))]
+    pub last_search_update: Option<std::time::Instant>, // 150ms debounce gate
+    pub category_channel_counts: std::collections::HashMap<String, usize>, // Counts per category_id
+
+    // Cache state
+    pub background_refresh_active: bool,  // True when background refresh is in progress
+    pub cache_loaded: bool,               // True if current session loaded from cache
+
+    // --- Decomposed State Structs (Phase 6) ---
+    /// Session state for provider connection
+    pub session: SessionState,
+    /// Live channels content state
+    pub live: ContentState,
+    /// VOD movies content state
+    pub vod: VodState,
+    /// Series content state
+    pub series: SeriesState,
+    /// Login form state
+    pub login_form: LoginFormState,
+    /// UI navigation state
+    pub ui: UiState,
+    /// Sports state
+    pub sports: SportsState,
+    /// Matrix rain animation state
+    pub matrix_rain: MatrixRainState,
+    /// Search state
+    pub search: DecomposedSearchState,
+    /// Group management state
+    pub groups: GroupManagementState,
 }
 
 #[derive(Clone)]
@@ -445,8 +490,11 @@ impl App {
             auto_refresh_list_state: ListState::default(),
 
             active_pane: Pane::Categories,
+            category_grid_view: true,
+            grid_cols: 3, // default, overwritten by renderer
             search_state: SearchState::new(),
             search_mode: false,
+            last_search_query: String::new(),
             show_help: false,
             loading_progress: None,
             show_guide: None,
@@ -517,6 +565,30 @@ impl App {
             show_cast_picker: false,
             cast_discovering: false,
             selected_cast_device_index: 0,
+
+            // UX improvements
+            #[cfg(not(target_arch = "wasm32"))]
+            scan_start_time: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            last_search_update: None,
+            category_channel_counts: std::collections::HashMap::new(),
+
+            // Cache state
+            background_refresh_active: false,
+            cache_loaded: false,
+
+            // --- Decomposed State Structs ---
+            session: SessionState::new(),
+            live: ContentState::new(),
+            vod: VodState::new(),
+            series: SeriesState::new(),
+            login_form: LoginFormState::new(),
+            ui: UiState::new(),
+            sports: SportsState::new(),
+            matrix_rain: MatrixRainState::new(),
+            search: DecomposedSearchState::new(),
+            groups: GroupManagementState::new(),
+            loading_log: VecDeque::with_capacity(30),
         };
 
         app.refresh_settings_options();
@@ -576,8 +648,19 @@ impl App {
                 self.config.get_user_timezone()
             ),
             format!(
-                "Playlist Mode: {}",
-                self.config.playlist_mode.display_name()
+                "Playlist Filters: {}",
+                if self.config.processing_modes.is_empty() {
+                    "None".to_string()
+                } else {
+                    self.config.processing_modes.iter()
+                        .map(|m| match m {
+                            crate::config::ProcessingMode::Merica => "'merica",
+                            crate::config::ProcessingMode::Sports => "Sports",
+                            crate::config::ProcessingMode::AllEnglish => "All English",
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" + ")
+                }
             ),
             format!(
                 "DNS Provider: {}",
@@ -723,42 +806,68 @@ impl App {
     }
 
     pub fn next_category(&mut self) {
-        Self::navigate_list(
-            self.categories.len(),
-            &mut self.selected_category_index,
-            &mut self.category_list_state,
-            true,
-        );
+        let len = self.categories.len();
+        if len == 0 { return; }
+        let next = (self.selected_category_index + 1) % len;
+        self.select_category(next);
+    }
+
+    pub fn previous_category(&mut self) {
+        let len = self.categories.len();
+        if len == 0 { return; }
+        let prev = if self.selected_category_index == 0 { len - 1 } else { self.selected_category_index - 1 };
+        self.select_category(prev);
     }
 
     pub fn jump_to_category(&mut self, index: usize) {
         if index < self.categories.len() {
-            self.selected_category_index = index;
-            self.category_list_state.select(Some(index));
+            self.select_category(index);
         }
     }
 
     pub fn jump_to_category_bottom(&mut self) {
         if !self.categories.is_empty() {
-            self.selected_category_index = self.categories.len() - 1;
-            self.category_list_state.select(Some(self.categories.len() - 1));
+            self.select_category(self.categories.len() - 1);
         }
     }
 
     pub fn jump_to_category_top(&mut self) {
         if !self.categories.is_empty() {
-            self.selected_category_index = 0;
-            self.category_list_state.select(Some(0));
+            self.select_category(0);
         }
     }
 
-    pub fn previous_category(&mut self) {
-        Self::navigate_list(
-            self.categories.len(),
-            &mut self.selected_category_index,
-            &mut self.category_list_state,
-            false,
-        );
+    /// Primary navigation logic for Categories
+    /// Updates selection AND filters the streams pane from global cache immediately (Auto-Load)
+    pub fn select_category(&mut self, index: usize) {
+        self.selected_category_index = index;
+        self.category_list_state.select(Some(index));
+
+        // Fix #1: Auto-populate streams pane from global cache if available
+        if !self.global_all_streams.is_empty() {
+            let cat_id = self.categories[index].category_id.clone();
+            
+            // 1. Filter source
+            if cat_id == "ALL" {
+                self.all_streams = self.global_all_streams.clone();
+            } else {
+                // Determine filtered set
+                // Cloning Arcs is cheap (pointer copy)
+                self.all_streams = self.global_all_streams.iter()
+                    .filter(|s| s.category_id.as_deref() == Some(&cat_id))
+                    .cloned()
+                    .collect();
+            }
+
+            // 2. Apply display filters (American Mode, Search Query if any) via update_search
+            // This ensures self.streams (the visible list) matches self.all_streams (the category context)
+            self.update_search();
+        } else {
+            // If we don't have global data yet, visible streams should be cleared 
+            // so we don't show "Sports" channels while "Movies" is selected
+            self.streams.clear();
+            self.all_streams.clear();
+        }
     }
 
     pub fn next_stream(&mut self) {
@@ -914,9 +1023,72 @@ impl App {
         );
     }
 
+    /// Pre-populate cached_parsed for all visible streams to avoid per-frame parsing.
+    /// Uses Arc::make_mut() which only clones if refcount > 1 (copy-on-write).
+    pub fn pre_cache_parsed(streams: &mut [Arc<Stream>], provider_tz: Option<&str>) {
+        for s in streams.iter_mut() {
+            let inner = Arc::make_mut(s);
+            if inner.cached_parsed.is_none() {
+                inner.cached_parsed = Some(Box::new(crate::parser::parse_stream(&inner.name, provider_tz)));
+            }
+        }
+    }
+
+    /// Build a map of category_id → channel count from global_all_streams.
+    /// Called once after TotalChannelsLoaded to display counts next to category names.
+    pub fn build_category_counts(&mut self) {
+        self.category_channel_counts.clear();
+        for s in &self.global_all_streams {
+            if let Some(ref cid) = s.category_id {
+                *self.category_channel_counts.entry(cid.clone()).or_insert(0) += 1;
+            }
+        }
+    }
+
+    /// Record a recently watched channel. Deduplicates by stream_id, caps at 20.
+    pub fn record_recently_watched(&mut self, stream_id: String, stream_name: String) {
+        // Remove existing entry for this stream_id (dedup)
+        self.config.recently_watched.retain(|(id, _)| id != &stream_id);
+        // Push to front
+        self.config.recently_watched.insert(0, (stream_id, stream_name));
+        // Cap at 20
+        self.config.recently_watched.truncate(20);
+        let _ = self.config.save();
+    }
+
     /// Update search with debouncing and fuzzy matching
+    /// Phase 3: Incremental Search Narrowing - only re-filter when query changes meaningfully
     pub fn update_search(&mut self) {
+        // 150ms debounce gate — only during active search to avoid
+        // skipping handler-triggered population calls (TotalChannelsLoaded etc.)
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.search_mode {
+            if let Some(last) = self.last_search_update {
+                if last.elapsed() < std::time::Duration::from_millis(150) {
+                    return;
+                }
+            }
+            self.last_search_update = Some(std::time::Instant::now());
+        }
+
         let query = self.search_state.query.to_lowercase();
+        
+        // Phase 3: Incremental Search Narrowing
+        // Only re-filter if the query has actually changed
+        // Note: Empty query always passes through to allow view resets
+        if !query.is_empty() && query == self.last_search_query {
+            return; // No change, skip re-filtering
+        }
+        
+        // Update the last search query
+        self.last_search_query = query.clone();
+        
+        // Minimum character threshold: skip filtering for very short queries
+        // unless clearing (empty query should reset the view)
+        const MIN_QUERY_LENGTH: usize = 2;
+        if !query.is_empty() && query.len() < MIN_QUERY_LENGTH {
+            return; // Wait for more characters before filtering
+        }
         let is_merica = self.config.playlist_mode.is_merica_variant();
 
         match self.current_screen {
@@ -935,6 +1107,36 @@ impl App {
                         } else {
                             self.category_list_state.select(None);
                         }
+
+                        // Cross-pane search: also search streams so users can find channels
+                        // directly from the categories view (e.g. searching "msnbc" in All Channels)
+                        if !query.is_empty() && !self.global_all_streams.is_empty() {
+                            let mut stream_results: Vec<Arc<Stream>> = self.global_all_streams.par_iter()
+                                .filter(|s| {
+                                    if is_merica && !s.is_american { return false; }
+                                    if s.search_name.contains(&query) { return true; }
+                                    query.len() >= 3 && s.fuzzy_match(&query, 60)
+                                })
+                                .cloned()
+                                .collect();
+                            stream_results.sort_by_cached_key(|s| !s.search_name.contains(&query));
+                            self.streams = stream_results.into_iter().take(1000).collect();
+                        } else if query.is_empty() && !self.all_streams.is_empty() {
+                            // Restore from loaded category streams when search is cleared
+                            self.streams = self.all_streams.iter()
+                                .filter(|s| !is_merica || s.is_american)
+                                .take(1000)
+                                .cloned()
+                                .collect();
+                        }
+                        // pre_cache_parsed removed from search hot path — renderer falls back to
+                        // parse_stream when cached_parsed is None, avoiding 1000 regex ops per keystroke
+                        self.selected_stream_index = 0;
+                        if !self.streams.is_empty() {
+                            self.stream_list_state.select(Some(0));
+                        } else {
+                            self.stream_list_state.select(None);
+                        }
                     }
                     Pane::Streams => {
                         if query.is_empty() {
@@ -952,8 +1154,8 @@ impl App {
                                     // Layer 1: Substring match (Fast)
                                     if s.search_name.contains(&query) { return true; }
                                     
-                                    // Layer 2: Fuzzy match (Compute heavy, runs in parallel)
-                                    s.fuzzy_match(&query, 60)
+                                    // Layer 2: Fuzzy match (only for 3+ char queries to avoid lag)
+                                    query.len() >= 3 && s.fuzzy_match(&query, 60)
                                 })
                                 .cloned()
                                 .collect();
@@ -964,6 +1166,7 @@ impl App {
                             self.streams = results.into_iter().take(1000).collect();
                         }
 
+                        App::pre_cache_parsed(&mut self.streams, self.provider_timezone.as_deref());
                         self.selected_stream_index = 0;
                         if !self.streams.is_empty() {
                             self.stream_list_state.select(Some(0));
@@ -1002,7 +1205,7 @@ impl App {
                                 .filter(|s| {
                                     if is_merica && !s.is_english { return false; }
                                     if s.search_name.contains(&query) { return true; }
-                                    s.fuzzy_match(&query, 60)
+                                    query.len() >= 3 && s.fuzzy_match(&query, 60)
                                 })
                                 .cloned()
                                 .collect();
@@ -1011,6 +1214,7 @@ impl App {
                             self.vod_streams = results.into_iter().take(1000).collect();
                         }
 
+                        App::pre_cache_parsed(&mut self.vod_streams, self.provider_timezone.as_deref());
                         self.selected_vod_stream_index = 0;
                         if !self.vod_streams.is_empty() {
                             self.vod_stream_list_state.select(Some(0));
@@ -1049,7 +1253,7 @@ impl App {
                                 .filter(|s| {
                                     if is_merica && !s.is_english { return false; }
                                     if s.search_name.contains(&query) { return true; }
-                                    s.fuzzy_match(&query, 60)
+                                    query.len() >= 3 && s.fuzzy_match(&query, 60)
                                 })
                                 .cloned()
                                 .collect();
@@ -1058,6 +1262,8 @@ impl App {
                             self.series_streams = results.into_iter().take(1000).collect();
                         }
 
+
+                        App::pre_cache_parsed(&mut self.series_streams, self.provider_timezone.as_deref());
                         self.selected_series_stream_index = 0;
                         if !self.series_streams.is_empty() {
                             self.series_stream_list_state.select(Some(0));
@@ -1073,12 +1279,13 @@ impl App {
                     Vec::new()
                 } else {
                     // Multi-pass prioritized search
+                    let use_fuzzy = query.len() >= 3;
                     let mut hits: Vec<Arc<Stream>> = self.global_all_streams.par_iter()
-                        .filter(|s| s.search_name.contains(&query) || s.fuzzy_match(&query, 70))
+                        .filter(|s| s.search_name.contains(&query) || (use_fuzzy && s.fuzzy_match(&query, 70)))
                         .chain(self.global_all_vod_streams.par_iter()
-                            .filter(|s| s.search_name.contains(&query) || s.fuzzy_match(&query, 70)))
+                            .filter(|s| s.search_name.contains(&query) || (use_fuzzy && s.fuzzy_match(&query, 70))))
                         .chain(self.global_all_series_streams.par_iter()
-                            .filter(|s| s.search_name.contains(&query) || s.fuzzy_match(&query, 70)))
+                            .filter(|s| s.search_name.contains(&query) || (use_fuzzy && s.fuzzy_match(&query, 70))))
                         .cloned()
                         .collect();
 
@@ -1087,7 +1294,9 @@ impl App {
                     hits.into_iter().take(100).collect()
                 };
 
+
                 self.global_search_results = results;
+                App::pre_cache_parsed(&mut self.global_search_results, self.provider_timezone.as_deref());
                 self.selected_stream_index = 0;
                 if !self.global_search_results.is_empty() {
                     self.global_search_list_state.select(Some(0));
@@ -1589,13 +1798,13 @@ mod tests {
             Arc::new(Category {
                 category_id: "1".into(),
                 category_name: "Action".into(),
-                parent_id: serde_json::Value::Null,
+                parent_id: FlexId::Null,
                 ..Default::default()
             }),
             Arc::new(Category {
                 category_id: "2".into(),
                 category_name: "Comedy".into(),
-                parent_id: serde_json::Value::Null,
+                parent_id: FlexId::Null,
                 ..Default::default()
             }),
         ];
@@ -1613,5 +1822,195 @@ mod tests {
         app.handle_key_event(make_key(KeyCode::Esc));
         assert_eq!(app.current_screen, CurrentScreen::Home);
         assert_eq!(app.series_categories.len(), 0, "Should handle cleanup");
+    }
+
+    /// Regression test: Live Channels → All Channels → search "msnbc" must find results.
+    /// This validates: TotalChannelsLoaded populates global_all_streams,
+    /// update_search cross-pane search filters streams when on Categories pane,
+    /// and the search_name field is used for matching.
+    #[test]
+    fn test_all_channels_msnbc_search() {
+        let mut app = App::new();
+
+        // Simulate TotalChannelsLoaded: populate global_all_streams with test data
+        let msnbc = Stream {
+            name: "US: MSNBC HD".to_string(),
+            search_name: "us: msnbc hd".to_string(),
+            stream_id: crate::flex_id::FlexId::from_number(101),
+            category_id: Some("5".to_string()),
+            is_american: true,
+            ..Default::default()
+        };
+        let cnn = Stream {
+            name: "US: CNN HD".to_string(),
+            search_name: "us: cnn hd".to_string(),
+            stream_id: crate::flex_id::FlexId::from_number(102),
+            category_id: Some("5".to_string()),
+            is_american: true,
+            ..Default::default()
+        };
+        let bbc = Stream {
+            name: "UK: BBC ONE HD".to_string(),
+            search_name: "uk: bbc one hd".to_string(),
+            stream_id: crate::flex_id::FlexId::from_number(103),
+            category_id: Some("6".to_string()),
+            is_american: false,
+            ..Default::default()
+        };
+
+        app.global_all_streams = vec![
+            Arc::new(msnbc),
+            Arc::new(cnn),
+            Arc::new(bbc),
+        ];
+        app.all_streams = app.global_all_streams.clone();
+
+        // Simulate CategoriesLoaded: populate categories
+        app.all_categories = vec![
+            Arc::new(Category {
+                category_id: "ALL".into(),
+                category_name: "All Channels".into(),
+                parent_id: FlexId::Null,
+                ..Default::default()
+            }),
+            Arc::new(Category {
+                category_id: "5".into(),
+                category_name: "NEWS".into(),
+                parent_id: FlexId::Null,
+                is_american: true,
+                ..Default::default()
+            }),
+        ];
+        app.categories = app.all_categories.clone();
+
+        // Navigate to Categories (simulating user selecting Live Channels)
+        app.current_screen = CurrentScreen::Categories;
+        app.active_pane = Pane::Categories;
+        app.selected_category_index = 0;
+        app.category_list_state.select(Some(0));
+
+        // Enter search mode and search for "msnbc"
+        app.search_mode = true;
+        app.search_state.query = "msnbc".to_string();
+        app.update_search();
+
+        // Verify: MSNBC found in cross-pane search results
+        assert!(
+            !app.streams.is_empty(),
+            "Search for 'msnbc' should find streams in All Channels cross-pane search"
+        );
+        assert!(
+            app.streams.iter().any(|s| s.search_name.contains("msnbc")),
+            "Search results should contain MSNBC stream"
+        );
+        // CNN should NOT be in results (doesn't match "msnbc")
+        assert!(
+            !app.streams.iter().any(|s| s.search_name.contains("cnn")),
+            "CNN should not appear in msnbc search results"
+        );
+    }
+
+    /// Test that merica mode filters out non-American streams from search results
+    #[test]
+    fn test_merica_mode_filters_search() {
+        let mut app = App::new();
+        app.config.playlist_mode = crate::config::PlaylistMode::Merica;
+
+        let msnbc = Stream {
+            name: "US: MSNBC HD".to_string(),
+            search_name: "us: msnbc hd".to_string(),
+            stream_id: crate::flex_id::FlexId::from_number(201),
+            is_american: true,
+            ..Default::default()
+        };
+        let bbc_news = Stream {
+            name: "UK: BBC NEWS HD".to_string(),
+            search_name: "uk: bbc news hd".to_string(),
+            stream_id: crate::flex_id::FlexId::from_number(202),
+            is_american: false,
+            ..Default::default()
+        };
+
+        app.global_all_streams = vec![Arc::new(msnbc), Arc::new(bbc_news)];
+        app.all_streams = app.global_all_streams.clone();
+        app.all_categories = vec![Arc::new(Category {
+            category_id: "ALL".into(),
+            category_name: "All Channels".into(),
+            parent_id: FlexId::Null,
+            ..Default::default()
+        })];
+        app.categories = app.all_categories.clone();
+
+        app.current_screen = CurrentScreen::Categories;
+        app.active_pane = Pane::Categories;
+
+        // Search for "hd" — matches both streams, but merica filter should exclude BBC
+        app.search_mode = true;
+        app.search_state.query = "hd".to_string();
+        app.update_search();
+
+        assert!(
+            app.streams.iter().any(|s| s.search_name.contains("msnbc")),
+            "Merica mode should include American MSNBC in 'hd' results"
+        );
+        assert!(
+            !app.streams.iter().any(|s| s.search_name.contains("bbc")),
+            "Merica mode should exclude non-American BBC NEWS from results"
+        );
+    }
+
+    #[test]
+    fn test_background_load_view_consistency() {
+        let mut app = App::new();
+
+        // 1. Setup Categories
+        app.categories = vec![
+            Arc::new(Category { category_id: "ALL".into(), category_name: "All Channels".into(), ..Default::default() }),
+            Arc::new(Category { category_id: "SPORTS".into(), category_name: "Sports".into(), ..Default::default() }),
+        ];
+        app.selected_category_index = 1; // User is on "Sports"
+        app.current_screen = CurrentScreen::Categories;
+        app.active_pane = Pane::Categories;
+        
+        // 2. Initial state: No global data, so view is empty
+        assert!(app.streams.is_empty());
+
+        // 3. Simulate specific streams for testing
+        let sports_stream = Stream {
+            name: "ESPN".to_string(),
+            search_name: "espn".to_string(),
+            stream_id: crate::flex_id::FlexId::from_number(100),
+            category_id: Some("SPORTS".to_string()),
+            is_american: true,
+            ..Default::default()
+        };
+        let news_stream = Stream {
+            name: "CNN".to_string(),
+            search_name: "cnn".to_string(),
+            stream_id: crate::flex_id::FlexId::from_number(101),
+            category_id: Some("NEWS".to_string()),
+            is_american: true,
+            ..Default::default()
+        };
+
+        // 4. Simulate Background Scan Completion (TotalChannelsLoaded)
+        app.global_all_streams = vec![Arc::new(sports_stream), Arc::new(news_stream)];
+        
+        // Trigger the logic we added to AsyncAction::TotalChannelsLoaded
+        app.select_category(app.selected_category_index);
+
+        // 5. Verify View
+        // Should ONLY contain Sports stream
+        assert_eq!(app.streams.len(), 1, "Should filter to Sports streams only");
+        assert_eq!(app.streams[0].name, "ESPN");
+
+        // 6. Verify Search Capability
+        // Search "CNN" (which is NOT in visible view, but is in global)
+        app.search_mode = true;
+        app.search_state.query = "CNN".to_string();
+        app.update_search();
+
+        assert_eq!(app.streams.len(), 1, "Search should find CNN from global cache");
+        assert_eq!(app.streams[0].name, "CNN");
     }
 }
