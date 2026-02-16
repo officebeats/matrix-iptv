@@ -275,6 +275,12 @@ pub struct App {
     #[cfg(target_arch = "wasm32")]
     pub focus_timestamp: Option<f64>,
 
+    // Detail panel lazy rendering
+    #[cfg(not(target_arch = "wasm32"))]
+    pub detail_last_index: usize,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub detail_settle_time: Option<std::time::Instant>,
+
     // Global Search
     pub global_search_results: Vec<Arc<Stream>>,
     pub global_search_list_state: ListState,
@@ -397,6 +403,10 @@ impl App {
             epg_cache: std::collections::HashMap::new(),
             last_focused_stream_id: None,
             focus_timestamp: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            detail_last_index: usize::MAX,
+            #[cfg(not(target_arch = "wasm32"))]
+            detail_settle_time: None,
 
             editing_account_index: None,
 

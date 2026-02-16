@@ -1001,7 +1001,7 @@ pub async fn handle_key_event(
                                                 let total_cats = cats.len();
                                                 let scan_start = std::time::Instant::now();
                                                 let completed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-                                                let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(3));
+                                                let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(5));
                                                 let mut handles = Vec::with_capacity(total_cats);
 
                                                 for cat in &cats {

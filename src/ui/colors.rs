@@ -16,16 +16,16 @@ pub const DARK_GREEN: Color = Color::Rgb(0, 120, 30);
 // Subtle background tint for selected rows (not full inversion)
 pub const HIGHLIGHT_BG: Color = Color::Rgb(0, 40, 10);
 
-// Text hierarchy
+// Text hierarchy — all must be clearly visible on pure black
 pub const BRIGHT_GREEN: Color = Color::White;     // Primary text (white for max contrast)
 pub const TEXT_PRIMARY: Color = Color::White;      // Main content text
-pub const TEXT_SECONDARY: Color = Color::Rgb(160, 160, 160); // Secondary labels (visible on black)
-pub const TEXT_DIM: Color = Color::Rgb(100, 100, 100); // Least important, still readable
-pub const TEXT_MUTED: Color = Color::Rgb(70, 70, 70);  // Structural separators only
+pub const TEXT_SECONDARY: Color = Color::Rgb(200, 200, 200); // Secondary labels — bright enough on black
+pub const TEXT_DIM: Color = Color::Rgb(180, 180, 180); // Dimmer text — still clearly white-ish
+pub const TEXT_MUTED: Color = Color::Rgb(140, 140, 140);  // Structural separators — visible
 
 // Status colors (restrained — only for meaning)
 pub const STATUS_LIVE: Color = Color::Rgb(255, 100, 100);
-pub const STATUS_ENDED: Color = Color::Rgb(120, 120, 120);
+pub const STATUS_ENDED: Color = Color::Rgb(160, 160, 160);
 pub const STATUS_WARN: Color = Color::Rgb(255, 200, 80);
 
 // Legacy mappings (backward compat)

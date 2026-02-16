@@ -16,6 +16,9 @@ fn clean_val(v: &crate::flex_id::FlexId) -> String {
 }
 
 pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
+    use ratatui::widgets::{Block, Borders};
+    use ratatui::symbols::border;
+
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
@@ -24,15 +27,47 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         ])
         .split(area);
 
+    // Common border style
+    let border_style = Style::default().fg(MATRIX_GREEN);
+    
+    // 1. Search Mode (Prominent Input Box)
     if app.search_mode {
-        let search_text = format!("  >_ {}", app.search_state.query);
+        let search_block = Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(border_style)
+            .title(Span::styled(" Search Query ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
+        
+        let inner = search_block.inner(area);
+        f.render_widget(search_block, area);
+
+        let search_text = format!(" >_ {}", app.search_state.query);
         let p = Paragraph::new(search_text)
-            .style(Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD));
-        f.render_widget(p, area);
+            .style(Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD));
+        f.render_widget(p, inner);
         return;
     }
 
-    // Breadcrumb — clean, minimal
+    // 2. Standard Header
+    // Left: Breadcrumbs / Mode (bordered)
+    let left_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(border_style)
+        .title(" Views "); // JiraTUI style label
+    let left_inner = left_block.inner(chunks[0]);
+    f.render_widget(left_block, chunks[0]);
+
+    // Right: System Status (bordered)
+    let right_block = Block::default()
+        .borders(Borders::ALL)
+        .border_set(border::ROUNDED)
+        .border_style(border_style)
+        .title(" System ");
+    let right_inner = right_block.inner(chunks[1]);
+    f.render_widget(right_block, chunks[1]);
+
+    // Breadcrumb Content
     let breadcrumb_parts: Vec<(&str, bool)> = match app.current_screen {
         CurrentScreen::Home => vec![("home", true)],
         CurrentScreen::Categories => vec![("home", false), ("tv", true)],
@@ -50,8 +85,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
     };
 
     let mut left_spans: Vec<Span> = Vec::new();
-    left_spans.push(Span::styled(" ", Style::default()));
-
+    
     for (i, (part, is_active)) in breadcrumb_parts.iter().enumerate() {
         if i > 0 {
             left_spans.push(Span::styled(" › ", Style::default().fg(TEXT_DIM)));
@@ -63,51 +97,48 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         }
     }
 
-    // Mode indicator (compact)
+    // Mode keys (Filter-like look)
     if !app.config.processing_modes.is_empty() {
-        left_spans.push(Span::styled("  ", Style::default()));
-        left_spans.push(Span::styled("[", Style::default().fg(TEXT_DIM)));
-
+        left_spans.push(Span::styled("  │  ", Style::default().fg(TEXT_DIM))); // Separator like a filter bar
+        
         let mut first = true;
         for mode in &app.config.processing_modes {
             if !first {
-                left_spans.push(Span::styled("+", Style::default().fg(TEXT_DIM)));
+                left_spans.push(Span::styled(" ", Style::default()));
             }
             first = false;
 
             match mode {
                 crate::config::ProcessingMode::Merica => {
-                    left_spans.push(Span::styled("'merica", Style::default().fg(Color::Rgb(255, 200, 80)).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("'MERICA", Style::default().fg(Color::Black).bg(Color::Rgb(255, 200, 80)).add_modifier(Modifier::BOLD)));
                 }
                 crate::config::ProcessingMode::Sports => {
-                    left_spans.push(Span::styled("sports", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("SPORTS", Style::default().fg(Color::Black).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
                 }
                 crate::config::ProcessingMode::AllEnglish => {
-                    left_spans.push(Span::styled("en", Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("EN", Style::default().fg(Color::Black).bg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)));
                 }
             }
         }
-
-        left_spans.push(Span::styled("]", Style::default().fg(TEXT_DIM)));
     }
 
-    // Background refresh indicator - subtle "syncing..." in dim green
+    // Background refresh
     if app.background_refresh_active {
-        left_spans.push(Span::styled("  ", Style::default()));
-        left_spans.push(Span::styled("⟳ syncing...", Style::default().fg(Color::Rgb(80, 160, 80))));
+        left_spans.push(Span::styled("  ⟳ syncing...", Style::default().fg(Color::Rgb(80, 160, 80))));
     }
 
     let tabs = Paragraph::new(Line::from(left_spans));
-    f.render_widget(tabs, chunks[0]);
+    f.render_widget(tabs, left_inner);
 
+    // System/Account Info Context
     if let Some(_) = &app.current_client {
         let name = app.config.accounts.get(app.selected_account_index).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
         let tz_str = app.config.get_user_timezone();
         let user_tz: Tz = Tz::from_str(&tz_str).unwrap_or(chrono_tz::Europe::London);
         let now = Utc::now().with_timezone(&user_tz);
-        let time = now.format("%I:%M%p").to_string();
+        let time = now.format("%H:%M").to_string();
 
-        let (active, total, exp) = if let Some(info) = &app.account_info {
+        let (_active, _total, exp) = if let Some(info) = &app.account_info {
             let a = info.active_cons.as_ref().map(clean_val).unwrap_or_else(|| "0".to_string());
             let t = info.max_connections.as_ref().map(clean_val).unwrap_or_else(|| "1".to_string());
             let e = info.exp_date.as_ref().map(clean_val).unwrap_or_else(|| "N/A".to_string());
@@ -117,22 +148,25 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         };
 
         let exp_formatted = if let Ok(ts) = exp.parse::<i64>() {
-             Utc.timestamp_opt(ts, 0).single().map(|dt| dt.format("%b %d").to_string()).unwrap_or(exp)
+             Utc.timestamp_opt(ts, 0).single().map(|dt| dt.format("%Y-%m-%d").to_string()).unwrap_or(exp)
         } else {
             exp
         };
 
         let mut right_spans = Vec::new();
-        right_spans.push(Span::styled(&name, Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
-        right_spans.push(Span::styled(" · ", Style::default().fg(TEXT_DIM)));
-        right_spans.push(Span::styled(&time, Style::default().fg(TEXT_SECONDARY)));
-        right_spans.push(Span::styled(" · ", Style::default().fg(TEXT_DIM)));
-        right_spans.push(Span::styled(format!("exp {}", exp_formatted), Style::default().fg(TEXT_SECONDARY)));
-        right_spans.push(Span::styled(" · ", Style::default().fg(TEXT_DIM)));
-        right_spans.push(Span::styled(format!("{}/{}", active, total), Style::default().fg(MATRIX_GREEN)));
+        // Account Badge
+        right_spans.push(Span::styled(format!(" {} ", name), Style::default().fg(Color::Black).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
+        right_spans.push(Span::styled(" ", Style::default()));
+        
+        // Time
+        right_spans.push(Span::styled(&time, Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)));
+        right_spans.push(Span::styled(" ", Style::default()));
+        
+        // Exp Date
+        right_spans.push(Span::styled(format!("Exp: {}", exp_formatted), Style::default().fg(TEXT_SECONDARY)));
 
         let stats = Paragraph::new(Line::from(right_spans))
             .alignment(Alignment::Right);
-        f.render_widget(stats, chunks[1]);
+        f.render_widget(stats, right_inner);
     }
 }

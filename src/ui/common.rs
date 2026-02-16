@@ -2,7 +2,6 @@ use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Paragraph},
     Frame,
 };
 use crate::parser::{Quality, ContentType};
@@ -20,12 +19,20 @@ pub fn stylize_channel_name(
 ) -> (Vec<Span<'static>>, Option<&'static str>) {
     let mut spans = Vec::new();
     
-    let (ppv_color, vip_color, raw_color, hd_color, fhd_color, fps_color) = if is_ended {
+    let (ppv_color, vip_color, raw_color, hd_color, fhd_color, uhd_color, fps_color) = if is_ended {
         let dim = TEXT_DIM;
-        (dim, dim, dim, dim, dim, dim)
+        (dim, dim, dim, dim, dim, dim, dim)
     } else {
-        // Restrained palette: green accents + white text
-        (Color::Rgb(255, 105, 180), Color::Rgb(255, 200, 80), MATRIX_GREEN, MATRIX_GREEN, MATRIX_GREEN, Color::Rgb(255, 200, 80))
+        // Use Quality::color() values for distinct quality coding
+        (
+            Color::Rgb(255, 105, 180),        // PPV: pink
+            Color::Rgb(255, 200, 80),          // VIP: gold
+            MATRIX_GREEN,                       // RAW: green
+            Color::Rgb(0, 255, 255),            // HD: cyan  (matches Quality::HD)
+            Color::Rgb(57, 255, 20),            // FHD: neon green (matches Quality::FHD)
+            Color::Rgb(255, 0, 255),            // 4K/UHD: magenta (matches Quality::UHD4K)
+            Color::Rgb(255, 200, 80),           // FPS: gold
+        )
     };
 
     let mut base_style = base_style;
@@ -107,7 +114,7 @@ pub fn stylize_channel_name(
                     }
                     val if ["4K", "UHD", "HEVC"].contains(&val) => {
                         found_4k = true;
-                        spans.push(Span::styled(format!("{}", val), base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
+                        spans.push(Span::styled(format!("{}", val), base_style.fg(uhd_color).add_modifier(Modifier::BOLD)));
                     }
                     val if val.ends_with("FPS") && val.len() > 3 => {
                         spans.push(Span::styled(format!("{}", val.to_lowercase()), base_style.fg(fps_color)));
@@ -167,37 +174,40 @@ pub fn stylize_channel_name(
     (spans, icon_ret)
 }
 
-/// Modern minimal box (Claude Code style) — left border only for active panes
+/// Bordered panel (JiraTUI style) — full border with title embedded in the top edge
 pub fn render_matrix_box(f: &mut Frame, area: Rect, title: &str, border_color: Color) -> Rect {
+    use ratatui::widgets::{Block, Borders, block::Title};
+    use ratatui::symbols::border;
+
     let clean_title = title.trim().trim_matches('/');
 
-    // Title line at top, then content below
-    if !clean_title.is_empty() {
-        let title_area = Rect { x: area.x, y: area.y, width: area.width, height: 1 };
-        let title_widget = Paragraph::new(Line::from(vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(clean_title, Style::default().fg(border_color).add_modifier(Modifier::BOLD)),
-        ]));
-        f.render_widget(title_widget, title_area);
-
-        Rect {
-            x: area.x + 1,
-            y: area.y + 1,
-            width: area.width.saturating_sub(1),
-            height: area.height.saturating_sub(1),
-        }
+    let block = if !clean_title.is_empty() {
+        Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(border_color))
+            .title(Title::from(
+                Line::from(vec![
+                    Span::styled("─ ", Style::default().fg(border_color)),
+                    Span::styled(clean_title, Style::default().fg(border_color).add_modifier(Modifier::BOLD)),
+                    Span::styled(" ─", Style::default().fg(border_color)),
+                ])
+            ))
     } else {
-        Rect {
-            x: area.x + 1,
-            y: area.y,
-            width: area.width.saturating_sub(1),
-            height: area.height,
-        }
-    }
+        Block::default()
+            .borders(Borders::ALL)
+            .border_set(border::ROUNDED)
+            .border_style(Style::default().fg(border_color))
+    };
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+    inner
 }
 
-/// Minimal block with optional title — no borders
+/// Minimal block with optional title — bordered
 pub fn render_composite_block(f: &mut Frame, area: Rect, title: Option<&str>) -> Rect {
     let t = title.unwrap_or("");
     render_matrix_box(f, area, t, SOFT_GREEN)
 }
+

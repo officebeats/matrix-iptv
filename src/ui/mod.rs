@@ -101,13 +101,13 @@ pub fn ui(f: &mut Frame, app: &mut App) {
 }
 
 fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
-    let header_height = if app.search_mode { 3 } else { 2 };
+    let header_height = 3; // Fixed height for bordered header
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(header_height), // Header
             Constraint::Min(0),     // Content
-            Constraint::Length(1), // Footer
+            Constraint::Length(2), // Footer (bordered bottom bar)
         ])
         .split(area);
 
@@ -122,41 +122,91 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                 // Full-width grid view — no streams pane until a category is selected
                 panes::render_categories_pane(f, app, content_area, SOFT_GREEN);
             } else {
-                // 2-pane layout: Categories sidebar (list) | Streams
-                let (cat_width, stream_width) = calculate_two_column_split(&app.categories, content_area.width);
+                // JiraTUI-inspired layout: Categories | Streams | Detail Panel
+                let (cat_width, _stream_width) = calculate_two_column_split(&app.categories, content_area.width);
                 
-                let h_chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([
-                        Constraint::Length(cat_width),
-                        Constraint::Min(stream_width),
-                    ])
-                    .split(content_area);
-
-                panes::render_categories_pane(f, app, h_chunks[0], SOFT_GREEN);
-
-                // Check if focused stream is a sports event OR has ESPN score data
-                let is_sports_event = app.streams.get(app.selected_stream_index)
-                    .map(|s| {
-                        let parsed = crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref());
-                        parsed.sports_event.is_some() || app.get_score_for_stream(&parsed.display_name).is_some()
-                    })
-                    .unwrap_or(false);
-
-                if is_sports_event {
-                    let intel_height = 10u16;
-                    let right_chunks = Layout::default()
-                        .direction(Direction::Vertical)
+                // Show detail panel only if terminal is wide enough (>= 120 cols)
+                let show_detail = content_area.width >= 120;
+                
+                if show_detail {
+                    let detail_width = 30u16.min(content_area.width / 4); // ~25% or 30 cols max
+                    let streams_width = content_area.width.saturating_sub(cat_width).saturating_sub(detail_width);
+                    
+                    let h_chunks = Layout::default()
+                        .direction(Direction::Horizontal)
                         .constraints([
-                            Constraint::Min(10),
-                            Constraint::Length(intel_height),
+                            Constraint::Length(cat_width),
+                            Constraint::Length(streams_width),
+                            Constraint::Length(detail_width),
                         ])
-                        .split(h_chunks[1]);
+                        .split(content_area);
 
-                    panes::render_streams_pane(f, app, right_chunks[0], SOFT_GREEN);
-                    panes::render_stream_details_pane(f, app, right_chunks[1], SOFT_GREEN);
+                    panes::render_categories_pane(f, app, h_chunks[0], SOFT_GREEN);
+
+                    // Check if focused stream is a sports event (use cache to avoid per-frame parsing)
+                    let is_sports_event = app.streams.get(app.selected_stream_index)
+                        .map(|s| {
+                            if let Some(ref cached) = s.cached_parsed {
+                                cached.sports_event.is_some() || app.get_score_for_stream(&cached.display_name).is_some()
+                            } else {
+                                false // Don't parse on render — assume non-sports layout if not cached
+                            }
+                        })
+                        .unwrap_or(false);
+
+                    if is_sports_event {
+                        // Sports: Streams on top, Match Intelligence below in middle column
+                        let mid_chunks = Layout::default()
+                            .direction(Direction::Vertical)
+                            .constraints([
+                                Constraint::Min(10),
+                                Constraint::Length(10),
+                            ])
+                            .split(h_chunks[1]);
+                        panes::render_streams_pane(f, app, mid_chunks[0], SOFT_GREEN);
+                        panes::render_stream_details_pane(f, app, mid_chunks[1], SOFT_GREEN);
+                    } else {
+                        panes::render_streams_pane(f, app, h_chunks[1], SOFT_GREEN);
+                    }
+
+                    // Right detail panel (always visible)
+                    panes::render_channel_detail_panel(f, app, h_chunks[2], SOFT_GREEN);
                 } else {
-                    panes::render_streams_pane(f, app, h_chunks[1], SOFT_GREEN);
+                    // Narrow terminal: 2-column layout (original behavior)
+                    let h_chunks = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([
+                            Constraint::Length(cat_width),
+                            Constraint::Min(20),
+                        ])
+                        .split(content_area);
+
+                    panes::render_categories_pane(f, app, h_chunks[0], SOFT_GREEN);
+
+                    let is_sports_event = app.streams.get(app.selected_stream_index)
+                        .map(|s| {
+                            if let Some(ref cached) = s.cached_parsed {
+                                cached.sports_event.is_some() || app.get_score_for_stream(&cached.display_name).is_some()
+                            } else {
+                                false
+                            }
+                        })
+                        .unwrap_or(false);
+
+                    if is_sports_event {
+                        let intel_height = 10u16;
+                        let right_chunks = Layout::default()
+                            .direction(Direction::Vertical)
+                            .constraints([
+                                Constraint::Min(10),
+                                Constraint::Length(intel_height),
+                            ])
+                            .split(h_chunks[1]);
+                        panes::render_streams_pane(f, app, right_chunks[0], SOFT_GREEN);
+                        panes::render_stream_details_pane(f, app, right_chunks[1], SOFT_GREEN);
+                    } else {
+                        panes::render_streams_pane(f, app, h_chunks[1], SOFT_GREEN);
+                    }
                 }
             }
         }

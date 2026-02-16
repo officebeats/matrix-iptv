@@ -324,6 +324,7 @@ async fn run_app<B: ratatui::backend::Backend>(
         }
 
         // 1.12 Debounced Sports Matching for regular streams
+        // Use cached_parsed to avoid expensive parse_stream() calls every frame
         if (app.current_screen == CurrentScreen::Streams || app.current_screen == CurrentScreen::GlobalSearch) && app.active_pane == Pane::Streams {
             let focused_stream = if app.current_screen == CurrentScreen::GlobalSearch {
                 app.global_search_results.get(app.selected_stream_index)
@@ -332,8 +333,13 @@ async fn run_app<B: ratatui::backend::Backend>(
             };
 
             if let Some(stream) = focused_stream {
-                let parsed = matrix_iptv_lib::parser::parse_stream(&stream.name, app.provider_timezone.as_deref());
-                if parsed.sports_event.is_some() {
+                // Use cached parse result; only fall back to parse_stream if not cached
+                let has_sports = if let Some(ref cached) = stream.cached_parsed {
+                    cached.sports_event.is_some()
+                } else {
+                    false // Skip sports matching if not cached — not worth parsing every frame
+                };
+                if has_sports {
                     let stream_id = get_id_str(&stream.stream_id);
                     if app.last_focused_stream_id.as_ref() != Some(&stream_id) {
                         app.last_focused_stream_id = Some(stream_id.clone());
@@ -343,11 +349,14 @@ async fn run_app<B: ratatui::backend::Backend>(
                         if ts.elapsed().as_millis() >= 1000 {
                             app.focus_timestamp = None;
                             let tx = tx.clone();
-                            let team1 = parsed.sports_event.as_ref().unwrap().team1.clone();
-                            let team2 = parsed.sports_event.as_ref().unwrap().team2.clone();
+                            // Extract team names from cached parse
+                            let (team1, team2) = if let Some(ref cached) = stream.cached_parsed {
+                                if let Some(ref ev) = cached.sports_event {
+                                    (ev.team1.clone(), ev.team2.clone())
+                                } else { continue; }
+                            } else { continue; };
                             
                             tokio::spawn(async move {
-                                // Scrape "live" category for matching titles
                                 if let Ok(matches) = sports::fetch_streamed_matches("live").await {
                                     let found = matches.into_iter().find(|m| {
                                         let title = m.title.to_lowercase();
@@ -411,6 +420,19 @@ async fn run_app<B: ratatui::backend::Backend>(
                         handlers::input::InputResult::UpdateRequested => return Ok(Some(42)),
                         handlers::input::InputResult::Continue => continue,
                         handlers::input::InputResult::Ok => {}
+                    }
+                    // ── Input Coalescing: drain queued keys without redrawing ──
+                    // When scrolling fast, multiple key events queue up. Process them
+                    // all in one batch to avoid 33ms render + debounce between each.
+                    while event::poll(Duration::from_millis(0))? {
+                        if let Event::Key(next_key) = event::read()? {
+                            match handlers::input::handle_key_event(app, next_key, &tx, player).await? {
+                                handlers::input::InputResult::Quit => return Ok(None),
+                                handlers::input::InputResult::UpdateRequested => return Ok(Some(42)),
+                                handlers::input::InputResult::Continue => continue,
+                                handlers::input::InputResult::Ok => {}
+                            }
+                        }
                     }
                 } // End Event::Key block
 

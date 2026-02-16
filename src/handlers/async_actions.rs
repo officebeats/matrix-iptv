@@ -771,7 +771,7 @@ pub fn spawn_live_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
         let total_cats = cat_info.len();
         
         // ISP Friendly: Sequential loop (one at a time) + Delay
-        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(3));
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(5));
         let mut all_streams = Vec::new();
 
         for (i, (cat_id, cat_name)) in cat_info.into_iter().enumerate() {
@@ -848,7 +848,7 @@ pub fn spawn_vod_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
         let _ = tx.send(AsyncAction::LoadingMessage(format!("Scanning {} movie categories...", total_cats))).await;
 
         // ISP Friendly: Reduced concurrency from 15 -> 3
-        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(3));
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(5));
         let mut handles: Vec<(String, tokio::task::JoinHandle<Vec<Stream>>)> = Vec::with_capacity(cats.len());
         for cat in &cats {
             let c = client.clone();
@@ -927,7 +927,7 @@ pub fn spawn_series_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
         let _ = tx.send(AsyncAction::LoadingMessage(format!("Scanning {} series categories...", total_cats))).await;
 
         // ISP Friendly: Reduced concurrency from 15 -> 3
-        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(3));
+        let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(5));
         let mut handles: Vec<(String, tokio::task::JoinHandle<Vec<Stream>>)> = Vec::with_capacity(cats.len());
         for cat in &cats {
             let c = client.clone();
