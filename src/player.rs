@@ -139,11 +139,20 @@ impl Player {
                .arg("--tscale=linear")     // Soap opera effect - smooth motion blending (GPU friendly)
                .arg("--tscale-clamp=0.0")  // Allow full blending for maximum smoothness
                .arg("--cache=yes")
+               .arg("--cache-pause=yes")               // Pause when cache is starved
+               .arg("--cache-pause-wait=5")            // Wait for 5 seconds of cache before resuming (builds a buffer against live edge)
+               .arg("--cache-pause-initial=yes")       // Ensure we buffer 5 seconds initially
+               .arg("--network-timeout=10")            // Increased timeout to prevent premature EOF closures
+               .arg("--hls-bitrate=max")               // Force highest quality HLS to prevent bitrate switching loops
+               .arg("--tls-verify=no")                 // Ignore certificate errors for internal/sketchy HTTPS streams
+               .arg("--hr-seek=yes")                   // Precise seeking for better buffer recovery
                // NETWORK TURBO MODE: Aggressive Caching for Stability
                .arg("--demuxer-max-bytes=512MiB")      // Doubled cache to 512MB
                .arg("--demuxer-max-back-bytes=128MiB") // Increase back buffer for seeking/rewind
                .arg("--demuxer-readahead-secs=60")     // Buffer 1 full minute ahead (Adaptive Buffering)
-               .arg("--stream-buffer-size=2MiB")       // Low-level socket buffer
+               .arg("--stream-buffer-size=8MiB")       // Low-level socket buffer
+               .arg("--allow-cache-seen-delay=10")     // Buffer playback if lag is seen (jitter control)
+               .arg("--load-unsafe-playlists=yes")     // Stay alive through malformed HLS fragments
                .arg("--framedrop=vo")                  // Drop frames gracefully if GPU lags
                .arg("--vd-lavc-fast")                  // Enable fast decoding optimizations
                .arg("--vd-lavc-skiploopfilter=all")    // Major CPU saver for low-end machines
@@ -155,8 +164,8 @@ impl Player {
                .arg("--scale-antiring=0.7")        // Reduce haloing
                .arg("--cscale-antiring=0.7")
                .arg("--hwdec=auto-copy")           // More compatible hardware decoding
-               // RECONNECT TURBO: Auto-reconnect on network drops
-               .arg("--stream-lavf-o=reconnect_at_eof=1,reconnect_streamed=1,reconnect_delay_max=5");
+               // RECONNECT TURBO: Auto-reconnect on network drops (avoiding aggressive EOF looping)
+               .arg("--stream-lavf-o=reconnect_on_http_error=4xx,5xx,reconnect_on_network_error=1,reconnect_streamed=1,reconnect_delay_max=5,fflags=+genpts+igndts");
 
             if cfg!(target_os = "windows") {
                 cmd.arg("--d3d11-flip=yes")            // Modern Windows presentation (faster)
@@ -247,7 +256,9 @@ impl Player {
            .arg("--http-user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
            .arg("--http-reconnect")
            .arg("--http-continuous")
-           .arg("--network-caching=3000"); // 3 second buffer for TS streams
+           .arg("--clock-jitter=500")           // Allow more jitter in stream clock
+           .arg("--network-caching=15000")      // 15 second buffer for TS streams
+           .arg("--gnutls-verify-trust-ee=no"); // For VLC HTTPS stability
 
         // Optimization flags (Commented out for stability)
         // cmd.arg("--hwdec=auto"); 

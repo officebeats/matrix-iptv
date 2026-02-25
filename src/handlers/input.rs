@@ -795,6 +795,10 @@ pub async fn handle_key_event(
             } else {
                 match key.code {
                     KeyCode::Char('/') | KeyCode::Char('f') => {
+                        if app.active_pane == Pane::Categories {
+                            app.previous_screen = Some(app.current_screen.clone());
+                            app.current_screen = CurrentScreen::GlobalSearch;
+                        }
                         app.search_mode = true;
                         app.search_state.query.clear();
                         app.last_search_query.clear();
@@ -1172,6 +1176,8 @@ pub async fn handle_key_event(
             } else {
                 match key.code {
                     KeyCode::Char('/') | KeyCode::Char('f') => {
+                        app.previous_screen = Some(app.current_screen.clone());
+                        app.current_screen = CurrentScreen::GlobalSearch;
                         app.search_mode = true;
                         app.active_pane = Pane::Categories;
                         app.search_state.query.clear();
@@ -1437,7 +1443,14 @@ pub async fn handle_key_event(
                 }
             } else {
                 match key.code {
-                    KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_state.query.clear(); app.last_search_query.clear(); app.update_search(); }
+                    KeyCode::Char('/') | KeyCode::Char('f') => { 
+                        app.previous_screen = Some(app.current_screen.clone());
+                        app.current_screen = CurrentScreen::GlobalSearch;
+                        app.search_mode = true; 
+                        app.search_state.query.clear(); 
+                        app.last_search_query.clear(); 
+                        app.update_search(); 
+                    }
                     KeyCode::Esc | KeyCode::Backspace => {
                         app.series_streams.clear();
                         app.all_series_streams.clear();
