@@ -3,7 +3,7 @@ use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let url = "http://zfruvync.duperab.xyz/live/PE1S9S8U/11EZZUMW/53504.ts";
+    let url = "http://zfruvync.rmtil.com:8080/player_api.php?username=PE1S9S8U&password=11EZZUMW";
     println!("Diagnosing Stream URL: {}", url);
 
     // Test Cases

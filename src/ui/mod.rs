@@ -15,6 +15,7 @@ pub mod sports;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
+    style::Stylize,
     Frame,
 };
 
@@ -24,6 +25,15 @@ use crate::ui::utils::calculate_two_column_split;
 
 pub fn ui(f: &mut Frame, app: &mut App) {
     let area = f.area();
+
+    // Prevent terminal background bleed (gray artifacting)
+    // Prevent terminal background bleed (gray artifacting)
+    f.render_widget(ratatui::widgets::Clear, area);
+    f.render_widget(
+        ratatui::widgets::Block::default()
+            .bg(ratatui::style::Color::Rgb(0, 0, 0)),
+        area
+    );
 
     // Base Screens
     match app.current_screen {
@@ -79,6 +89,10 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     if app.show_matrix_rain {
          #[cfg(not(target_arch = "wasm32"))]
          crate::matrix_rain::render_matrix_rain(f, app, area);
+    }
+
+    if app.show_help {
+        popups::render_help_popup(f, area);
     }
 
     if app.show_guide.is_some() {

@@ -1,11 +1,11 @@
 use ratatui::{
     layout::Rect,
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::Span,
     Frame,
 };
 use crate::parser::{Quality, ContentType};
-use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM, MODERN_BG};
 use crate::sports::SportsEvent;
 
 pub fn stylize_channel_name(
@@ -174,30 +174,38 @@ pub fn stylize_channel_name(
     (spans, icon_ret)
 }
 
-/// Bordered panel (JiraTUI style) — full border with title embedded in the top edge
+/// Bordered panel (JiraTUI style) — full border with title embedded in the top edge. Default to inactive (ROUNDED).
 pub fn render_matrix_box(f: &mut Frame, area: Rect, title: &str, border_color: Color) -> Rect {
-    use ratatui::widgets::{Block, Borders, block::Title};
+    render_matrix_box_active(f, area, title, border_color, false)
+}
+
+/// Bordered panel with active state (DOUBLE borders for active, ROUNDED for inactive).
+pub fn render_matrix_box_active(f: &mut Frame, area: Rect, title: &str, border_color: Color, is_active: bool) -> Rect {
+    use ratatui::prelude::*;
+    use ratatui::widgets::{Block, Borders};
     use ratatui::symbols::border;
 
     let clean_title = title.trim().trim_matches('/');
+    let border_set = if is_active { border::DOUBLE } else { border::ROUNDED };
 
     let block = if !clean_title.is_empty() {
         Block::default()
             .borders(Borders::ALL)
-            .border_set(border::ROUNDED)
+            .border_set(border_set)
             .border_style(Style::default().fg(border_color))
-            .title(Title::from(
-                Line::from(vec![
-                    Span::styled("─ ", Style::default().fg(border_color)),
-                    Span::styled(clean_title, Style::default().fg(border_color).add_modifier(Modifier::BOLD)),
-                    Span::styled(" ─", Style::default().fg(border_color)),
-                ])
-            ))
+            .bg(MODERN_BG)
+            .title(Line::from(vec![
+                Span::styled(if is_active { "═ " } else { "─ " }, Style::default().fg(border_color)),
+                Span::styled(clean_title, Style::default().fg(if is_active { MATRIX_GREEN } else { border_color }).add_modifier(Modifier::BOLD)),
+                Span::styled(if is_active { " ═" } else { " ─" }, Style::default().fg(border_color)),
+            ]))
+            .title_alignment(Alignment::Center)
     } else {
         Block::default()
             .borders(Borders::ALL)
-            .border_set(border::ROUNDED)
+            .border_set(border_set)
             .border_style(Style::default().fg(border_color))
+            .bg(MODERN_BG)
     };
 
     let inner = block.inner(area);

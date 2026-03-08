@@ -29,6 +29,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         total_movies: None,
         total_series: None,
         server_timezone: None,
+        hidden_categories: std::collections::HashSet::new(),
+        category_sort_order: matrix_iptv_lib::config::CategorySortOrder::Default,
     };
     
     // Remove if exists

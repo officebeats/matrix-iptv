@@ -1,11 +1,10 @@
 use crate::api::{Category, ServerInfo, Stream, UserInfo, IptvClient};
-use crate::flex_id::FlexId;
 use crate::config::AppConfig;
 use crate::errors::{SearchState, LoadingProgress};
 use crate::state::{
     SessionState, ContentState, SeriesState, VodState, LoginFormState,
     UiState, SportsState, MatrixRainState, SearchState as DecomposedSearchState,
-    GroupManagementState,
+    GroupManagementState, CategoryManagementState,
 };
 use std::sync::Arc;
 use std::collections::VecDeque;
@@ -142,7 +141,7 @@ pub struct App {
     pub all_categories: Vec<Arc<Category>>,
     pub categories: Vec<Arc<Category>>,
     pub selected_category_index: usize,
-    pub category_list_state: ListState,
+    pub category_list_state: ratatui::widgets::TableState,
 
     // Streams
     pub all_streams: Vec<Arc<Stream>>,
@@ -249,11 +248,13 @@ pub struct App {
     pub server_info: Option<ServerInfo>,
     pub total_channels: usize,
     pub total_movies: usize,
+    pub max_category_name_len: usize, 
     pub total_series: usize,
 
     // Layout tracking for mouse support
     pub area_categories: Rect,
     pub area_streams: Rect,
+    pub area_episodes: Rect,
     pub area_accounts: Rect,
 
     // FTUE (First Time User Experience)
@@ -348,6 +349,8 @@ pub struct App {
     pub search: DecomposedSearchState,
     /// Group management state
     pub groups: GroupManagementState,
+    /// Category management state
+    pub category_mgmt: CategoryManagementState,
 }
 
 #[derive(Clone)]
@@ -368,6 +371,7 @@ pub enum SettingsState {
     PlayerEngineSelection,
     PlaylistModeSelection,
     AutoRefreshSelection,
+    CategoryManagement,
     About,
 }
 
@@ -427,7 +431,7 @@ impl App {
             all_categories: vec![],
             categories: vec![],
             selected_category_index: 0,
-            category_list_state: ListState::default(),
+            category_list_state: ratatui::widgets::TableState::default(),
 
             all_streams: vec![],
             streams: vec![],
@@ -521,9 +525,11 @@ impl App {
             server_info: None,
             total_channels: 0,
             total_movies: 0,
+            max_category_name_len: 10,
             total_series: 0,
             area_categories: Rect::default(),
             area_streams: Rect::default(),
+            area_episodes: Rect::default(),
             area_accounts: Rect::default(),
             
             // Matrix rain: Always show on startup for 3 seconds
@@ -598,11 +604,74 @@ impl App {
             matrix_rain: MatrixRainState::new(),
             search: DecomposedSearchState::new(),
             groups: GroupManagementState::new(),
+            category_mgmt: CategoryManagementState::new(),
             loading_log: VecDeque::with_capacity(30),
         };
 
         app.refresh_settings_options();
+        app.apply_category_filters(); // Apply initial filters
         app
+    }
+
+    pub fn toggle_category_visibility(&mut self, category_id: String) {
+        if let Some(acc) = self.config.accounts.get_mut(self.selected_account_index) {
+            if acc.hidden_categories.contains(&category_id) {
+                acc.hidden_categories.remove(&category_id);
+            } else {
+                acc.hidden_categories.insert(category_id);
+            }
+            let _ = self.config.save();
+        }
+        self.apply_category_filters();
+    }
+
+    pub fn cycle_category_sort_order(&mut self) {
+        if let Some(acc) = self.config.accounts.get_mut(self.selected_account_index) {
+            acc.category_sort_order = acc.category_sort_order.next();
+            let _ = self.config.save();
+        }
+        self.apply_category_filters();
+    }
+
+    pub fn apply_category_filters(&mut self) {
+        let acc = match self.config.accounts.get(self.selected_account_index) {
+            Some(a) => a,
+            None => return,
+        };
+
+        let sort_order = acc.category_sort_order;
+        let hidden = &acc.hidden_categories;
+
+        // Helper for filtering/sorting
+        let process = |cats: &[Arc<Category>], hidden: &std::collections::HashSet<String>, order: crate::config::CategorySortOrder| -> Vec<Arc<Category>> {
+            let mut filtered: Vec<_> = cats.iter()
+                .filter(|c| !hidden.contains(&c.category_id) || c.category_id == "ALL" || c.category_id == "FAVORITES")
+                .cloned()
+                .collect();
+
+            match order {
+                crate::config::CategorySortOrder::Alphabetical => {
+                    filtered.sort_by(|a, b| {
+                        if a.category_id == "ALL" || a.category_id == "FAVORITES" { return std::cmp::Ordering::Less; }
+                        if b.category_id == "ALL" || b.category_id == "FAVORITES" { return std::cmp::Ordering::Greater; }
+                        a.category_name.to_lowercase().cmp(&b.category_name.to_lowercase())
+                    });
+                }
+                crate::config::CategorySortOrder::ZtoA => {
+                    filtered.sort_by(|a, b| {
+                        if a.category_id == "ALL" || a.category_id == "FAVORITES" { return std::cmp::Ordering::Less; }
+                        if b.category_id == "ALL" || b.category_id == "FAVORITES" { return std::cmp::Ordering::Greater; }
+                        b.category_name.to_lowercase().cmp(&a.category_name.to_lowercase())
+                    });
+                }
+                _ => {} // Server order
+            }
+            filtered
+        };
+
+        self.categories = process(&self.all_categories, hidden, sort_order);
+        self.vod_categories = process(&self.all_vod_categories, hidden, sort_order);
+        self.series_categories = process(&self.all_series_categories, hidden, sort_order);
     }
 
     pub fn get_score_for_stream(&self, stream_name: &str) -> Option<&crate::scores::ScoreGame> {
@@ -644,9 +713,21 @@ impl App {
             let home_short = game.home_team.split_whitespace().last().unwrap_or("").to_lowercase();
             let away_short = game.away_team.split_whitespace().last().unwrap_or("").to_lowercase();
             
-            // Check if stream contains either team's short name (at least 4 chars to avoid false positives)
-            (home_short.len() >= 4 && stream_lower.contains(&home_short)) ||
-            (away_short.len() >= 4 && stream_lower.contains(&away_short))
+            // Check if stream contains either team's short name AS A FULL WORD
+            // Use regex or splitting to avoid partial matches (e.g. "magic" in "magical")
+            let has_word = |name: &str, target: &str| {
+                if target.len() < 4 { return false; }
+                // simple word boundary check
+                let mut padded = String::with_capacity(name.len() + 2);
+                padded.push(' '); padded.push_str(name); padded.push(' ');
+                
+                let mut target_pad = String::with_capacity(target.len() + 2);
+                target_pad.push(' '); target_pad.push_str(target); target_pad.push(' ');
+                
+                padded.contains(&target_pad)
+            };
+            
+            has_word(&stream_lower, &home_short) || has_word(&stream_lower, &away_short)
         })
     }
 
@@ -689,7 +770,7 @@ impl App {
                 self.config.preferred_player.display_name()
             ),
             format!(
-                "Smooth Motion (VLC): {}",
+                "Smooth Motion: {}",
                 if self.config.smooth_motion { "ON" } else { "OFF" }
             ),
             format!(
@@ -702,6 +783,7 @@ impl App {
             ),
             "Matrix Rain Screensaver".to_string(),
             "Check for Updates".to_string(),
+            "Manage Category Visibility".to_string(),
             "About".to_string(),
         ];
 
@@ -713,10 +795,11 @@ impl App {
             "Choose DNS provider for network requests. Quad9 recommended for privacy.".to_string(),
             "Enhanced = Interpolation/Upscaling (MPV only). MPV Default = No enhancements.".to_string(),
             "Switch between MPV (High Performance) and VLC (High Stability) playback engines.".to_string(),
-            "VLC ONLY: Enables Bob-interpolation to double the perceived frame-rate of live TV.".to_string(),
+            "Enables motion interpolation to double the perceived frame-rate (works on MPV and VLC).".to_string(),
             "How often to automatically refresh playlist data when logging in. Set to 0 to disable.".to_string(),
             "Launch the iconic Matrix digital rain animation.".to_string(),
             "Check if a newer version of Matrix IPTV is available for download.".to_string(),
+            "Hide or show specific playlist categories for a cleaner experience.".to_string(),
             "View application info, version, and credits.".to_string(),
         ];
 
@@ -1316,6 +1399,12 @@ impl App {
             }
             _ => {}
         }
+        
+        // Recalculate max_category_name_len for current category list
+        self.max_category_name_len = self.categories.iter()
+            .map(|c| crate::parser::parse_category(&c.category_name).display_name.len())
+            .max()
+            .unwrap_or(10);
     }
 
     // Series Navigation Helpers
@@ -1433,6 +1522,8 @@ impl App {
                 total_movies: None,
                 total_series: None,
                 server_timezone: tz_opt,
+                hidden_categories: std::collections::HashSet::new(),
+                category_sort_order: crate::config::CategorySortOrder::Default,
             };
 
             if let Some(idx) = self.editing_account_index {
@@ -1792,6 +1883,8 @@ mod tests {
             total_series: None,
             server_timezone: None,
             account_type: Default::default(),
+            hidden_categories: std::collections::HashSet::new(),
+            category_sort_order: crate::config::CategorySortOrder::Default,
         });
 
         // Retry 'x'

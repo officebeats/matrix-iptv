@@ -9,6 +9,33 @@ use crate::app::{CurrentScreen, Pane, MatrixColumn};
 use crate::sports::{StreamedMatch, StreamedStream};
 use crate::scores::ScoreGame;
 
+/// Type of content for filtering and management
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ContentType {
+    #[default]
+    Live,
+    Vod,
+    Series,
+}
+
+impl ContentType {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            ContentType::Live => "Live TV",
+            ContentType::Vod => "Movies (VOD)",
+            ContentType::Series => "Series",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            ContentType::Live => ContentType::Vod,
+            ContentType::Vod => ContentType::Series,
+            ContentType::Series => ContentType::Live,
+        }
+    }
+}
+
 /// Session state for provider connection
 #[derive(Default)]
 pub struct SessionState {
@@ -388,6 +415,8 @@ pub struct SportsState {
     pub loading: bool,
     /// ESPN live scores
     pub live_scores: Vec<ScoreGame>,
+    /// Stream health cache (stream_id -> latency_ms)
+    pub stream_health_cache: HashMap<String, u64>,
 }
 
 impl SportsState {
@@ -474,6 +503,34 @@ pub struct GroupManagementState {
 }
 
 impl GroupManagementState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+pub struct CategoryManagementState {
+    /// Active list state for categories
+    pub list_state: ListState,
+    /// Search filter query
+    pub search_query: String,
+    /// Whether we are currently focused on the search box (taking all letters)
+    pub search_mode: bool,
+    /// Current content type being managed
+    pub content_type: ContentType,
+}
+
+impl Default for CategoryManagementState {
+    fn default() -> Self {
+        Self {
+            list_state: ListState::default(),
+            search_query: String::new(),
+            search_mode: false,
+            content_type: ContentType::Live,
+        }
+    }
+}
+
+impl CategoryManagementState {
     pub fn new() -> Self {
         Self::default()
     }

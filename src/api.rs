@@ -192,9 +192,9 @@ impl IptvClient {
         }
     }
 
-    pub async fn get_live_streams(&self, category_id: &str) -> Result<Vec<Stream>, anyhow::Error> {
+    pub async fn get_live_streams(&self, category_id: &str, tx: Option<tokio::sync::mpsc::Sender<crate::app::AsyncAction>>) -> Result<Vec<Stream>, anyhow::Error> {
         match self {
-            IptvClient::Xtream(c) => c.get_live_streams(category_id).await,
+            IptvClient::Xtream(c) => c.get_live_streams(category_id, tx).await,
         }
     }
 
@@ -426,32 +426,44 @@ impl XtreamClient {
         })
     }
 
-    /// Execute a request with coalescing to prevent duplicate concurrent requests.
-    /// Returns None if the request was coalesced (caller should retry/get from cache),
-    /// or returns Some(()) if this caller should make the request.
-    async fn begin_coalesced_request(&self, url_key: &str) -> Option<Arc<Notify>> {
-        let mut pending = self.pending_requests.lock().await;
-        
-        if let Some(notify) = pending.get(url_key) {
-            // Another request is in progress, wait for it
-            let notify = notify.clone();
-            drop(pending); // Release lock before waiting
-            notify.notified().await;
-            return None; // Signal that caller should check cache/retry
+    /// Execute a request with automatic DNS-over-HTTPS fallback.
+    /// Credentials are redacted from any error messages returned to the UI.
+    async fn execute_request(&self, url: &str, timeout_secs: u64) -> Result<reqwest::Response, crate::errors::IptvError> {
+        use crate::errors::{ConnectionStage, IptvError};
+
+        let result = self.client.get(url)
+            .timeout(std::time::Duration::from_secs(timeout_secs))
+            .send().await;
+
+        match result {
+            Ok(resp) => Ok(resp),
+            Err(e) => {
+                // Use shared DNS error detection
+                if crate::doh::is_dns_error(&e) {
+                    #[cfg(debug_assertions)]
+                    println!("DEBUG: DNS error detected, trying DoH fallbacks...");
+
+                    // Try DoH fallback (skips HTTPS due to SNI mismatch)
+                    if let Some(resp) = crate::doh::try_doh_fallback(&self.client, url).await {
+                        return Ok(resp);
+                    }
+
+                    return Err(IptvError::DnsResolution(
+                        crate::doh::redact_url(&self.base_url),
+                        e.to_string(),
+                    ));
+                }
+
+                let safe_url = crate::doh::redact_url(&self.base_url);
+                if e.is_timeout() {
+                    Err(IptvError::ConnectionTimeout(safe_url, timeout_secs))
+                } else if e.is_connect() {
+                    Err(IptvError::ConnectionFailed(ConnectionStage::TcpConnection, e.to_string()))
+                } else {
+                    Err(IptvError::ConnectionFailed(ConnectionStage::HttpHandshake, e.to_string()))
+                }
+            }
         }
-        
-        // No pending request, register this one
-        let notify = Arc::new(Notify::new());
-        pending.insert(url_key.to_string(), notify.clone());
-        Some(notify)
-    }
-    
-    /// Complete a coalesced request, notifying any waiters
-    async fn end_coalesced_request(&self, url_key: &str, notify: Arc<Notify>) {
-        let mut pending = self.pending_requests.lock().await;
-        pending.remove(url_key);
-        drop(pending); // Release lock before notifying
-        notify.notify_waiters();
     }
 
     pub async fn authenticate(
@@ -462,21 +474,7 @@ impl XtreamClient {
             self.base_url, self.username, self.password
         );
         
-        let resp = self.client.get(&url).send().await.map_err(|e| {
-            use crate::errors::ConnectionStage;
-            let err_str = e.to_string().to_lowercase();
-            
-            // Prioritize DNS detection as it's the most common failure point with custom resolvers
-            if err_str.contains("dns") || err_str.contains("resolution") || err_str.contains("resolve") {
-                crate::errors::IptvError::DnsResolution(self.base_url.clone(), e.to_string())
-            } else if e.is_timeout() {
-                crate::errors::IptvError::ConnectionTimeout(self.base_url.clone(), 60)
-            } else if e.is_connect() {
-                crate::errors::IptvError::ConnectionFailed(ConnectionStage::TcpConnection, e.to_string())
-            } else {
-                crate::errors::IptvError::ConnectionFailed(ConnectionStage::HttpHandshake, e.to_string())
-            }
-        })?;
+        let resp = self.execute_request(&url, 60).await?;
 
         if !resp.status().is_success() {
             return Err(crate::errors::IptvError::ServerError(resp.status().as_u16(), resp.status().canonical_reason().unwrap_or("Unknown error").to_string()));
@@ -519,6 +517,34 @@ impl XtreamClient {
         }
     }
 
+    /// Execute a request with coalescing to prevent duplicate concurrent requests.
+    /// Returns None if the request was coalesced (caller should retry/get from cache),
+    /// or returns Some(()) if this caller should make the request.
+    async fn begin_coalesced_request(&self, url_key: &str) -> Option<Arc<Notify>> {
+        let mut pending = self.pending_requests.lock().await;
+        
+        if let Some(notify) = pending.get(url_key) {
+            // Another request is in progress, wait for it
+            let notify = notify.clone();
+            drop(pending); // Release lock before waiting
+            notify.notified().await;
+            return None; // Signal that caller should check cache/retry
+        }
+        
+        // No pending request, register this one
+        let notify = Arc::new(Notify::new());
+        pending.insert(url_key.to_string(), notify.clone());
+        Some(notify)
+    }
+    
+    /// Complete a coalesced request, notifying any waiters
+    async fn end_coalesced_request(&self, url_key: &str, notify: Arc<Notify>) {
+        let mut pending = self.pending_requests.lock().await;
+        pending.remove(url_key);
+        drop(pending); // Release lock before notifying
+        notify.notify_waiters();
+    }
+
     pub async fn get_live_categories(&self) -> Result<Vec<Category>, anyhow::Error> {
         let url = format!(
             "{}/player_api.php?username={}&password={}&action=get_live_categories",
@@ -530,20 +556,15 @@ impl XtreamClient {
         let notify = match self.begin_coalesced_request(&url_key).await {
             Some(n) => n,
             None => {
-                // Request was coalesced, return empty (cache should be checked by caller)
-                return Ok(Vec::new());
+                // Request was coalesced, caller should ignore and use the original's result
+                return Err(anyhow::anyhow!("Request coalesced"));
             }
         };
         
         let result = async {
-            let resp = self.client.get(&url).send().await
-                .map_err(|e| {
-                    let mut msg = format!("Failed to fetch live categories: {}", e);
-                    if e.is_connect() { msg = format!("Connection failed: {}", e); }
-                    if e.is_timeout() { msg = format!("Request timed out: {}", e); }
-                    if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error: {}", e); }
-                    anyhow::anyhow!(msg)
-                })?;
+            let resp = self.execute_request(&url, 60).await
+                .map_err(|e| anyhow::anyhow!(e))?;
+
             let bytes = resp.bytes().await
                 .map_err(|e| anyhow::anyhow!("Failed to read live categories body: {}", e))?;
             
@@ -565,7 +586,7 @@ impl XtreamClient {
         result
     }
 
-    pub async fn get_live_streams(&self, category_id: &str) -> Result<Vec<Stream>, anyhow::Error> {
+    pub async fn get_live_streams(&self, category_id: &str, tx: Option<tokio::sync::mpsc::Sender<crate::app::AsyncAction>>) -> Result<Vec<Stream>, anyhow::Error> {
         let url = if category_id == "ALL" {
             // Fetch all streams
             format!(
@@ -584,8 +605,8 @@ impl XtreamClient {
         let notify = match self.begin_coalesced_request(&url_key).await {
             Some(n) => n,
             None => {
-                // Request was coalesced, return empty (cache should be checked by caller)
-                return Ok(Vec::new());
+                // Request was coalesced, caller should ignore and use the original's result
+                return Err(anyhow::anyhow!("Request coalesced"));
             }
         };
 
@@ -595,22 +616,65 @@ impl XtreamClient {
         let timeout = if is_all { 120 } else { 60 };
         
         let result = async {
-            let resp = self.client.get(&url)
-                .timeout(std::time::Duration::from_secs(timeout))
-                .send().await
-                .map_err(|e| {
-                    let mut msg = format!("Failed to fetch live streams (category {}): {}", category_id, e);
-                    if e.is_connect() { msg = format!("Connection failed: {}", e); }
-                    if e.is_timeout() { msg = format!("Request timed out ({}s): {}", timeout, e); }
-                    if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error: {}", e); }
-                    anyhow::anyhow!(msg)
-                })?;
+            let mut resp = self.execute_request(&url, timeout).await
+                .map_err(|e| anyhow::anyhow!(e))?;
             
-            let bytes = match resp.bytes().await {
-                Ok(b) => b,
-                Err(_e) if is_all => {
-                    // If decoding compressed body fails for ALL, OR if connection was reset/truncated,
-                    // retry with no compression and a fresh client instance.
+            let total_size = resp.content_length();
+            
+            // Stream chunks to track progress
+            let mut bytes = Vec::new();
+            let mut downloaded: u64 = 0;
+            let mut last_percent: usize = 0;
+            let mut last_progress_mb: u64 = 0; // Milestone tracker for unknown-size downloads
+            let start_time = std::time::Instant::now();
+            
+            let mut fetch_error = None;
+            
+            while let Some(chunk_res) = resp.chunk().await.transpose() {
+                match chunk_res {
+                    Ok(chunk) => {
+                        bytes.extend_from_slice(&chunk);
+                        downloaded += chunk.len() as u64;
+                        
+                        if let Some(total) = total_size {
+                            let percent = ((downloaded as f64 / total as f64) * 100.0) as usize;
+                            if percent > last_percent && percent % 2 == 0 {
+                                last_percent = percent;
+                                if let Some(ref sender) = tx {
+                                    let bytes_mb = downloaded as f64 / 1_048_576.0;
+                                    let total_mb = total as f64 / 1_048_576.0;
+                                    let elapsed = start_time.elapsed().as_secs_f64();
+                                    let speed_mb_s = if elapsed > 0.0 { bytes_mb / elapsed } else { 0.0 };
+                                    let eta_secs = if speed_mb_s > 0.0 { (total_mb - bytes_mb) / speed_mb_s } else { 0.0 };
+                                    
+                                    let msg = format!("Phase 0/3: Downloading playlist... {}% (ETA {:.0}s) [{:.1}/{:.1} MB]", percent, eta_secs, bytes_mb, total_mb);
+                                    let _ = sender.send(crate::app::AsyncAction::LoadingMessage(msg)).await;
+                                }
+                            }
+                        } else {
+                            // Milestone-based: fire exactly once per 5 MB boundary
+                            let current_mb = downloaded / 5_242_880;
+                            if current_mb > last_progress_mb {
+                                last_progress_mb = current_mb;
+                                if let Some(ref sender) = tx {
+                                    let bytes_mb = downloaded as f64 / 1_048_576.0;
+                                    let msg = format!("Phase 0/3: Downloading playlist... {:.1} MB", bytes_mb);
+                                    let _ = sender.send(crate::app::AsyncAction::LoadingMessage(msg)).await;
+                                }
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        fetch_error = Some(e);
+                        break;
+                    }
+                }
+            }
+
+            let bytes = if let Some(e) = fetch_error {
+                if is_all {
+                    let url_for_fallback = url.clone();
+                    // Try decompression fallback on truncate/error
                     let builder = reqwest::Client::builder()
                         .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
                         .danger_accept_invalid_certs(true)
@@ -618,18 +682,42 @@ impl XtreamClient {
                         .gzip(false)
                         .brotli(false);
 
-                    let no_comp_client = builder.build().unwrap_or_else(|_| self.client.clone());
-                    let resp = no_comp_client.get(&url)
-                        .header("Accept-Encoding", "identity")
-                        .send().await
-                        .map_err(|e| anyhow::anyhow!("Decompression/Truncation retry failed: {}", e))?;
-                    resp.bytes().await.map_err(|e| anyhow::anyhow!("Failed to read raw body on retry: {}", e))?
+                    let no_comp_client = builder.build()
+                        .map_err(|e| anyhow::anyhow!("Failed to build no-compression client: {}", e))?;
+                    
+                    let mut resp = no_comp_client.get(&url_for_fallback)
+                        .timeout(std::time::Duration::from_secs(timeout))
+                        .send().await;
+
+                    if let Err(e) = resp {
+                        if crate::doh::is_dns_error(&e) {
+                            if let Some(r) = crate::doh::try_doh_fallback(&no_comp_client, &url_for_fallback).await {
+                                resp = Ok(r);
+                            } else {
+                                resp = Err(e);
+                            }
+                        } else {
+                            resp = Err(e);
+                        }
+                    }
+
+                    let resp = resp.map_err(|e| anyhow::anyhow!("Fallback request failed: {}", e))?;
+                    resp.bytes().await.map_err(|e| anyhow::anyhow!("Failed to read raw body on retry: {}", e))?.to_vec()
+                } else {
+                    return Err(anyhow::anyhow!("Failed to read live streams body (category {}): {}", category_id, e));
                 }
-                Err(e) => return Err(anyhow::anyhow!("Failed to read live streams body (category {}): {}", category_id, e)),
+            } else {
+                bytes
             };
 
-            if bytes.is_empty() || bytes == "{}" || bytes == "null" {
+            if bytes.is_empty() || bytes == b"{}" || bytes == b"null" {
                 return Ok(Vec::new());
+            }
+
+            if let Some(ref sender) = tx {
+                let bytes_mb = bytes.len() as f64 / 1_048_576.0;
+                let msg = format!("Phase 1/3: Parsing {:.1} MB data stream...", bytes_mb);
+                let _ = sender.send(crate::app::AsyncAction::LoadingMessage(msg)).await;
             }
 
             let streams = tokio::task::spawn_blocking(move || {
@@ -685,20 +773,14 @@ impl XtreamClient {
         let notify = match self.begin_coalesced_request(&url_key).await {
             Some(n) => n,
             None => {
-                // Request was coalesced, return empty (cache should be checked by caller)
-                return Ok(Vec::new());
+                return Err(anyhow::anyhow!("Request coalesced"));
             }
         };
         
         let result = async {
-            let resp = self.client.get(&url).send().await
-                .map_err(|e| {
-                    let mut msg = format!("Failed to fetch VOD categories: {}", e);
-                    if e.is_connect() { msg = format!("Connection failed: {}", e); }
-                    if e.is_timeout() { msg = format!("Request timed out: {}", e); }
-                    if e.is_request() && e.to_string().contains("dns") { msg = format!("DNS Resolution Error: {}", e); }
-                    anyhow::anyhow!(msg)
-                })?;
+            let resp = self.execute_request(&url, 60).await
+                .map_err(|e| anyhow::anyhow!(e))?;
+
             let bytes = resp.bytes().await
                 .map_err(|e| anyhow::anyhow!("Failed to read VOD categories body: {}", e))?;
 
@@ -731,68 +813,29 @@ impl XtreamClient {
         let notify = match self.begin_coalesced_request(&url_key).await {
             Some(n) => n,
             None => {
-                // Request was coalesced, return empty (cache should be checked by caller)
-                return Ok(Vec::new());
+                return Err(anyhow::anyhow!("Request coalesced"));
             }
         };
         
-        // Implementation with retry logic for VOD
-        let mut retry_count = 0;
-        let max_retries = 3;
-        
-        let result = loop {
-            let client = if retry_count > 0 {
-                // Disable compression on retry to handle truncation issues
-                reqwest::Client::builder()
-                    .timeout(std::time::Duration::from_secs(90))
-                    .gzip(false)
-                    .brotli(false)
-                    .build().unwrap_or(self.client.clone())
-            } else {
-                self.client.clone()
-            };
-
-            let resp = match client.get(&url).send().await {
-                Ok(r) => r,
-                Err(e) => {
-                    let mut msg = format!("Failed to fetch VOD streams (category {}): {}", category_id, e);
-                    if e.is_connect() { msg = format!("Connection failed: {}", e); }
-                    if e.is_timeout() { msg = format!("Request timed out: {}", e); }
-                    break Err(anyhow::anyhow!(msg));
-                }
-            };
+        let result = async {
+            let resp = self.execute_request(&url, 90).await
+                .map_err(|e| anyhow::anyhow!(e))?;
             
-            let bytes = match resp.bytes().await {
-                Ok(b) => b,
-                Err(e) => {
-                    if retry_count < max_retries {
-                        retry_count += 1;
-                        continue;
-                    }
-                    break Err(anyhow::anyhow!("Failed to read VOD streams body (category {}): {}", category_id, e));
-                }
-            };
+            let bytes = resp.bytes().await
+                .map_err(|e| anyhow::anyhow!("Failed to read VOD streams body (category {}): {}", category_id, e))?;
 
             if bytes.is_empty() || bytes == "{}" || bytes == "null" {
-                break Ok(Vec::new());
+                return Ok(Vec::new());
             }
 
-            let streams_res = tokio::task::spawn_blocking(move || {
+            let streams = tokio::task::spawn_blocking(move || {
                 serde_json::from_slice::<Vec<Stream>>(&bytes)
-            }).await;
-
-            match streams_res {
-                Ok(Ok(streams)) => break Ok(streams),
-                _ => {
-                    if retry_count < max_retries {
-                        retry_count += 1;
-                        continue;
-                    }
-                    break Err(anyhow::anyhow!("Failed to parse VOD streams JSON after {} retries", retry_count));
-                }
-            }
-        };
-        
+            }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
+              .map_err(|e| anyhow::anyhow!("Failed to parse VOD streams JSON (category {}): {}", category_id, e))?;
+              
+            Ok(streams)
+        }.await;
+ 
         // Notify any waiters
         self.end_coalesced_request(&url_key, notify).await;
         
@@ -810,8 +853,7 @@ impl XtreamClient {
         let notify = match self.begin_coalesced_request(&url_key).await {
             Some(n) => n,
             None => {
-                // Request was coalesced, return empty (cache should be checked by caller)
-                return Ok(Vec::new());
+                return Err(anyhow::anyhow!("Request coalesced"));
             }
         };
         
@@ -857,8 +899,7 @@ impl XtreamClient {
         let notify = match self.begin_coalesced_request(&url_key).await {
             Some(n) => n,
             None => {
-                // Request was coalesced, return empty (cache should be checked by caller)
-                return Ok(Vec::new());
+                return Err(anyhow::anyhow!("Request coalesced"));
             }
         };
         
@@ -903,14 +944,13 @@ impl XtreamClient {
         let notify = match self.begin_coalesced_request(&url_key).await {
             Some(n) => n,
             None => {
-                // Request was coalesced, return empty (cache should be checked by caller)
-                return Ok(Vec::new());
+                return Err(anyhow::anyhow!("Request coalesced"));
             }
         };
         
         let result = async {
-            let resp = self.client.get(&url).send().await
-                .map_err(|e| anyhow::anyhow!("Failed to fetch all series: {}", e))?;
+            let resp = self.execute_request(&url, 90).await
+                .map_err(|e| anyhow::anyhow!(e))?;
             let bytes = resp.bytes().await
                 .map_err(|e| anyhow::anyhow!("Failed to read all series body: {}", e))?;
             
@@ -918,12 +958,12 @@ impl XtreamClient {
             if bytes.is_empty() || bytes == "{}" || bytes == "null" {
                 return Ok(Vec::new());
             }
-
+ 
             let series = tokio::task::spawn_blocking(move || {
                 serde_json::from_slice::<Vec<Stream>>(&bytes)
             }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
               .map_err(|e| anyhow::anyhow!("Failed to parse all series JSON: {}", e))?;
-
+ 
             Ok(series)
         }.await;
         
@@ -932,7 +972,7 @@ impl XtreamClient {
         
         result
     }
-
+ 
     pub async fn get_series_streams(
         &self,
         category_id: &str,
@@ -941,16 +981,16 @@ impl XtreamClient {
             "{}/player_api.php?username={}&password={}&action=get_series&category_id={}",
             self.base_url, self.username, self.password, category_id
         );
-        let resp = self.client.get(&url).send().await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch series streams (category {}): {}", category_id, e))?;
+        let resp = self.execute_request(&url, 60).await
+            .map_err(|e| anyhow::anyhow!(e))?;
         
         let bytes = resp.bytes().await
             .map_err(|e| anyhow::anyhow!("Failed to read series streams body (category {}): {}", category_id, e))?;
-
+ 
         if bytes.is_empty() || bytes == "{}" || bytes == "null" {
             return Ok(Vec::new());
         }
-
+ 
         let streams = tokio::task::spawn_blocking(move || {
             serde_json::from_slice::<Vec<Stream>>(&bytes)
         }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
@@ -958,70 +998,70 @@ impl XtreamClient {
         
         Ok(streams)
     }
-
+ 
     pub async fn get_series_info(&self, series_id: &str) -> Result<SeriesInfo, anyhow::Error> {
         let url = format!(
             "{}/player_api.php?username={}&password={}&action=get_series_info&series_id={}",
             self.base_url, self.username, self.password, series_id
         );
-        let resp = self.client.get(&url).send().await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch series info (series {}): {}", series_id, e))?;
+        let resp = self.execute_request(&url, 60).await
+            .map_err(|e| anyhow::anyhow!(e))?;
         let info: SeriesInfo = resp.json().await
             .map_err(|e| anyhow::anyhow!("Failed to parse series info JSON (series {}): {}", series_id, e))?;
         Ok(info)
     }
-
+ 
     pub fn get_stream_url(&self, stream_id: &str, extension: &str) -> String {
         format!(
             "{}/live/{}/{}/{}.{}",
             self.base_url, self.username, self.password, stream_id, extension
         )
     }
-
+ 
     pub fn get_vod_url(&self, stream_id: &str, extension: &str) -> String {
         format!(
             "{}/movie/{}/{}/{}.{}",
             self.base_url, self.username, self.password, stream_id, extension
         )
     }
-
+ 
     pub fn get_series_url(&self, stream_id: &str, extension: &str) -> String {
         format!(
             "{}/series/{}/{}/{}.{}",
             self.base_url, self.username, self.password, stream_id, extension
         )
     }
-
+ 
     pub async fn get_vod_info(&self, vod_id: &str) -> Result<VodInfo, anyhow::Error> {
         let url = format!(
             "{}/player_api.php?username={}&password={}&action=get_vod_info&vod_id={}",
             self.base_url, self.username, self.password, vod_id
         );
-        let resp = self.client.get(&url).send().await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch VOD info (VOD {}): {}", vod_id, e))?;
+        let resp = self.execute_request(&url, 60).await
+            .map_err(|e| anyhow::anyhow!(e))?;
         
         let bytes = resp.bytes().await
             .map_err(|e| anyhow::anyhow!("Failed to read VOD info body (VOD {}): {}", vod_id, e))?;
-
+ 
         if bytes.is_empty() || bytes == "{}" || bytes == "null" {
             return Ok(VodInfo::default());
         }
-
+ 
         let info = tokio::task::spawn_blocking(move || {
             serde_json::from_slice::<VodInfo>(&bytes)
         }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
           .map_err(|e| anyhow::anyhow!("Failed to parse VOD info JSON (VOD {}): {}", vod_id, e))?;
-
+ 
         Ok(info)
     }
-
+ 
     pub async fn get_short_epg(&self, stream_id: &str) -> Result<EpgResponse, anyhow::Error> {
         let url = format!(
             "{}/player_api.php?username={}&password={}&action=get_short_epg&stream_id={}",
             self.base_url, self.username, self.password, stream_id
         );
-        let resp = self.client.get(&url).send().await
-            .map_err(|e| anyhow::anyhow!("Failed to fetch short EPG (stream {}): {}", stream_id, e))?;
+        let resp = self.execute_request(&url, 30).await
+            .map_err(|e| anyhow::anyhow!(e))?;
         let epg: EpgResponse = resp.json().await
             .map_err(|e| anyhow::anyhow!("Failed to parse EPG JSON (stream {}): {}", stream_id, e))?;
         Ok(epg)

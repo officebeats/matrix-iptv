@@ -41,7 +41,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 // 3. Full Stream Fetch (Testing Resilience & Speed)
                                 println!("  🔍 Fetching ALL live streams (Testing Resilience)...");
                                 let stream_start = Instant::now();
-                                match client.get_live_streams("ALL").await {
+                                match client.get_live_streams("ALL", None).await {
                                     Ok(streams) => {
                                         let stream_dur = stream_start.elapsed();
                                         println!("  ✅ Streams: {} items in {:.2}s", streams.len(), stream_dur.as_secs_f32());

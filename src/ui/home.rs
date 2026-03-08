@@ -1,6 +1,6 @@
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
     widgets::{List, ListItem, Paragraph, Wrap},
     Frame,
@@ -30,7 +30,7 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
         ]),
     ];
 
-    f.render_widget(Paragraph::new(logo_lines), main_layout[0]);
+    f.render_widget(Paragraph::new(logo_lines).bg(crate::ui::colors::MODERN_BG), main_layout[0]);
 
     let content_layout = Layout::default()
         .direction(Direction::Horizontal)
@@ -99,11 +99,12 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
 
     let playlist_title = Paragraph::new(Line::from(vec![
         Span::styled("  playlists", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
-    ]));
+    ])).bg(crate::ui::colors::MODERN_BG);
     f.render_widget(playlist_title, playlist_chunks[0]);
 
     f.render_stateful_widget(
         List::new(accounts)
+            .bg(crate::ui::colors::MODERN_BG)
             .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
             .highlight_symbol(" ▎"),
         playlist_chunks[1],
@@ -121,17 +122,17 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
             Line::from(""),
             Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled("1", Style::default().fg(MATRIX_GREEN)),
+                Span::styled("[1]", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("  The TUI Edge: Why CLI?", Style::default().fg(TEXT_PRIMARY))
             ]),
             Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled("2", Style::default().fg(MATRIX_GREEN)),
+                Span::styled("[2]", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("  Acquiring Playlists safely", Style::default().fg(TEXT_PRIMARY))
             ]),
             Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled("3", Style::default().fg(MATRIX_GREEN)),
+                Span::styled("[3]", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("  Understanding the IPTV Protocol", Style::default().fg(TEXT_PRIMARY))
             ]),
             Line::from(""),
@@ -152,17 +153,17 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
             Line::from(""),
             Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled("1", Style::default().fg(MATRIX_GREEN)),
+                Span::styled("[1]", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("  The TUI Edge: Why CLI?", Style::default().fg(TEXT_PRIMARY))
             ]),
             Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled("2", Style::default().fg(MATRIX_GREEN)),
+                Span::styled("[2]", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("  Acquiring Playlists safely", Style::default().fg(TEXT_PRIMARY))
             ]),
             Line::from(vec![
                 Span::styled("  ", Style::default()),
-                Span::styled("3", Style::default().fg(MATRIX_GREEN)),
+                Span::styled("[3]", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
                 Span::styled("  Understanding the IPTV Protocol", Style::default().fg(TEXT_PRIMARY))
             ]),
         ]);
@@ -170,6 +171,7 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
 
     f.render_widget(
         Paragraph::new(guides_text)
+            .bg(crate::ui::colors::MODERN_BG)
             .wrap(Wrap { trim: true }),
         content_layout[1]
     );

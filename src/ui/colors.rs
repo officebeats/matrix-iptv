@@ -29,7 +29,7 @@ pub const STATUS_ENDED: Color = Color::Rgb(160, 160, 160);
 pub const STATUS_WARN: Color = Color::Rgb(255, 200, 80);
 
 // Legacy mappings (backward compat)
-pub const MODERN_BG: Color = Color::Black;
+pub const MODERN_BG: Color = Color::Rgb(0, 0, 0);
 pub const MODERN_FG: Color = TEXT_PRIMARY;
 pub const MODERN_GRAY: Color = TEXT_DIM;
 pub const MODERN_BLUE: Color = MATRIX_GREEN;

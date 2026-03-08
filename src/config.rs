@@ -132,6 +132,32 @@ pub enum AccountType {
     Xtream,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CategorySortOrder {
+    #[default]
+    Default,
+    Alphabetical,
+    ZtoA,
+}
+
+impl CategorySortOrder {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            CategorySortOrder::Default => "Default (Server)",
+            CategorySortOrder::Alphabetical => "Alphabetical (A-Z)",
+            CategorySortOrder::ZtoA => "Reverse (Z-A)",
+        }
+    }
+
+    pub fn next(&self) -> Self {
+        match self {
+            CategorySortOrder::Default => CategorySortOrder::Alphabetical,
+            CategorySortOrder::Alphabetical => CategorySortOrder::ZtoA,
+            CategorySortOrder::ZtoA => CategorySortOrder::Default,
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Account {
     pub name: String,
@@ -146,6 +172,10 @@ pub struct Account {
     pub total_movies: Option<usize>,
     pub total_series: Option<usize>,
     pub server_timezone: Option<String>,
+    #[serde(default)]
+    pub hidden_categories: std::collections::HashSet<String>,
+    #[serde(default)]
+    pub category_sort_order: CategorySortOrder,
 }
 
 /// A user-defined channel group
@@ -208,11 +238,6 @@ fn default_auto_refresh_hours() -> u32 { 12 }
 
 impl Default for AppConfig {
     fn default() -> Self {
-        // On macOS, default to using MPV's default settings (enhanced OFF)
-        // because enhanced mode can have compatibility issues with Homebrew MPV.
-        // On Windows, default to enhanced mode (ON) for best performance.
-        let use_default_mpv_default = cfg!(target_os = "macos");
-        
         Self {
             accounts: Vec::new(),
             last_used_account_index: None,
@@ -221,7 +246,7 @@ impl Default for AppConfig {
             playlist_mode: PlaylistMode::default(),
             processing_modes: Vec::new(),
             dns_provider: DnsProvider::default(),
-            use_default_mpv: use_default_mpv_default,
+            use_default_mpv: true,
             preferred_player: PlayerEngine::Mpv,
             smooth_motion: true, // Default to smoothing ON for better UX
             auto_refresh_hours: 12,

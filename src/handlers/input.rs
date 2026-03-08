@@ -1,4 +1,5 @@
 use crate::app::{App, AsyncAction, CurrentScreen, Pane, InputMode, LoginField, Guide, SettingsState};
+use crate::state::ContentType;
 use crate::api::get_id_str;
 use crate::{preprocessing, player};
 use crate::cache::CachedCatalog;
@@ -300,6 +301,12 @@ pub async fn handle_key_event(
             }
         }
 
+        // Help Popup
+        if key.code == KeyCode::Char('?') {
+            app.show_help = !app.show_help;
+            return Ok(InputResult::Continue);
+        }
+
         // Quick Mode Switch
         if matches!(key.code, KeyCode::Char('m') | KeyCode::Char('M')) {
             if app.current_screen != CurrentScreen::Settings || app.settings_state != SettingsState::PlaylistModeSelection {
@@ -309,9 +316,16 @@ pub async fn handle_key_event(
                 app.current_screen = CurrentScreen::Settings;
                 app.settings_state = SettingsState::PlaylistModeSelection;
                 
-                // Pre-select current mode
-                let modes = crate::config::PlaylistMode::all();
-                let idx = modes.iter().position(|m| *m == app.config.playlist_mode).unwrap_or(0);
+                // Pre-select: 0 = "None" when no modes active, else first active mode (offset +1)
+                let modes = crate::config::ProcessingMode::all();
+                let idx = if app.config.processing_modes.is_empty() {
+                    0
+                } else {
+                    app.config.processing_modes.first()
+                        .and_then(|fm| modes.iter().position(|m| m == fm))
+                        .map(|i| i + 1)
+                        .unwrap_or(0)
+                };
                 app.playlist_mode_list_state.select(Some(idx));
                 return Ok(InputResult::Continue);
             }
@@ -450,6 +464,12 @@ pub async fn handle_key_event(
                     app.search_state.query.clear();
                     app.last_search_query.clear();
                     app.update_search();
+
+                    // Pre-fetch all live streams if not cached
+                    if app.global_all_streams.is_empty() && !app.state_loading {
+                        app.state_loading = true;
+                        crate::handlers::async_actions::spawn_live_scan(app, tx);
+                    }
                 }
                 KeyCode::Char('2') => {
                     app.current_screen = CurrentScreen::VodCategories;
@@ -468,16 +488,17 @@ pub async fn handle_key_event(
                     app.update_search();
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
-                    app.selected_content_type_index = (app.selected_content_type_index + 1) % 3;
+                    app.selected_content_type_index = (app.selected_content_type_index + 1) % 4;
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     if app.selected_content_type_index == 0 {
-                        app.selected_content_type_index = 2;
+                        app.selected_content_type_index = 3;
                     } else {
                         app.selected_content_type_index -= 1;
                     }
                 }
                 KeyCode::Char('s') | KeyCode::Char('S') => {
+                    app.selected_content_type_index = 3;
                     app.current_screen = CurrentScreen::SportsDashboard;
                     app.active_pane = Pane::Categories;
                     app.sports_matches.clear();
@@ -492,6 +513,12 @@ pub async fn handle_key_event(
                             app.search_state.query.clear();
                             app.last_search_query.clear();
                             app.update_search();
+                            
+                            // Pre-fetch all live streams if not cached
+                            if app.global_all_streams.is_empty() && !app.state_loading {
+                                app.state_loading = true;
+                                crate::handlers::async_actions::spawn_live_scan(app, tx);
+                            }
                         }
                         1 => {
                             app.current_screen = CurrentScreen::VodCategories;
@@ -508,6 +535,13 @@ pub async fn handle_key_event(
                             app.search_state.query.clear();
                             app.last_search_query.clear();
                             app.update_search();
+                        }
+                        3 => {
+                            // Sports dashboard
+                            app.current_screen = CurrentScreen::SportsDashboard;
+                            app.active_pane = Pane::Categories;
+                            app.sports_matches.clear();
+                            app.sports_category_list_state.select(Some(0));
                         }
                         _ => {}
                     }
@@ -686,6 +720,8 @@ pub async fn handle_key_event(
                                             total_movies: None,
                                             total_series: None,
                                             server_timezone: None,
+                                            hidden_categories: std::collections::HashSet::new(),
+                                            category_sort_order: crate::config::CategorySortOrder::Default,
                                         };
                                         if let Some(idx) = app.editing_account_index {
                                             // Invalidate cache for the old account name if name changed
@@ -798,11 +834,16 @@ pub async fn handle_key_event(
                         if app.active_pane == Pane::Categories {
                             app.previous_screen = Some(app.current_screen.clone());
                             app.current_screen = CurrentScreen::GlobalSearch;
+                            app.search_mode = true;
+                            app.search_state.query.clear();
+                            app.last_search_query.clear();
+                            app.update_search();
+                        } else {
+                            app.search_mode = true;
+                            app.search_state.query.clear();
+                            app.last_search_query.clear();
+                            app.update_search();
                         }
-                        app.search_mode = true;
-                        app.search_state.query.clear();
-                        app.last_search_query.clear();
-                        app.update_search();
                     }
                     KeyCode::Esc | KeyCode::Backspace => {
                         if app.active_pane == Pane::Streams && !app.streams.is_empty() {
@@ -1019,7 +1060,7 @@ pub async fn handle_key_event(
 
                                                     handles.push(tokio::spawn(async move {
                                                         let _permit = sem2.acquire().await.unwrap();
-                                                        let streams = c.get_live_streams(&cat_id).await.unwrap_or_default();
+                                                        let streams = c.get_live_streams(&cat_id, Some(tx2.clone())).await.unwrap_or_default();
                                                         let done = completed2.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
                                                         let elapsed = start.elapsed().as_secs_f64();
                                                         let avg = elapsed / done as f64;
@@ -1050,7 +1091,7 @@ pub async fn handle_key_event(
                                                     });
                                                 }
                                                 let _ = tx.send(AsyncAction::LoadingMessage(format!("Processing {} channels...", all_streams.len()))).await;
-                                                preprocessing::preprocess_streams(&mut all_streams, &favs, &pms, true, &account_name);
+                                                preprocessing::preprocess_streams(&mut all_streams, &favs, &pms, true, &account_name, None);
                                                 let _ = tx.send(AsyncAction::TotalChannelsLoaded(all_streams)).await;
                                             });
                                         }
@@ -1064,10 +1105,9 @@ pub async fn handle_key_event(
                                         app.loading_message = Some("Initializing Request...".to_string());
                                         tokio::spawn(async move {
                                             let _ = tx.send(AsyncAction::LoadingMessage("Fetching Live Streams...".to_string())).await;
-                                            match client.get_live_streams(&cat_id).await {
+                                            match client.get_live_streams(&cat_id, Some(tx.clone())).await {
                                                 Ok(mut streams) => {
-                                                    let _ = tx.send(AsyncAction::LoadingMessage(format!("Processing {} Streams...", streams.len()))).await;
-                                                    preprocessing::preprocess_streams(&mut streams, &favs, &pms, true, &account_name);
+                                                    preprocessing::preprocess_streams(&mut streams, &favs, &pms, true, &account_name, None);
                                                     let _ = tx.send(AsyncAction::StreamsLoaded(streams, cat_id)).await;
                                                 }
                                                 Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -1293,7 +1333,7 @@ pub async fn handle_key_event(
                                     if cat_id == "ALL" {
                                         match client.get_vod_streams_all().await {
                                             Ok(mut streams) => {
-                                                preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &account_name);
+                                                preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &account_name, None);
                                                 let _ = tx.send(AsyncAction::VodStreamsLoaded(streams, cat_id)).await;
                                             }
                                             Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -1301,7 +1341,7 @@ pub async fn handle_key_event(
                                     } else {
                                         match client.get_vod_streams(&cat_id).await {
                                             Ok(mut streams) => {
-                                                preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &account_name);
+                                                preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &account_name, None);
                                                 let _ = tx.send(AsyncAction::VodStreamsLoaded(streams, cat_id)).await;
                                             }
                                             Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -1560,7 +1600,7 @@ pub async fn handle_key_event(
                                 tokio::spawn(async move {
                                     match client.get_series_streams(&cat_id).await {
                                         Ok(mut streams) => {
-                                            preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &acc_name_cloned);
+                                            preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &acc_name_cloned, None);
                                             let _ = tx.send(AsyncAction::SeriesStreamsLoaded(streams, cat_id)).await;
                                         }
                                         Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -1623,7 +1663,7 @@ pub async fn handle_key_event(
                                     tokio::spawn(async move {
                                         match client.get_series_streams(&cat_id).await {
                                             Ok(mut streams) => {
-                                                preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &acc_name_cloned);
+                                                preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &acc_name_cloned, None);
                                                 let _ = tx.send(AsyncAction::SeriesStreamsLoaded(streams, cat_id)).await;
                                             }
                                             Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
@@ -1772,12 +1812,19 @@ pub async fn handle_key_event(
                                 let idx = app.timezone_list.iter().position(|t| t == &current_tz).unwrap_or(0);
                                 app.timezone_list_state.select(Some(idx));
                             }
-                            2 => { 
+                            2 => {
                                 // Open Playlist Mode Selection dropdown
                                 app.settings_state = SettingsState::PlaylistModeSelection;
-                                // Pre-select current mode
-                                let modes = crate::config::PlaylistMode::all();
-                                let idx = modes.iter().position(|m| *m == app.config.playlist_mode).unwrap_or(0);
+                                // Pre-select: 0 = None, or first active mode (offset by 1)
+                                let modes = crate::config::ProcessingMode::all();
+                                let idx = if app.config.processing_modes.is_empty() {
+                                    0 // "None" row
+                                } else {
+                                    app.config.processing_modes.first()
+                                        .and_then(|fm| modes.iter().position(|m| m == fm))
+                                        .map(|i| i + 1)
+                                        .unwrap_or(0)
+                                };
                                 app.playlist_mode_list_state.select(Some(idx));
                             }
                             3 => { 
@@ -1836,7 +1883,11 @@ pub async fn handle_key_event(
                                     crate::setup::check_for_updates(tx, true).await;
                                 });
                             }
-                            10 => { app.settings_state = SettingsState::About; }
+                            10 => { 
+                                 app.settings_state = SettingsState::CategoryManagement;
+                                 app.category_mgmt.list_state.select(Some(0));
+                             }
+                             11 => { app.settings_state = SettingsState::About; }
                             _ => {}
                         }
                     }
@@ -1986,8 +2037,8 @@ pub async fn handle_key_event(
                     KeyCode::Esc | KeyCode::Backspace => { app.settings_state = SettingsState::Main; }
                     KeyCode::Up | KeyCode::Char('k') => {
                         let modes = crate::config::ProcessingMode::all();
-                        // modes.len() items + 1 Done button = modes.len() + 1 total items
-                        let total_items = modes.len() + 1;
+                        // 1 (None) + modes.len() + 1 (apply&save) = modes.len() + 2
+                        let total_items = modes.len() + 2;
                         if let Some(idx) = app.playlist_mode_list_state.selected() {
                             let new_idx = if idx == 0 { total_items - 1 } else { idx - 1 };
                             app.playlist_mode_list_state.select(Some(new_idx));
@@ -1995,7 +2046,7 @@ pub async fn handle_key_event(
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
                         let modes = crate::config::ProcessingMode::all();
-                        let total_items = modes.len() + 1;
+                        let total_items = modes.len() + 2;
                         if let Some(idx) = app.playlist_mode_list_state.selected() {
                             let new_idx = if idx >= total_items - 1 { 0 } else { idx + 1 };
                             app.playlist_mode_list_state.select(Some(new_idx));
@@ -2004,15 +2055,19 @@ pub async fn handle_key_event(
                     KeyCode::Char(' ') | KeyCode::Enter => {
                         let modes = crate::config::ProcessingMode::all();
                         if let Some(idx) = app.playlist_mode_list_state.selected() {
-                            if idx < modes.len() {
-                                // Toggle Selection
-                                if let Some(mode) = modes.get(idx) {
+                            if idx == 0 {
+                                // "None" — clear all filters
+                                app.config.processing_modes.clear();
+                                let _ = app.config.save();
+                            } else if idx <= modes.len() {
+                                // Toggle mode at idx - 1 (shifted by the "None" item)
+                                if let Some(mode) = modes.get(idx - 1) {
                                     if app.config.processing_modes.contains(mode) {
                                         app.config.processing_modes.retain(|m| m != mode);
                                     } else {
                                         app.config.processing_modes.push(*mode);
                                     }
-                                    let _ = app.config.save(); // Optional: Auto-save on toggle?
+                                    let _ = app.config.save();
                                 }
                             } else {
                                 // Clicked "APPLY & SAVE"
@@ -2076,6 +2131,115 @@ pub async fn handle_key_event(
                         }
                         app.settings_state = SettingsState::Main;
                         app.refresh_settings_options();
+                    }
+                    _ => {}
+                }
+                SettingsState::CategoryManagement => match key.code {
+                    KeyCode::Char('/') => {
+                        app.category_mgmt.search_mode = true;
+                    }
+                    KeyCode::Esc => {
+                        if app.category_mgmt.search_mode {
+                            app.category_mgmt.search_mode = false;
+                        } else {
+                            app.settings_state = SettingsState::Main;
+                        }
+                    }
+                    KeyCode::Enter => {
+                        if app.category_mgmt.search_mode {
+                            app.category_mgmt.search_mode = false;
+                        } else {
+                            // Also allow Enter to toggle visibility like space
+                            let content_type = app.category_mgmt.content_type;
+                            let acc = match app.config.accounts.get(app.selected_account_index) {
+                                Some(a) => a,
+                                None => return Ok(InputResult::Continue),
+                            };
+                            let cats = match content_type {
+                                ContentType::Live => &app.all_categories,
+                                ContentType::Vod => &app.all_vod_categories,
+                                ContentType::Series => &app.all_series_categories,
+                            };
+                            let mut sorted_cats: Vec<_> = cats.iter()
+                                .filter(|c| c.category_name.to_lowercase().contains(&app.category_mgmt.search_query.to_lowercase()))
+                                .collect();
+                            match acc.category_sort_order {
+                                crate::config::CategorySortOrder::Alphabetical => sorted_cats.sort_by(|a, b| a.category_name.cmp(&b.category_name)),
+                                crate::config::CategorySortOrder::ZtoA => sorted_cats.sort_by(|a, b| b.category_name.cmp(&a.category_name)),
+                                _ => {}
+                            }
+                            if let Some(idx) = app.category_mgmt.list_state.selected() {
+                                if let Some(cat) = sorted_cats.get(idx) {
+                                    let id = cat.category_id.clone();
+                                    app.toggle_category_visibility(id);
+                                }
+                            }
+                        }
+                    }
+                    KeyCode::Char('j') | KeyCode::Down if !app.category_mgmt.search_mode => {
+                        let content_type = app.category_mgmt.content_type;
+                        let cats = match content_type {
+                            ContentType::Live => &app.all_categories,
+                            ContentType::Vod => &app.all_vod_categories,
+                            ContentType::Series => &app.all_series_categories,
+                        };
+                        let i = match app.category_mgmt.list_state.selected() {
+                            Some(i) => if i >= cats.len().saturating_sub(1) { 0 } else { i + 1 },
+                            None => 0,
+                        };
+                        app.category_mgmt.list_state.select(Some(i));
+                    }
+                    KeyCode::Char('k') | KeyCode::Up if !app.category_mgmt.search_mode => {
+                        let content_type = app.category_mgmt.content_type;
+                        let cats = match content_type {
+                            ContentType::Live => &app.all_categories,
+                            ContentType::Vod => &app.all_vod_categories,
+                            ContentType::Series => &app.all_series_categories,
+                        };
+                        let i = match app.category_mgmt.list_state.selected() {
+                            Some(i) => if i == 0 { cats.len().saturating_sub(1) } else { i - 1 },
+                            None => 0,
+                        };
+                        app.category_mgmt.list_state.select(Some(i));
+                    }
+                    KeyCode::Char('s') if !app.category_mgmt.search_mode => {
+                        app.cycle_category_sort_order();
+                    }
+                    KeyCode::Backspace => {
+                        app.category_mgmt.search_query.pop();
+                        app.category_mgmt.list_state.select(Some(0));
+                    }
+                    KeyCode::Char(c) => {
+                        if app.category_mgmt.search_mode {
+                            app.category_mgmt.search_query.push(c);
+                            app.category_mgmt.list_state.select(Some(0));
+                        } else if c == ' ' {
+                            // Handle space for toggle if not in search mode
+                             let content_type = app.category_mgmt.content_type;
+                             let acc = match app.config.accounts.get(app.selected_account_index) {
+                                 Some(a) => a,
+                                 None => return Ok(InputResult::Continue),
+                             };
+                             let cats = match content_type {
+                                 ContentType::Live => &app.all_categories,
+                                 ContentType::Vod => &app.all_vod_categories,
+                                 ContentType::Series => &app.all_series_categories,
+                             };
+                             let mut sorted_cats: Vec<_> = cats.iter()
+                                 .filter(|c| c.category_name.to_lowercase().contains(&app.category_mgmt.search_query.to_lowercase()))
+                                 .collect();
+                             match acc.category_sort_order {
+                                 crate::config::CategorySortOrder::Alphabetical => sorted_cats.sort_by(|a, b| a.category_name.cmp(&b.category_name)),
+                                 crate::config::CategorySortOrder::ZtoA => sorted_cats.sort_by(|a, b| b.category_name.cmp(&a.category_name)),
+                                 _ => {}
+                             }
+                             if let Some(idx) = app.category_mgmt.list_state.selected() {
+                                 if let Some(cat) = sorted_cats.get(idx) {
+                                     let id = cat.category_id.clone();
+                                     app.toggle_category_visibility(id);
+                                 }
+                             }
+                        }
                     }
                     _ => {}
                 }

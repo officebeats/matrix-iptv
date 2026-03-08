@@ -110,13 +110,13 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
 
             match mode {
                 crate::config::ProcessingMode::Merica => {
-                    left_spans.push(Span::styled("'MERICA", Style::default().fg(Color::Black).bg(Color::Rgb(255, 200, 80)).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("'MERICA", Style::default().fg(Color::Rgb(0, 0, 0)).bg(Color::Rgb(255, 200, 80)).add_modifier(Modifier::BOLD)));
                 }
                 crate::config::ProcessingMode::Sports => {
-                    left_spans.push(Span::styled("SPORTS", Style::default().fg(Color::Black).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("SPORTS", Style::default().fg(Color::Rgb(0, 0, 0)).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
                 }
                 crate::config::ProcessingMode::AllEnglish => {
-                    left_spans.push(Span::styled("EN", Style::default().fg(Color::Black).bg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)));
+                    left_spans.push(Span::styled("EN", Style::default().fg(Color::Rgb(0, 0, 0)).bg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)));
                 }
             }
         }
@@ -136,7 +136,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         let tz_str = app.config.get_user_timezone();
         let user_tz: Tz = Tz::from_str(&tz_str).unwrap_or(chrono_tz::Europe::London);
         let now = Utc::now().with_timezone(&user_tz);
-        let time = now.format("%H:%M").to_string();
+        let time = now.format("%I:%M %p").to_string();
 
         let (_active, _total, exp) = if let Some(info) = &app.account_info {
             let a = info.active_cons.as_ref().map(clean_val).unwrap_or_else(|| "0".to_string());
@@ -155,7 +155,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
 
         let mut right_spans = Vec::new();
         // Account Badge
-        right_spans.push(Span::styled(format!(" {} ", name), Style::default().fg(Color::Black).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
+        right_spans.push(Span::styled(format!(" {} ", name), Style::default().fg(Color::Rgb(0, 0, 0)).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
         right_spans.push(Span::styled(" ", Style::default()));
         
         // Time

@@ -66,37 +66,37 @@ impl ConnectionStage {
 #[derive(Debug, Error, Clone)]
 pub enum IptvError {
     /// DNS resolution failed
-    #[error("DNS resolution failed for {0}: {1}")]
+    #[error("📡 DNS Resolve Error: Could not find server host '{0}'.\nDetail: {1}\nSuggestion: Try enabling 'Quad9 DoH' in Settings.")]
     DnsResolution(String, String),
-
+ 
     /// Connection timeout
-    #[error("Connection timeout after {1}s to {0}")]
+    #[error("⏱️ Connection Timeout (after {1}s) to server: {0}.\nSuggestion: Higher provider latency or server offline.")]
     ConnectionTimeout(String, u64),
-
+ 
     /// Connection failed
-    #[error("Connection failed at {0}: {1}")]
+    #[error("🚫 {0} Failure: {1}\nSuggestion: {}", .0.suggestion())]
     ConnectionFailed(ConnectionStage, String),
-
+ 
     /// Authentication failed
-    #[error("Authentication failed: {0}")]
+    #[error("🔑 Authentication Denied: {0}\nSuggestion: Double check username/password with your provider.")]
     AuthenticationFailed(String),
-
+ 
     /// Server returned an error status
-    #[error("Server returned {0}: {1}")]
+    #[error("⚠️ Server Error ({0}): {1}\nSuggestion: Provider may be experiencing issues.")]
     ServerError(u16, String),
-
+ 
     /// Failed to parse response
-    #[error("Failed to parse response: {0}")]
+    #[error("📦 Data Format Error: {0}\nSuggestion: Provider sent corrupted or unexpected data.")]
     ParseError(String),
-
+ 
     /// Empty or invalid response
-    #[error("Empty or invalid response received: {0}")]
+    #[error("🕳️ Empty response from server: {0}")]
     EmptyResponse(String),
-
+ 
     /// ISP block detected
-    #[error("ISP BLOCK DETECTED: Your provider (likely AT&T) is blocking this IPTV server. Disable 'Home Network Security' or use a VPN.")]
+    #[error("🛡️ ISP BLOCK DETECTED!\nYour internet provider is actively blocking this IPTV server.\n🔧 FIX: Disable 'Secure Home' features in your router or use a VPN.")]
     IspBlock,
-
+ 
     /// Generic error
     #[error("Error: {0}")]
     Generic(String),
@@ -107,7 +107,10 @@ impl IptvError {
     pub fn diagnostics(&self) -> String {
         match self {
             IptvError::DnsResolution(host, source) => {
-                format!("DNS Resolution Error\nHost: {}\nError: {}\nSuggestion: Try using Quad9 DNS", host, source)
+                format!(
+                    "DNS Resolution Error\nHost: {}\nError: {}\nDetail: Server host not found. Domain may be dead or blocked.\nSuggestion: Try enabling 'Quad9 DoH' in Settings. If already on, the provider domain may have changed.",
+                    host, source
+                )
             }
             IptvError::ConnectionTimeout(host, timeout) => {
                 format!("Connection Timeout\nHost: {}\nTimeout: {} seconds\nSuggestion: Server is slow or offline", host, timeout)

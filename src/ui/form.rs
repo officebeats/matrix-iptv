@@ -6,6 +6,7 @@ use ratatui::{
     Frame,
 };
 use crate::app::{App, LoginField, InputMode, SettingsState};
+use crate::state::ContentType;
 use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 
 pub fn render_login(f: &mut Frame, app: &App, area: Rect) {
@@ -353,15 +354,28 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
         }
         SettingsState::PlaylistModeSelection => {
             let modes = crate::config::ProcessingMode::all();
-            let mut items: Vec<ListItem> = modes.iter().map(|m| {
+
+            // Index 0: "None" — active when processing_modes is empty
+            let none_active = app.config.processing_modes.is_empty();
+            let mut items: Vec<ListItem> = vec![
+                ListItem::new(Line::from(vec![
+                    Span::styled(if none_active { "◉ " } else { "○ " }, Style::default().fg(if none_active { MATRIX_GREEN } else { TEXT_DIM })),
+                    Span::styled("None", Style::default().fg(if none_active { MATRIX_GREEN } else { TEXT_PRIMARY })),
+                    Span::styled("  show all content, no filters", Style::default().fg(TEXT_SECONDARY)),
+                ]))
+            ];
+
+            // Indices 1..=modes.len(): individual toggleable modes
+            items.extend(modes.iter().map(|m| {
                 let is_selected = app.config.processing_modes.contains(m);
                 let checkbox = if is_selected { "◉ " } else { "○ " };
                 ListItem::new(Line::from(vec![
                     Span::styled(checkbox, Style::default().fg(if is_selected { MATRIX_GREEN } else { TEXT_DIM })),
                     Span::styled(m.display_name(), Style::default().fg(if is_selected { MATRIX_GREEN } else { TEXT_PRIMARY })),
                 ]))
-            }).collect();
-            
+            }));
+
+            // Last index: apply & save
             items.push(ListItem::new(Line::from(vec![
                 Span::styled("  ─── ", Style::default().fg(TEXT_DIM)),
                 Span::styled("apply & save", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
@@ -369,10 +383,11 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             
             let desc = if let Some(idx) = app.playlist_mode_list_state.selected() {
                 match idx {
-                    0 => "'merica: Intelligent geo-blocking buffer. Removes international channels from optimized playlists.",
-                    1 => "Sports: Prioritizes sports categories and adds league icons for rapid recognition.",
-                    2 => "All English: Broadest filter. Retains all content tagged as English (US, UK, CA, AU).",
-                    3 => "Save configuration and refresh playlist with selected filters.",
+                    0 => "Show all content from your provider without any geo-filtering or sorting.",
+                    1 => "'merica: Intelligent geo-blocking buffer. Removes international channels from optimized playlists.",
+                    2 => "Sports: Prioritizes sports categories and adds league icons for rapid recognition.",
+                    3 => "All English: Broadest filter. Retains all content tagged as English (US, UK, CA, AU).",
+                    4 => "Save configuration and refresh playlist with selected filters.",
                     _ => ""
                 }
             } else { "" };
@@ -386,7 +401,8 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 Span::styled("enter", key_style), Span::styled(" done", label_style),
             ]);
             
-            render_settings_subscreen(f, area, "playlist filters (space to toggle)", items, &mut app.playlist_mode_list_state, desc, 8, hints);
+            // +2 = 1 for None item + 1 for apply&save
+            render_settings_subscreen(f, area, "playlist filters (space to toggle)", items, &mut app.playlist_mode_list_state, desc, 10, hints);
         }
         SettingsState::AutoRefreshSelection => {
             let intervals = vec![
@@ -413,5 +429,100 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             
             render_settings_subscreen(f, area, "auto-refresh interval", items, &mut app.auto_refresh_list_state, desc, 9, nav_hints());
         }
+        SettingsState::CategoryManagement => {
+            render_category_management(f, app, area);
+        }
     }
+}
+
+pub fn render_category_management(f: &mut Frame, app: &mut App, area: Rect) {
+    let content_type = app.category_mgmt.content_type;
+    let acc = match app.config.accounts.get(app.selected_account_index) {
+        Some(a) => a,
+        None => return,
+    };
+
+    // Tabs for Content Type
+    let tabs = vec!["Live TV", "Movies", "Series"];
+    let tab_chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(3), // Tabs
+            Constraint::Length(1), // Spacer/Search
+            Constraint::Min(5),    // List
+            Constraint::Length(3), // Info/Sort
+            Constraint::Length(2), // Hints
+        ])
+        .split(area);
+
+    let tab_spans: Vec<Span> = tabs.iter().enumerate().map(|(i, &t)| {
+        let is_selected = i == content_type as usize;
+        if is_selected {
+            Span::styled(format!(" [{}] ", t), Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
+        } else {
+            Span::styled(format!("  {}  ", t), Style::default().fg(TEXT_DIM))
+        }
+    }).collect();
+    
+    let tab_para = Paragraph::new(Line::from(tab_spans)).alignment(Alignment::Center);
+    let inner_tabs = crate::ui::common::render_matrix_box(f, tab_chunks[0], "manage categories", SOFT_GREEN);
+    f.render_widget(tab_para, inner_tabs);
+
+    // Categories List based on content type
+    let all_cats = match content_type {
+        ContentType::Live => &app.all_categories,
+        ContentType::Vod => &app.all_vod_categories,
+        ContentType::Series => &app.all_series_categories,
+    };
+
+    // Filter by search query
+    let filtered_cats: Vec<_> = all_cats.iter()
+        .filter(|c| c.category_name.to_lowercase().contains(&app.category_mgmt.search_query.to_lowercase()))
+        .collect();
+
+    // Sort based on user preference
+    let mut sorted_cats = filtered_cats.clone();
+    match acc.category_sort_order {
+        crate::config::CategorySortOrder::Alphabetical => sorted_cats.sort_by(|a, b| a.category_name.cmp(&b.category_name)),
+        crate::config::CategorySortOrder::ZtoA => sorted_cats.sort_by(|a, b| b.category_name.cmp(&a.category_name)),
+        _ => {} // Default is server order
+    }
+
+    let items: Vec<ListItem> = sorted_cats.iter().map(|cat| {
+        let is_hidden = acc.hidden_categories.contains(&cat.category_id);
+        let checkbox = if is_hidden { "○ " } else { "● " };
+        let style = if is_hidden { Style::default().fg(TEXT_DIM) } else { Style::default().fg(TEXT_PRIMARY) };
+        
+        ListItem::new(Line::from(vec![
+            Span::styled(checkbox, Style::default().fg(if is_hidden { TEXT_DIM } else { MATRIX_GREEN })),
+            Span::styled(cat.category_name.as_str(), style),
+        ]))
+    }).collect();
+
+    let list_title = format!("{} categories ({})", content_type.display_name(), sorted_cats.len());
+    let inner_list = crate::ui::common::render_composite_block(f, tab_chunks[2], Some(&list_title));
+    
+    let list = List::new(items)
+        .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
+        .highlight_symbol(" ▎");
+    
+    f.render_stateful_widget(list, inner_list, &mut app.category_mgmt.list_state);
+
+    // Sort Info
+    let sort_info = Paragraph::new(format!("  Sort: {}", acc.category_sort_order.display_name()))
+        .style(Style::default().fg(TEXT_SECONDARY));
+    let inner_sort = crate::ui::common::render_matrix_box(f, tab_chunks[3], "options", TEXT_DIM);
+    f.render_widget(sort_info, inner_sort);
+
+    // Navigation Hints
+    let key_style = Style::default().fg(MATRIX_GREEN);
+    let label_style = Style::default().fg(TEXT_SECONDARY);
+    let hints = Line::from(vec![
+        Span::styled("space", key_style), Span::styled(" toggle visibility  ", label_style),
+        Span::styled("tab", key_style), Span::styled(" cycle type  ", label_style),
+        Span::styled("s", key_style), Span::styled(" cycle sort  ", label_style),
+        Span::styled("esc", key_style), Span::styled(" back", label_style),
+    ]);
+    let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
+    f.render_widget(hints_para, tab_chunks[4]);
 }

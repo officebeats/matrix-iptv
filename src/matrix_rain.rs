@@ -10,16 +10,15 @@ use ratatui::{
 use rand::Rng;
 
 const MATRIX_CHARS: &[char] = &[
-    // Mixed set: Katakana, Numbers, Roman, Symbols
-    'ｦ', 'ｧ', 'ｨ', 'ｩ', 'ｪ', 'ｫ', 'ｬ', 'ｭ', 'ｮ', 'ｯ',
-    'ｰ', 'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ｶ', 'ｷ', 'ｸ', 'ｹ',
-    'ｺ', 'ｻ', 'ｼ', 'ｽ', 'ｾ', 'ｿ', 'ﾀ', 'ﾁ', 'ﾂ', 'ﾃ',
-    'ﾄ', 'ﾅ', 'ﾆ', 'ﾇ', 'ﾈ', 'ﾉ', 'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ',
-    'ﾎ', 'ﾏ', 'ﾐ', 'ﾑ', 'ﾒ', 'ﾓ', 'ﾔ', 'ﾕ', 'ﾖ', 'ﾗ',
-    'ﾘ', 'ﾙ', 'ﾚ', 'ﾛ', 'ﾜ', 'ﾝ',
+    // Safe ASCII / Width-1 characters to prevent layout breaks in Windows/Hyper
     '0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
-    'A', 'B', 'C', 'D', 'E', 'F', 'Z', 'M', 'X', 'Q',
-    'Ω', 'π', 'Ψ', 'Δ', '⚡',
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
+    'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T',
+    'U', 'V', 'W', 'X', 'Y', 'Z',
+    'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
+    'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+    'u', 'v', 'w', 'x', 'y', 'z',
+    '@', '#', '$', '%', '&', '*', '+', '=', '<', '>',
 ];
 
 pub fn init_matrix_rain(area: Rect) -> Vec<MatrixColumn> {
@@ -134,8 +133,17 @@ const LOGO_LINES: &[&str] = &[
 pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
     // Clear background to hide UI completely (Startup and Screensaver)
     f.render_widget(Clear, area);
-    let block = Block::default().style(Style::default().bg(Color::Black));
-    f.render_widget(block, area);
+    let buf = f.buffer_mut();
+    
+    // Fill background with black
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            if let Some(cell) = buf.cell_mut((x, y)) {
+                cell.set_char(' ');
+                cell.set_style(Style::default().bg(Color::Rgb(0, 0, 0)));
+            }
+        }
+    }
 
     // Calculate logo position for hit detection
     let logo_width = 103;
@@ -152,14 +160,14 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
                 let gx = logo_x + lx;
                 let gy = logo_y + ly;
                 
-                // CRITICAL FIX: Robust bounds check for the specific cell
                 if gx >= area.left() && gx < area.right() && gy >= area.top() && gy < area.bottom() {
                     if let Some(line) = LOGO_LINES.get(ly as usize) {
                         if let Some(c) = line.chars().nth(lx as usize) {
                             if c != ' ' {
-                                // Super bright neon green for activated pixels
-                                let style = Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::BOLD);
-                                f.render_widget(Paragraph::new(c.to_string()).style(style), Rect::new(gx, gy, 1, 1));
+                                if let Some(cell) = buf.cell_mut((gx, gy)) {
+                                    cell.set_char(c);
+                                    cell.set_style(Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::BOLD));
+                                }
                             }
                         }
                     }
@@ -172,34 +180,35 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
     for (ly, line) in LOGO_LINES.iter().enumerate() {
         let gy = logo_y + ly as u16;
         if gy >= area.top() && gy < area.bottom() {
-            // Slightly brighter ghost so it's easier to see structure early on
             let trace_style = Style::default().fg(Color::Rgb(0, 40, 0)); 
-            let span = Span::styled(*line, trace_style);
-            
-            // CRITICAL FIX: Clip the logo width to the terminal width to prevent out-of-bounds panics
-            let logo_area = Rect::new(logo_x, gy, logo_width, 1);
-            let clipped_area = area.intersection(logo_area);
-            
-            if clipped_area.width > 0 {
-                f.render_widget(
-                    Paragraph::new(vec![Line::from(span)]),
-                    clipped_area
-                );
+            for (lx, c) in line.chars().enumerate() {
+                let gx = logo_x + lx as u16;
+                if gx >= area.left() && gx < area.right() && c != ' ' {
+                    if let Some(cell) = buf.cell_mut((gx, gy)) {
+                        // Only draw ghosting if not already hit
+                        let idx = (ly as usize) * (logo_width as usize) + lx;
+                        if app.matrix_rain_logo_hits.get(idx) != Some(&true) {
+                           cell.set_char(c);
+                           cell.set_style(trace_style);
+                        }
+                    }
+                }
             }
         }
     }
 
-    // Render Matrix rain columns
+    // 3. Render Matrix rain columns
+    let mut rng = rand::thread_rng();
     for column in &app.matrix_rain_columns {
+        let gx = area.x + column.x;
+        if gx < area.left() || gx >= area.right() { continue; }
+
         for (i, &ch) in column.chars.iter().enumerate() {
             let y = column.y.saturating_sub(i as u16);
-            
-            let gx = area.x + column.x;
             let gy = area.y + y;
 
-            // CRITICAL FIX: Ensure coordinate is within the rendered area
-            if gx >= area.left() && gx < area.right() && gy >= area.top() && gy < area.bottom() {
-                // Check if this rain character overlaps with a non-empty pixel of our logo
+            if gy >= area.top() && gy < area.bottom() {
+                // Check if this rain character overlaps with a logo character
                 let mut logo_char = None;
                 if gx >= logo_x && gx < logo_x + logo_width &&
                    gy >= logo_y && gy < logo_y + logo_height
@@ -215,32 +224,31 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
                     }
                 }
 
-                // ... rest of rendering logic ...
-                // Occasional random bright glitch
-                let is_glitch = rand::thread_rng().gen_bool(0.01);
-                
+                let is_glitch = rng.gen_bool(0.01);
                 let (draw_ch, style) = if let Some(lc) = logo_char {
-                    // Logo pixels "ignite" - use the logo character itself and make it very bright
                     let color = if i == 0 {
                         Color::White 
-                    } else if i < 15 { // Longer highlight tail for logo
+                    } else if i < 15 {
                         Color::Rgb(180, 255, 180)
                     } else {
                         crate::ui::colors::MATRIX_GREEN
                     };
-                    (lc.to_string(), Style::default().fg(color).add_modifier(Modifier::BOLD))
+                    (lc, Style::default().fg(color).add_modifier(Modifier::BOLD))
                 } else {
                     let color = if i == 0 || is_glitch {
-                        Color::White // Head or glitch
+                        Color::White 
                     } else if i < 6 {
-                        Color::Rgb(150, 255, 150) // Bright white-green top
+                        Color::Rgb(150, 255, 150)
                     } else {
-                        crate::ui::colors::MATRIX_GREEN // Deep green body
+                        crate::ui::colors::MATRIX_GREEN
                     };
-                    (ch.to_string(), Style::default().fg(color).add_modifier(Modifier::BOLD))
+                    (ch, Style::default().fg(color).add_modifier(Modifier::BOLD))
                 };
                 
-                f.render_widget(Paragraph::new(Span::styled(draw_ch, style)), Rect::new(gx, gy, 1, 1));
+                if let Some(cell) = buf.cell_mut((gx, gy)) {
+                    cell.set_char(draw_ch);
+                    cell.set_style(style);
+                }
             }
         }
     }

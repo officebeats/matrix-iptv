@@ -1,4 +1,5 @@
 pub mod api;
+pub mod doh;
 pub mod app;
 pub mod cache;
 pub mod config;
@@ -18,6 +19,8 @@ pub mod matrix_rain;
 pub mod scores;
 pub mod handlers;
 pub mod state;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod onboarding;
 
 // Wasm module
 #[cfg(target_arch = "wasm32")]
@@ -26,7 +29,6 @@ pub mod wasm_client;
 #[cfg(test)]
 mod tests {
     use crate::app::{App, CurrentScreen};
-    use crate::config::Account;
 
     #[test]
     fn test_app_new() {

@@ -40,7 +40,7 @@ impl Player {
 
     /// Start the selected player engine and return the IPC pipe path for monitoring
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn play(&self, url: &str, engine: PlayerEngine, use_default_mpv: bool, _smooth_motion: bool) -> Result<(), anyhow::Error> {
+    pub async fn play(&self, url: &str, engine: PlayerEngine, use_default_mpv: bool, smooth_motion: bool) -> Result<(), anyhow::Error> {
         // Pre-flight check: Verify stream is reachable before launching player
         // This detects dead redirects/DNS issues early and notifies the user
         self.check_stream_health(url).await?;
@@ -48,8 +48,8 @@ impl Player {
         self.stop();
 
         match engine {
-            PlayerEngine::Mpv => self.play_mpv(url, use_default_mpv),
-            PlayerEngine::Vlc => self.play_vlc(url, _smooth_motion),
+            PlayerEngine::Mpv => self.play_mpv(url, use_default_mpv, smooth_motion),
+            PlayerEngine::Vlc => self.play_vlc(url, smooth_motion),
         }
     }
 
@@ -62,23 +62,23 @@ impl Player {
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
 
-        let mut req = client.get(url); // Use GET with streaming disabled to follow redirects
+        // We use a stream request but abort immediately to check connectivity/headers.
+        // HEAD often fails on some IPTV servers, so a started GET is safer logic-wise.
+        let mut result = client.get(url).send().await;
         
-        // Add Referer (Manual extraction to match play_vlc logic)
-        if let Some(scheme_end) = url.find("://") {
-            let rest = &url[scheme_end + 3..];
-            if let Some(path_start) = rest.find('/') {
-                let host = &rest[..path_start];
-                let base = format!("{}://{}/", &url[..scheme_end], host);
-                req = req.header("Referer", base);
+        // Resilience: Fallback to DoH if DNS fails for the stream health check
+        if let Err(ref e) = result {
+            if crate::doh::is_dns_error(e) {
+                #[cfg(debug_assertions)]
+                println!("DEBUG: Health check DNS error detected for {}. Trying DoH fallback...", url);
+
+                if let Some(resp) = crate::doh::try_doh_fallback(&client, url).await {
+                    result = Ok(resp);
+                }
             }
         }
 
-        // We use a stream request but abort immediately to check connectivity/headers
-        // HEAD often fails on some IPTV servers, so a started GET is safer logic-wise, 
-        // but we just want to follow the redirect chain.
-        
-        match req.send().await {
+        match result {
             Ok(resp) => {
                 if resp.status().is_success() || resp.status().is_redirection() {
                     Ok(())
@@ -87,9 +87,11 @@ impl Player {
                 }
             },
             Err(e) => {
-                // Provide a user-friendly error description
-                if e.is_connect() || e.is_timeout() || e.to_string().to_lowercase().contains("dns") {
-                     Err(anyhow::anyhow!("Stream Server Unreachable. The redirect target likely does not exist (DNS Error). Details: {}", e))
+                // Provide a user-friendly error description using shared DNS detection
+                if crate::doh::is_dns_error(&e) {
+                     Err(anyhow::anyhow!("Stream Server Unreachable. The host likely does not exist or is blocked (DNS Error). Details: {}", e))
+                } else if e.is_connect() || e.is_timeout() {
+                     Err(anyhow::anyhow!("Stream Connection Failed. Server may be slow or offline. Details: {}", e))
                 } else {
                      Err(anyhow::anyhow!("Stream Check Failed: {}", e))
                 }
@@ -98,7 +100,7 @@ impl Player {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn play_mpv(&self, url: &str, use_default_mpv: bool) -> Result<(), anyhow::Error> {
+    fn play_mpv(&self, url: &str, use_default_mpv: bool, smooth_motion: bool) -> Result<(), anyhow::Error> {
 
         // Find mpv executable, checking PATH and common installation locations
         let mpv_path = crate::setup::get_mpv_path().ok_or_else(|| {
@@ -132,13 +134,17 @@ impl Player {
            .arg("--no-fs")             // DISABLING FULLSCREEN - Force Windowed Mode
            .arg("--osc=yes");          // Enable On Screen Controller for usability
 
-        // Only apply optimizations if not using default MPV settings
-        if !use_default_mpv {
+        // Apply smooth motion interpolation if enabled
+        if smooth_motion {
             cmd.arg("--video-sync=display-resample") // Smooth motion sync (required for interpolation)
                .arg("--interpolation=yes") // Frame generation / motion smoothing
                .arg("--tscale=linear")     // Soap opera effect - smooth motion blending (GPU friendly)
-               .arg("--tscale-clamp=0.0")  // Allow full blending for maximum smoothness
-               .arg("--cache=yes")
+               .arg("--tscale-clamp=0.0"); // Allow full blending for maximum smoothness
+        }
+
+        // Only apply optimizations if not using default MPV settings
+        if !use_default_mpv {
+            cmd.arg("--cache=yes")
                .arg("--cache-pause=yes")               // Pause when cache is starved
                .arg("--cache-pause-wait=5")            // Wait for 5 seconds of cache before resuming (builds a buffer against live edge)
                .arg("--cache-pause-initial=yes")       // Ensure we buffer 5 seconds initially
@@ -151,7 +157,6 @@ impl Player {
                .arg("--demuxer-max-back-bytes=128MiB") // Increase back buffer for seeking/rewind
                .arg("--demuxer-readahead-secs=60")     // Buffer 1 full minute ahead (Adaptive Buffering)
                .arg("--stream-buffer-size=8MiB")       // Low-level socket buffer
-               .arg("--allow-cache-seen-delay=10")     // Buffer playback if lag is seen (jitter control)
                .arg("--load-unsafe-playlists=yes")     // Stay alive through malformed HLS fragments
                .arg("--framedrop=vo")                  // Drop frames gracefully if GPU lags
                .arg("--vd-lavc-fast")                  // Enable fast decoding optimizations
@@ -232,7 +237,7 @@ impl Player {
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn play_vlc(&self, url: &str, _smooth_motion: bool) -> Result<(), anyhow::Error> {
+    fn play_vlc(&self, url: &str, smooth_motion: bool) -> Result<(), anyhow::Error> {
         // Find vlc executable
         let vlc_path = crate::setup::get_vlc_path().ok_or_else(|| {
             anyhow::anyhow!("VLC not found. Please install VLC.")
@@ -260,9 +265,11 @@ impl Player {
            .arg("--network-caching=15000")      // 15 second buffer for TS streams
            .arg("--gnutls-verify-trust-ee=no"); // For VLC HTTPS stability
 
-        // Optimization flags (Commented out for stability)
-        // cmd.arg("--hwdec=auto"); 
-
+        // Apply smooth motion (deinterlacing) if enabled
+        if smooth_motion {
+            cmd.arg("--video-filter=deinterlace")
+               .arg("--deinterlace-mode=bob");
+        }
         // DISCONNECT from terminal
         cmd.stdin(Stdio::null())
            .stdout(Stdio::null())
@@ -383,8 +390,15 @@ impl Player {
 
     #[cfg(target_arch = "wasm32")]
     pub fn stop(&self) {
-        if let Some(win) = window() {
+        if let Some(_win) = window() {
             web_sys::console::log_1(&"Stopping stream".into());
         }
+    }
+}
+
+impl Drop for Player {
+    fn drop(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        self.stop();
     }
 }

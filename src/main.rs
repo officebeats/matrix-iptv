@@ -5,7 +5,7 @@ use tokio::time::interval;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, SetSize},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, Clear, ClearType},
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -66,13 +66,39 @@ async fn main() -> Result<(), anyhow::Error> {
     // Setup Terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, SetSize(140, 40))?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, Clear(ClearType::All))?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
     // App State
     let mut app = App::new();
     let player = player::Player::new();
+
+    // Check if FTUE is needed
+    if app.config.accounts.is_empty() {
+        if let Ok(Some(new_account)) = matrix_iptv_lib::onboarding::run_onboarding(&mut terminal) {
+            app.config.accounts.push(new_account);
+            if let Err(e) = app.config.save() {
+                println!("Failed to save config: {}", e);
+            }
+            // re-init app state now that we have an account
+            // State will be updated by normal app loop
+            // app.apply_category_filters(); // Optional: explicitly update filters
+        } else {
+            // User quit onboarding
+            disable_raw_mode()?;
+            execute!(
+                terminal.backend_mut(),
+                LeaveAlternateScreen,
+                DisableMouseCapture
+            )?;
+            terminal.show_cursor()?;
+            return Ok(());
+        }
+    } else {
+        // Run matrix rain screensaver natively if wanted (optional)
+        app.show_welcome_popup = false; // We use FTUE now
+    }
 
     // Async Channel
     let (tx, mut rx) = mpsc::channel::<AsyncAction>(32);
@@ -140,15 +166,24 @@ async fn run_app<B: ratatui::backend::Backend>(
     tx: mpsc::Sender<AsyncAction>,
     rx: &mut mpsc::Receiver<AsyncAction>,
 ) -> io::Result<Option<i32>> {
+    let mut needs_redraw = true;
+
     loop {
-        terminal.draw(|f| ui::ui(f, app))?;
+        if needs_redraw {
+            terminal.draw(|f| ui::ui(f, app)).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            needs_redraw = false;
+        }
 
         // 1. Check for Async Actions (Non-blocking)
         while let Ok(action) = rx.try_recv() {
             handlers::async_actions::handle_async_action(app, action, &tx).await;
+            needs_redraw = true;
         }
 
         app.loading_tick = app.loading_tick.wrapping_add(1);
+        if app.state_loading || app.show_matrix_rain {
+            needs_redraw = true;
+        }
 
         // 1.5 Debounced EPG Fetching
         if app.current_screen == CurrentScreen::Streams && app.active_pane == Pane::Streams && !app.streams.is_empty() {
@@ -418,8 +453,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                     match handlers::input::handle_key_event(app, key, &tx, player).await? {
                         handlers::input::InputResult::Quit => return Ok(None),
                         handlers::input::InputResult::UpdateRequested => return Ok(Some(42)),
-                        handlers::input::InputResult::Continue => continue,
-                        handlers::input::InputResult::Ok => {}
+                        handlers::input::InputResult::Continue => { needs_redraw = true; continue; },
+                        handlers::input::InputResult::Ok => { needs_redraw = true; }
                     }
                     // ── Input Coalescing: drain queued keys without redrawing ──
                     // When scrolling fast, multiple key events queue up. Process them
@@ -429,18 +464,23 @@ async fn run_app<B: ratatui::backend::Backend>(
                             match handlers::input::handle_key_event(app, next_key, &tx, player).await? {
                                 handlers::input::InputResult::Quit => return Ok(None),
                                 handlers::input::InputResult::UpdateRequested => return Ok(Some(42)),
-                                handlers::input::InputResult::Continue => continue,
-                                handlers::input::InputResult::Ok => {}
+                                handlers::input::InputResult::Continue => { needs_redraw = true; continue; },
+                                handlers::input::InputResult::Ok => { needs_redraw = true; }
                             }
                         }
                     }
                 } // End Event::Key block
 
                 Event::Mouse(mouse) => {
-                    handlers::mouse::handle_mouse_event(app, mouse);
+                    handlers::mouse::handle_mouse_event(app, mouse, &tx);
+                    needs_redraw = true;
                 }
 
-                _ => {} // Other events (resize, etc.)
+                Event::Resize(_, _) => {
+                    needs_redraw = true;
+                }
+
+                _ => {} // Other events
             }
         }
     }

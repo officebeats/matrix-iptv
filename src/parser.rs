@@ -41,6 +41,8 @@ static FOREIGN_KEYWORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         // Latin America
         "LATAM", "ARGENTINA", "COLOMBIA", "CHILE", "PERU", "VENEZUELA",
         "BOLIVIA", "ECUADOR", "URUGUAY", "PARAGUAY", "CARIBBEAN",
+        // Multi-Language / Regional
+        "EXYU", "MULTI-LANG", "MULTILANG", "MULTI AUDIO", "MULTI-AUDIO", "HISPANIC",
         // Adult
         "XXX", "ADULT", "18+", "PORN",
     ]
@@ -391,7 +393,7 @@ pub fn is_english_vod(name: &str) -> bool {
     
     // If it explicitly matches foreign patterns, it's not English
     // Use O(1) HashSet lookups instead of mega-regex
-    if FOREIGN_VOD_KEYWORDS.contains(&upper.as_str()) || matches_foreign(&upper) {
+    if FOREIGN_VOD_KEYWORDS.iter().any(|&k| upper.contains(k)) || matches_foreign(&upper) {
         return false;
     }
     

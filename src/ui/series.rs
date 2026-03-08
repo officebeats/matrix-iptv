@@ -30,6 +30,7 @@ pub fn render_series_view(f: &mut Frame, app: &mut App, area: Rect) {
 
     app.area_categories = chunks[0];
     app.area_streams = chunks[1];
+    app.area_episodes = chunks[2];
 
     render_series_categories_pane(f, app, chunks[0]);
     render_series_streams_pane(f, app, chunks[1]);
@@ -68,7 +69,7 @@ fn render_series_categories_pane(f: &mut Frame, app: &mut App, area: Rect) {
     };
     let is_active = app.active_pane == Pane::Categories;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
-    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
+    let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
 
     let list = List::new(items)
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
@@ -108,10 +109,30 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
                 }
             }
 
-            let (styled_name, _) = stylize_channel_name(
-                &name, false, false, parsed.quality, None, None,
+            // Check if recently watched (progress indicator)
+            let is_watched = app.config.recently_watched.iter().any(|(id, _)| id == &s.stream_id.to_string());
+            let prefix = if is_watched { "✓ "} else { "" };
+            let prefixed_name = format!("{}{}", prefix, name);
+
+            let (mut styled_name, _) = stylize_channel_name(
+                &prefixed_name, false, false, parsed.quality, None, None,
                 Style::default().fg(TEXT_PRIMARY),
             );
+            
+            // Colorize the checkmark if it's there
+            if is_watched {
+                if let Some(first_span) = styled_name.first_mut() {
+                    if first_span.content.starts_with("✓") {
+                        let check_span = ratatui::text::Span::styled("✓ ", Style::default().fg(crate::ui::colors::SOFT_GREEN));
+                        first_span.content = std::borrow::Cow::Owned(first_span.content[2..].to_string());
+                        
+                        let mut new_spans = vec![check_span];
+                        new_spans.extend(styled_name);
+                        styled_name = new_spans;
+                    }
+                }
+            }
+            
             spans.extend(styled_name);
 
             if let Some(rating_f) = s.rating {
@@ -135,7 +156,7 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
     };
     let is_active = app.active_pane == Pane::Streams;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
-    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
+    let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
 
     let list = List::new(items)
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
@@ -181,7 +202,7 @@ fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
     };
     let is_active = app.active_pane == Pane::Episodes;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
-    let inner_area = crate::ui::common::render_matrix_box(f, area, &title, border_color);
+    let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
 
     let list = List::new(items)
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))

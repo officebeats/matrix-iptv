@@ -211,59 +211,101 @@ pub fn render_guide_popup(f: &mut Frame, app: &App, area: Rect) {
 }
 
 pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
-    let area = centered_rect(70, 50, area);
+    let area = centered_rect(62, 55, area);
     f.render_widget(Clear, area);
     let inner = crate::ui::common::render_composite_block(f, area, Some("select library"));
+
     let layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
-            Constraint::Length(10),
-            Constraint::Min(4),
+            Constraint::Length(7), // Content list (4 options with spacing)
+            Constraint::Length(1), // Separator
+            Constraint::Min(2),    // Context description
+            Constraint::Length(1), // Hints bar
         ])
         .margin(1)
         .split(inner);
 
-    let title = Paragraph::new("Select content type:")
-        .alignment(Alignment::Center)
-        .style(Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD));
-    f.render_widget(title, layout[0]);
-
     let selected = app.selected_content_type_index;
-    let items: Vec<ListItem> = vec![
-        (0, "", "Live Channels", "Real-time broadcasts"),
-        (1, "", "Movies (VOD)", "On-demand library"),
-        (2, "", "TV Series", "Episodic content"),
-    ]
-    .into_iter()
-    .map(|(i, _icon, label, sub)| {
-        let is_selected = i == selected;
-        let text_style = if is_selected { Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD) } else { Style::default().fg(TEXT_PRIMARY) };
-        ListItem::new(Line::from(vec![
-            Span::styled("  ", Style::default()),
-            Span::styled(label, text_style),
-            Span::styled(format!("  · {}", sub), Style::default().fg(TEXT_SECONDARY)),
-        ]))
-    })
-    .collect();
+
+    // 4 options including Sports — each shows its instant-access key badge
+    let options: Vec<(usize, &str, &str, &str, &str)> = vec![
+        (0, "[1]", "📺", "Live Channels",  "real-time TV broadcasts"),
+        (1, "[2]", "🎬", "Movies (VOD)",   "on-demand movie library"),
+        (2, "[3]", "📼", "TV Series",      "episodic content"),
+        (3, "[s]", "🏆", "Sports",         "live sports dashboard"),
+    ];
+
+    let items: Vec<ListItem> = options
+        .iter()
+        .map(|(i, badge, icon, label, sub)| {
+            let is_sel = *i == selected;
+            let key_style = if is_sel {
+                Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(TEXT_DIM)
+            };
+            let label_style = if is_sel {
+                Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
+            } else {
+                Style::default().fg(TEXT_PRIMARY)
+            };
+            ListItem::new(Line::from(vec![
+                Span::styled(format!(" {} ", badge), key_style),
+                Span::styled(format!("{} ", icon), label_style),
+                Span::styled(*label, label_style),
+                Span::styled(format!("  · {}", sub), Style::default().fg(TEXT_SECONDARY)),
+            ]))
+        })
+        .collect();
 
     let mut list_state = ratatui::widgets::ListState::default();
     list_state.select(Some(selected));
     f.render_stateful_widget(
         List::new(items)
             .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
-            .highlight_symbol(" ▎"),
-        layout[1],
-        &mut list_state
+            .highlight_symbol(""),
+        layout[0],
+        &mut list_state,
     );
 
-    let quote = match selected {
-        0 => "Access global live TV streams via IPTV protocol.",
-        1 => "Browse and watch movies from your provider's VOD library.",
-        _ => "Watch TV series and binge-watch seasonal content.",
-    };
+    // Thin separator
+    use ratatui::widgets::Block;
+    let sep = Block::default()
+        .borders(Borders::BOTTOM)
+        .border_style(Style::default().fg(ratatui::style::Color::DarkGray));
+    f.render_widget(sep, layout[1]);
 
-    f.render_widget(Paragraph::new(quote).alignment(Alignment::Center).wrap(Wrap { trim: true }).style(Style::default().fg(TEXT_SECONDARY)), layout[2]);
+    // Context description for selected item
+    let desc = match selected {
+        0 => "Browse live TV categories and thousands of channels organized by region, sport, and genre.",
+        1 => "Explore your provider's full movie catalogue with ratings, runtime, and plot summaries.",
+        2 => "Browse TV series, seasons, and episodes. Stream any episode on demand.",
+        _ => "Live score overlays, match intelligence, and real-time sports streams from your playlist.",
+    };
+    f.render_widget(
+        Paragraph::new(desc)
+            .alignment(Alignment::Left)
+            .wrap(Wrap { trim: true })
+            .style(Style::default().fg(TEXT_SECONDARY)),
+        layout[2],
+    );
+
+    // Key hints bar
+    let hints = Line::from(vec![
+        Span::styled("enter", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(" open  ", Style::default().fg(TEXT_SECONDARY)),
+        Span::styled("↑↓", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(" navigate  ", Style::default().fg(TEXT_SECONDARY)),
+        Span::styled("esc", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(" back  ", Style::default().fg(TEXT_SECONDARY)),
+        Span::styled("R", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(" refresh", Style::default().fg(TEXT_SECONDARY)),
+    ]);
+    f.render_widget(
+        Paragraph::new(hints).alignment(Alignment::Left),
+        layout[3],
+    );
 }
 
 pub fn render_error_popup(f: &mut Frame, area: Rect, error: &str) {
@@ -299,7 +341,7 @@ pub fn render_error_popup(f: &mut Frame, area: Rect, error: &str) {
 pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
     let area = centered_rect(75, 80, area);
     f.render_widget(Clear, area);
-    let inner = crate::ui::common::render_composite_block(f, area, Some("confirm"));
+    let inner = crate::ui::common::render_composite_block(f, area, Some("play details"));
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)

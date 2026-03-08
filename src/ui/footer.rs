@@ -1,12 +1,12 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::Style,
+    style::{Style, Stylize},
     text::{Line, Span},
-    widgets::Paragraph,
+    widgets::{Block, Borders, Paragraph},
     Frame,
 };
 use crate::app::{App, CurrentScreen, InputMode, SettingsState};
-use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_SECONDARY};
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_SECONDARY, MODERN_BG};
 
 pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     let key_style = Style::default().fg(MATRIX_GREEN);
@@ -33,9 +33,13 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         CurrentScreen::Home => {
             hint!("q", "quit");
             hint!("enter", "load");
-            hint!("m", "mode");
-            hint!("x", "settings");
             hint!("n", "add");
+            hint!("e", "edit");
+            hint!("d", "del");
+            hint!("s", "sports");
+            hint!("m", "filter");
+            hint!("x", "settings");
+            hint!("?", "help");
         }
         CurrentScreen::Login => {
             if app.input_mode == InputMode::Editing {
@@ -57,16 +61,18 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                     crate::app::Pane::Categories => {
                         hint!("esc", "back");
                         hint!("enter", "select");
-                        hint!("ctrl+space", "search");
+                        hint!("/", "search");
                         hint!("tab", "streams");
+                        hint!("g", "grid/list");
                     }
                     crate::app::Pane::Streams => {
                         hint!("esc", "back");
                         hint!("enter", "play");
-                        hint!("ctrl+space", "search");
+                        hint!("/", "search");
                         hint!("v", "fav");
                         hint!("i", "info");
                         hint!("g", "groups");
+                        hint!("?", "help");
                     }
                     crate::app::Pane::Episodes => {
                         hint!("esc", "back");
@@ -105,7 +111,8 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         }
         CurrentScreen::ContentTypeSelection => {
             hint!("esc", "back");
-            hint!("enter", "select");
+            hint!("enter", "open");
+            hint!("↑↓", "navigate");
             hint!("R", "refresh");
         }
         _ => {
@@ -139,7 +146,8 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     let bar_block = Block::default()
         .borders(Borders::TOP)
         .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(SOFT_GREEN));
+        .border_style(Style::default().fg(SOFT_GREEN))
+        .bg(MODERN_BG);
     let bar_inner = bar_block.inner(area);
     f.render_widget(bar_block, area);
 

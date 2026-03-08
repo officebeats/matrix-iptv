@@ -75,7 +75,7 @@ pub fn render_group_picker(f: &mut Frame, app: &mut App, area: Rect) {
     let popup_y = area.y + (area.height.saturating_sub(popup_height)) / 2;
     let popup_area = Rect::new(popup_x, popup_y, popup_width, popup_height);
 
-    let clear = Block::default().style(Style::default().bg(Color::Black));
+    let clear = Block::default().style(Style::default().bg(Color::Rgb(0, 0, 0)));
     f.render_widget(clear, popup_area);
 
     let chunks = Layout::default()

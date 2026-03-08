@@ -130,6 +130,7 @@ pub fn preprocess_streams(
     modes: &[crate::config::ProcessingMode],
     is_live: bool,
     _account_name: &str,
+    tx: Option<tokio::sync::mpsc::Sender<crate::app::AsyncAction>>,
 ) {
     use rayon::prelude::*;
     use crate::api::get_id_str;
@@ -138,6 +139,12 @@ pub fn preprocess_streams(
     let use_sports = modes.contains(&crate::config::ProcessingMode::Sports);
     let use_all_english = modes.contains(&crate::config::ProcessingMode::AllEnglish);
 
+    if let Some(ref tx) = tx {
+        let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
+            "Phase 1/3: Stripping provider separators...".to_string()
+        ));
+    }
+    
     // 0. Strip out provider-injected separator/header entries.
     streams.retain(|s| {
         let name = s.name.trim();
@@ -149,6 +156,12 @@ pub fn preprocess_streams(
         if name.chars().all(|c| sep_chars.contains(&c) || c.is_whitespace()) { return false; }
         true
     });
+
+    if let Some(ref tx) = tx {
+        let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
+            format!("Phase 2/3: Cleaning metadata for {} streams...", streams.len())
+        ));
+    }
 
     // 1. Filter
     streams.retain_mut(|s| {
@@ -178,31 +191,52 @@ pub fn preprocess_streams(
         keep
     });
 
-    // 2. Process (Clean names & Metadata) - Parallelized
+    // 2. Process (Clean names & Metadata) - Parallelized but chunked for progress reporting
     let should_clean = use_merica;
-    streams.par_iter_mut().for_each(|s| {
-        if should_clean {
-            s.clean_name = crate::parser::clean_american_name(&s.name);
-            s.name = s.clean_name.clone(); 
-        } else {
-            s.clean_name = s.name.clone();
-        };
-        
-        // Sports Mode Icon Prefixing
-        if use_sports && is_live {
-            if let Some(league) = s.epg_channel_id.as_ref().or(Some(&s.name)) {
-                let lower = league.to_lowercase();
-                if lower.contains("nba") { s.clean_name = format!("🏀 {}", s.clean_name); }
-                else if lower.contains("nfl") { s.clean_name = format!("🏈 {}", s.clean_name); }
-                else if lower.contains("mlb") { s.clean_name = format!("⚾ {}", s.clean_name); }
-                else if lower.contains("nhl") { s.clean_name = format!("🏒 {}", s.clean_name); }
+    let total_streams = streams.len();
+    if total_streams > 0 {
+        let chunk_size = (total_streams / 20).max(1); // 5% chunks
+        for (i, chunk) in streams.chunks_mut(chunk_size).enumerate() {
+            let current = (i * chunk_size).min(total_streams);
+            let pct = if total_streams > 0 { (current * 100) / total_streams } else { 0 };
+            
+            if let Some(ref tx) = tx {
+                let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
+                    format!("Phase 2/3: Cleaning metadata... {}%", pct)
+                ));
             }
-        }
+            
+            chunk.par_iter_mut().for_each(|s| {
+                if should_clean {
+                    s.clean_name = crate::parser::clean_american_name(&s.name);
+                    s.name = s.clean_name.clone(); 
+                } else {
+                    s.clean_name = s.name.clone();
+                };
+                
+                // Sports Mode Icon Prefixing
+                if use_sports && is_live {
+                    if let Some(league) = s.epg_channel_id.as_ref().or(Some(&s.name)) {
+                        let lower = league.to_lowercase();
+                        if lower.contains("nba") { s.clean_name = format!("🏀 {}", s.clean_name); }
+                        else if lower.contains("nfl") { s.clean_name = format!("🏈 {}", s.clean_name); }
+                        else if lower.contains("mlb") { s.clean_name = format!("⚾ {}", s.clean_name); }
+                        else if lower.contains("nhl") { s.clean_name = format!("🏒 {}", s.clean_name); }
+                    }
+                }
 
-        s.stream_display_name = Some(s.clean_name.clone());
-        s.search_name = s.clean_name.to_lowercase();
-        s.account_name = Some(_account_name.to_string());
-    });
+                s.stream_display_name = Some(s.clean_name.clone());
+                s.search_name = s.clean_name.to_lowercase();
+                s.account_name = Some(_account_name.to_string());
+            });
+        }
+    }
+    
+    if let Some(ref tx) = tx {
+        let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
+            format!("Phase 3/3: Sorting {} streams algorithmically...", streams.len())
+        ));
+    }
 
     // 3. Sort - Parallelized
     streams.par_sort_by(|a, b| {

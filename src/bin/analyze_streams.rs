@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     for cat in cats.iter().take(5) {
         println!("Category: {}", cat.category_name);
 
-        if let Ok(streams) = client.get_live_streams(&cat.category_id).await {
+        if let Ok(streams) = client.get_live_streams(&cat.category_id, None).await {
             println!("  Sample streams ({} total):", streams.len());
             for stream in streams.iter().take(10) {
                 println!("    - {}", stream.name);
