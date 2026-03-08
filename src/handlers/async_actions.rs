@@ -375,27 +375,43 @@ pub async fn handle_async_action(
                 .map(|a| a.name.clone()).unwrap_or_default();
             let account_url = app.config.accounts.get(app.selected_account_index)
                 .map(|a| a.base_url.clone()).unwrap_or_default();
-            let cache = CachedCatalog {
-                version: 1,
-                cached_at: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-                account_name: account_name.clone(),
-                account_url,
-                live_categories: app.all_categories.iter().map(|c| (**c).clone()).collect(),
-                live_streams: app.global_all_streams.iter().map(|s| (**s).clone()).collect(),
-                vod_categories: app.all_vod_categories.iter().map(|c| (**c).clone()).collect(),
-                vod_streams: app.global_all_vod_streams.iter().map(|s| (**s).clone()).collect(),
-                series_categories: app.all_series_categories.iter().map(|c| (**c).clone()).collect(),
-                series_streams: app.global_all_series_streams.iter().map(|s| (**s).clone()).collect(),
-                total_channels: app.total_channels,
-                total_movies: app.total_movies,
-                total_series: app.total_series,
-                category_counts: app.category_channel_counts.clone().into_iter().collect(),
-                processing_modes: app.config.processing_modes.clone(),
-            };
-            let _ = cache.save();
+            
+            // Offload heavy cloning and saving to blocking thread
+            let live_categories: Vec<_> = app.all_categories.iter().map(|c| (**c).clone()).collect();
+            let live_streams: Vec<_> = app.global_all_streams.iter().map(|s| (**s).clone()).collect();
+            let vod_categories: Vec<_> = app.all_vod_categories.iter().map(|c| (**c).clone()).collect();
+            let vod_streams: Vec<_> = app.global_all_vod_streams.iter().map(|s| (**s).clone()).collect();
+            let series_categories: Vec<_> = app.all_series_categories.iter().map(|c| (**c).clone()).collect();
+            let series_streams: Vec<_> = app.global_all_series_streams.iter().map(|s| (**s).clone()).collect();
+            let category_counts = app.category_channel_counts.clone().into_iter().collect();
+            let processing_modes = app.config.processing_modes.clone();
+            let total_channels = app.total_channels;
+            let total_movies = app.total_movies;
+            let total_series = app.total_series;
+
+            tokio::task::spawn_blocking(move || {
+                let cache = CachedCatalog {
+                    version: 1,
+                    cached_at: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                    account_name,
+                    account_url,
+                    live_categories,
+                    live_streams,
+                    vod_categories,
+                    vod_streams,
+                    series_categories,
+                    series_streams,
+                    total_channels,
+                    total_movies,
+                    total_series,
+                    category_counts,
+                    processing_modes,
+                };
+                let _ = cache.save();
+            });
 
             // Refresh view context-aware:
             // Instead of dumping ALL streams into the view (which overwrites specific category views),
@@ -439,27 +455,43 @@ pub async fn handle_async_action(
                 .map(|a| a.name.clone()).unwrap_or_default();
             let account_url = app.config.accounts.get(app.selected_account_index)
                 .map(|a| a.base_url.clone()).unwrap_or_default();
-            let cache = CachedCatalog {
-                version: 1,
-                cached_at: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-                account_name: account_name.clone(),
-                account_url,
-                live_categories: app.all_categories.iter().map(|c| (**c).clone()).collect(),
-                live_streams: app.global_all_streams.iter().map(|s| (**s).clone()).collect(),
-                vod_categories: app.all_vod_categories.iter().map(|c| (**c).clone()).collect(),
-                vod_streams: app.global_all_vod_streams.iter().map(|s| (**s).clone()).collect(),
-                series_categories: app.all_series_categories.iter().map(|c| (**c).clone()).collect(),
-                series_streams: app.global_all_series_streams.iter().map(|s| (**s).clone()).collect(),
-                total_channels: app.total_channels,
-                total_movies: app.total_movies,
-                total_series: app.total_series,
-                category_counts: app.category_channel_counts.clone().into_iter().collect(),
-                processing_modes: app.config.processing_modes.clone(),
-            };
-            let _ = cache.save();
+            
+            // Offload heavy cloning and saving to blocking thread
+            let live_categories: Vec<_> = app.all_categories.iter().map(|c| (**c).clone()).collect();
+            let live_streams: Vec<_> = app.global_all_streams.iter().map(|s| (**s).clone()).collect();
+            let vod_categories: Vec<_> = app.all_vod_categories.iter().map(|c| (**c).clone()).collect();
+            let vod_streams: Vec<_> = app.global_all_vod_streams.iter().map(|s| (**s).clone()).collect();
+            let series_categories: Vec<_> = app.all_series_categories.iter().map(|c| (**c).clone()).collect();
+            let series_streams: Vec<_> = app.global_all_series_streams.iter().map(|s| (**s).clone()).collect();
+            let category_counts = app.category_channel_counts.clone().into_iter().collect();
+            let processing_modes = app.config.processing_modes.clone();
+            let total_channels = app.total_channels;
+            let total_movies = app.total_movies;
+            let total_series = app.total_series;
+
+            tokio::task::spawn_blocking(move || {
+                let cache = CachedCatalog {
+                    version: 1,
+                    cached_at: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                    account_name,
+                    account_url,
+                    live_categories,
+                    live_streams,
+                    vod_categories,
+                    vod_streams,
+                    series_categories,
+                    series_streams,
+                    total_channels,
+                    total_movies,
+                    total_series,
+                    category_counts,
+                    processing_modes,
+                };
+                let _ = cache.save();
+            });
 
             if app.search_mode { app.update_search(); }
             app.state_loading = false;
@@ -481,27 +513,43 @@ pub async fn handle_async_action(
                 .map(|a| a.name.clone()).unwrap_or_default();
             let account_url = app.config.accounts.get(app.selected_account_index)
                 .map(|a| a.base_url.clone()).unwrap_or_default();
-            let cache = CachedCatalog {
-                version: 1,
-                cached_at: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs(),
-                account_name: account_name.clone(),
-                account_url,
-                live_categories: app.all_categories.iter().map(|c| (**c).clone()).collect(),
-                live_streams: app.global_all_streams.iter().map(|s| (**s).clone()).collect(),
-                vod_categories: app.all_vod_categories.iter().map(|c| (**c).clone()).collect(),
-                vod_streams: app.global_all_vod_streams.iter().map(|s| (**s).clone()).collect(),
-                series_categories: app.all_series_categories.iter().map(|c| (**c).clone()).collect(),
-                series_streams: app.global_all_series_streams.iter().map(|s| (**s).clone()).collect(),
-                total_channels: app.total_channels,
-                total_movies: app.total_movies,
-                total_series: app.total_series,
-                category_counts: app.category_channel_counts.clone().into_iter().collect(),
-                processing_modes: app.config.processing_modes.clone(),
-            };
-            let _ = cache.save();
+            
+            // Offload heavy cloning and saving to blocking thread
+            let live_categories: Vec<_> = app.all_categories.iter().map(|c| (**c).clone()).collect();
+            let live_streams: Vec<_> = app.global_all_streams.iter().map(|s| (**s).clone()).collect();
+            let vod_categories: Vec<_> = app.all_vod_categories.iter().map(|c| (**c).clone()).collect();
+            let vod_streams: Vec<_> = app.global_all_vod_streams.iter().map(|s| (**s).clone()).collect();
+            let series_categories: Vec<_> = app.all_series_categories.iter().map(|c| (**c).clone()).collect();
+            let series_streams: Vec<_> = app.global_all_series_streams.iter().map(|s| (**s).clone()).collect();
+            let category_counts = app.category_channel_counts.clone().into_iter().collect();
+            let processing_modes = app.config.processing_modes.clone();
+            let total_channels = app.total_channels;
+            let total_movies = app.total_movies;
+            let total_series = app.total_series;
+
+            tokio::task::spawn_blocking(move || {
+                let cache = CachedCatalog {
+                    version: 1,
+                    cached_at: SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs(),
+                    account_name,
+                    account_url,
+                    live_categories,
+                    live_streams,
+                    vod_categories,
+                    vod_streams,
+                    series_categories,
+                    series_streams,
+                    total_channels,
+                    total_movies,
+                    total_series,
+                    category_counts,
+                    processing_modes,
+                };
+                let _ = cache.save();
+            });
 
             if app.search_mode { app.update_search(); }
             app.state_loading = false;

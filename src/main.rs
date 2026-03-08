@@ -430,6 +430,9 @@ async fn run_app<B: ratatui::backend::Backend>(
                     !app.matrix_rain_screensaver_mode
                 );
                 
+                // Force continuous terminal redraws during animation sequences
+                needs_redraw = true;
+                
                 // Only end startup animation after 3 seconds (screensaver runs indefinitely)
                 if !app.matrix_rain_screensaver_mode {
                     if let Some(start_time) = app.matrix_rain_start_time {
