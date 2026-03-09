@@ -39,26 +39,35 @@ if (!fs.existsSync(binDir)) {
 
 function download(url, dest) {
   return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
     https
       .get(url, (response) => {
-        if (response.statusCode === 302 || response.statusCode === 301) {
-          // Handle Redirect
+        if (response.statusCode === 302 || response.statusCode === 301 || response.statusCode === 307 || response.statusCode === 308) {
+          // Handle Redirect without leaving locks open
           download(response.headers.location, dest).then(resolve).catch(reject);
           return;
         }
+        
         if (response.statusCode !== 200) {
           reject(new Error(`Failed to download: ${response.statusCode}`));
           return;
         }
+
+        // Only open the file stream if the download actually works
+        const file = fs.createWriteStream(dest);
         response.pipe(file);
+        
         file.on("finish", () => {
           file.close();
           resolve();
         });
+        
+        file.on("error", (err) => {
+          file.close();
+          fs.unlink(dest, () => {});
+          reject(err);
+        });
       })
       .on("error", (err) => {
-        fs.unlink(dest, () => {});
         reject(err);
       });
   });
