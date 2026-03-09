@@ -21,7 +21,6 @@ use ratatui::{
 
 use crate::app::{App, CurrentScreen};
 use crate::ui::colors::SOFT_GREEN;
-use crate::ui::utils::calculate_two_column_split;
 
 pub fn ui(f: &mut Frame, app: &mut App) {
     let area = f.area();
@@ -136,26 +135,20 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                 // Full-width grid view — no streams pane until a category is selected
                 panes::render_categories_pane(f, app, content_area, SOFT_GREEN);
             } else {
-                // JiraTUI-inspired layout: Categories | Streams | Detail Panel
-                let (cat_width, _stream_width) = calculate_two_column_split(&app.categories, content_area.width);
-                
-                // Show detail panel only if terminal is wide enough (>= 120 cols)
-                let show_detail = content_area.width >= 120;
+                // Show detail panel only if terminal is wide enough (>= 80 cols)
+                let show_detail = content_area.width >= 80;
                 
                 if show_detail {
-                    let detail_width = 30u16.min(content_area.width / 4); // ~25% or 30 cols max
-                    let streams_width = content_area.width.saturating_sub(cat_width).saturating_sub(detail_width);
+                    let detail_width = 30u16.min(content_area.width / 3); 
+                    let streams_width = content_area.width.saturating_sub(detail_width);
                     
                     let h_chunks = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([
-                            Constraint::Length(cat_width),
                             Constraint::Length(streams_width),
                             Constraint::Length(detail_width),
                         ])
                         .split(content_area);
-
-                    panes::render_categories_pane(f, app, h_chunks[0], SOFT_GREEN);
 
                     // Check if focused stream is a sports event (use cache to avoid per-frame parsing)
                     let is_sports_event = app.streams.get(app.selected_stream_index)
@@ -176,26 +169,23 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                                 Constraint::Min(10),
                                 Constraint::Length(10),
                             ])
-                            .split(h_chunks[1]);
+                            .split(h_chunks[0]);
                         panes::render_streams_pane(f, app, mid_chunks[0], SOFT_GREEN);
                         panes::render_stream_details_pane(f, app, mid_chunks[1], SOFT_GREEN);
                     } else {
-                        panes::render_streams_pane(f, app, h_chunks[1], SOFT_GREEN);
+                        panes::render_streams_pane(f, app, h_chunks[0], SOFT_GREEN);
                     }
 
                     // Right detail panel (always visible)
-                    panes::render_channel_detail_panel(f, app, h_chunks[2], SOFT_GREEN);
+                    panes::render_channel_detail_panel(f, app, h_chunks[1], SOFT_GREEN);
                 } else {
-                    // Narrow terminal: 2-column layout (original behavior)
+                    // Narrow terminal: 1-column layout (streams only)
                     let h_chunks = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([
-                            Constraint::Length(cat_width),
-                            Constraint::Min(20),
+                            Constraint::Percentage(100),
                         ])
                         .split(content_area);
-
-                    panes::render_categories_pane(f, app, h_chunks[0], SOFT_GREEN);
 
                     let is_sports_event = app.streams.get(app.selected_stream_index)
                         .map(|s| {
@@ -215,11 +205,11 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                                 Constraint::Min(10),
                                 Constraint::Length(intel_height),
                             ])
-                            .split(h_chunks[1]);
+                            .split(h_chunks[0]);
                         panes::render_streams_pane(f, app, right_chunks[0], SOFT_GREEN);
                         panes::render_stream_details_pane(f, app, right_chunks[1], SOFT_GREEN);
                     } else {
-                        panes::render_streams_pane(f, app, h_chunks[1], SOFT_GREEN);
+                        panes::render_streams_pane(f, app, h_chunks[0], SOFT_GREEN);
                     }
                 }
             }

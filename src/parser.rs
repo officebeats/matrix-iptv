@@ -16,33 +16,45 @@ static FOREIGN_KEYWORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         // Middle East & North Africa
         "ARAB", "ARABIC", "SAUDI", "EMIRATES", "QATAR", "KUWAIT", "PERSIAN", "IRAN",
         "AFGHAN", "ISRAEL", "MAROC", "MOROCCO", "TUNISIA", "ALGERIA", "EGYPT",
+        "SYRIA", "LEBANON", "JORDAN", "IRAQ", "OMANI", "YEMEN", "LIBYA", "SUDAN", 
+        "FARSI", "HEBREW", "KHALEEJI", "MAGHREB",
         // South Asia
         "INDIA", "INDIAN", "HINDI", "PUNJABI", "TAMIL", "TELUGU", "MALAYALAM",
         "KANNADA", "MARATHI", "BENGALI", "PAKISTAN", "URDU", "BANGLA", "BANGLADESH",
+        "NEPALI", "NEPAL", "SINHALESE", "BHOJPURI",
         // East Asia
         "CHINA", "CHINESE", "MANDARIN", "CANTONESE", "JAPAN", "KOREA",
         "PHILIPPINES", "FILIPINO", "PINOY", "VIETNAM", "THAILAND", "INDONESIA", "MALAYSIA",
+        "TAIWAN", "TAIWANESE", "KHMER", "CAMBODIA", "LAO", "LAOS", "BURMESE", "MYANMAR", "ASIAN",
         // Europe (non-English)
         "FRANCE", "FRENCH", "GERMAN", "GERMANY", "DEUTSCH", "ITALY", "ITALIAN",
-        "SPAIN", "SPANISH", "ESPANA", "LATINO", "PORTUGAL", "PORTUGUESE", "BRAZIL",
+        "SPAIN", "SPANISH", "ESPANA", "PORTUGAL", "PORTUGUESE",
         "DUTCH", "NETHERLANDS", "POLAND", "POLISH", "ROMANIA", "ROMANIAN",
         "CZECH", "HUNGARY", "HUNGARIAN", "GREEK", "GREECE", "ALBANIA", "ALBANIAN",
         "SERBIA", "SERBIAN", "CROATIA", "CROATIAN", "BOSNIA", "BULGARIA", "BULGARIAN",
         "SLOVENIA", "MACEDONIA", "MONTENEGRO", "NORDIC", "SWEDEN", "SWEDISH",
         "NORWAY", "NORWEGIAN", "DENMARK", "DANISH", "FINLAND", "FINNISH",
-        "RUSSIA", "RUSSIAN", "UKRAINE", "UKRAINIAN", "BELARUS",
+        "RUSSIA", "RUSSIAN", "UKRAINE", "UKRAINIAN", "BELARUS", "MALTA", "MALTESE",
+        "SLOVAK", "SLOVAKIA", "LITHUANIAN", "LITHUANIA", "LATVIAN", "LATVIA", 
+        "ESTONIAN", "ESTONIA", "ICELANDIC", "ICELAND", "FLEMISH", "WALLOON", "SWISS", "CYPRUS", "EUROPE",
         // Africa
-        "AFRICA", "NIGERIA", "KENYA", "SOMALIA", "SOUTH AFRICA",
+        "AFRICA", "AFRICAN", "NIGERIA", "KENYA", "SOMALIA", "SOMALI", "SOUTH AFRICA",
         // Central Asia / Caucasus
         "TURKEY", "TURK", "ARMENIA", "ARMENIAN", "KURDISH", "KURD",
         "AZERBAIJAN", "GEORGIA", "HONG KONG",
         // UK/Ireland (for 'Merica mode, these are "foreign")
         "UNITED KINGDOM", "BRITISH", "IRELAND", "IRISH", "SCOTLAND",
         // Latin America
-        "LATAM", "ARGENTINA", "COLOMBIA", "CHILE", "PERU", "VENEZUELA",
-        "BOLIVIA", "ECUADOR", "URUGUAY", "PARAGUAY", "CARIBBEAN",
-        // Multi-Language / Regional
-        "EXYU", "MULTI-LANG", "MULTILANG", "MULTI AUDIO", "MULTI-AUDIO", "HISPANIC",
+        "LATAM", "LATIN", "LATINO", "HISPANIC", "ARGENTINA", "COLOMBIA", "CHILE", "PERU", "VENEZUELA",
+        "BOLIVIA", "ECUADOR", "URUGUAY", "PARAGUAY", "CARIBBEAN", "BRAZIL", "MEXICO", "MEXICAN", 
+        "CUBA", "CUBAN", "PUERTO RICO", "DOMINICAN", "SUDAMERICA", "CENTROAMERICA",
+        // French-Canadian
+        "QUEBEC", "QUEBECOISE",
+        // Multi-Language / Regional / Special
+        "EXYU", "EX-YU", "EX YU", "MULTI-LANG", "MULTILANG", "MULTI AUDIO", "MULTI-AUDIO",
+        "DUAL AUDIO", "SUBBED", "DUBBED", "VOS", "VOSA",
+        "INTERNATIONAL", "GLOBAL", "WORLD", "FOREIGN", "SCANDINAVIA",
+        "BE-NL", "BE-FR", "CH-DE", "CH-FR", "CH-IT",
         // Adult
         "XXX", "ADULT", "18+", "PORN",
     ]
@@ -55,25 +67,40 @@ static FOREIGN_KEYWORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
 static FOREIGN_COUNTRY_CODES: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
         // Middle East
-        "AR", "SA", "AE", "QA", "KW", "IR", "AF", "IL",
+        "AR", "SA", "AE", "QA", "KW", "IR", "AF", "IL", "OM", "YE", "SY", "LB", "JO", "IQ",
         // South Asia
-        "IN", "PK", "BD", "LK",
+        "IN", "PK", "BD", "LK", "NP",
         // East Asia
-        "CN", "JP", "KR", "PH", "VN", "TH", "ID", "MY",
+        "CN", "JP", "KR", "PH", "VN", "TH", "ID", "MY", "TW", "SG", "KH", "LA", "MM",
         // Europe
         "UK", "IE", "SC", "FR", "DE", "IT", "ES", "PT", "NL", "BE", "PL",
-        "RO", "CZ", "HU", "GR", "AL", "RS", "HR", "BA", "BG", "SI", "MK", "ME",
+        "RO", "CZ", "HU", "GR", "AL", "ALB", "RS", "HR", "BA", "BG", "SI", "MK", "ME",
         "SE", "NO", "DK", "FI", "RU", "UA", "BY", "AT", "CH", "CY", "MT",
+        "SK", "LT", "LV", "EE", "IS", "LU", "EU", "TR", "SW",
         // Caucasus
-        "AM", "KH", "AZ", "GE",
+        "AM", "AZ", "GE",
         // Africa
-        "ZA", "NG", "KE",
+        "ZA", "NG", "KE", "MA", "DZ", "TN", "EG", "LY", "SD", "SO",
         // Americas
-        "BR", "CR",
+        "BR", "CR", "MX", "CU", "PR", "DO", "CO", "AR", "CL", "PE", "VE",
         // Oceania
         "AU", "NZ",
         // Special
         "HK",
+        
+        // --- 3-Letter ISO Codes ---
+        // Europe
+        "FRA", "DEU", "GER", "ITA", "ESP", "SPA", "NLD", "NED", "PRT", "RUS", "TUR", 
+        "GRC", "GRE", "SWE", "DNK", "DEN", "NOR", "FIN", "POL", "ROU", "ROM", "HUN", 
+        "CZE", "SVK", "SLK", "BGR", "BUL", "HRV", "CRO", "SRB", "BIH", "BOS", "MKD", 
+        "MAC", "CHE", "SUI",
+        // Latin America
+        "MEX", "COL", "ARG", "CHL", "PER", "VEN", "BRA", "CUB", "DOM",
+        // Asia/Middle East
+        "IND", "PAK", "BGD", "CHN", "JPN", "KOR", "VNM", "THA", "IDN", "MYS", "PHL", 
+        "TWN", "KHM", "LKA", "IRN", "IRQ", "SAU", "ARE", "ISR", "SYR", "LBN",
+        // Africa
+        "ZAF", "EGY", "NGA", "KEN", "MAR", "DZA",
     ]
     .into_iter()
     .collect()
@@ -387,18 +414,66 @@ pub fn clean_american_name(name: &str) -> String {
     cleaned_str.to_string()
 }
 
-/// Check if a name/category is English VOD content
+/// Check if a name/category is English VOD content.
+/// Uses a whitelist approach: the category must have an EN/US/USA prefix
+/// OR not match any foreign patterns.
 pub fn is_english_vod(name: &str) -> bool {
     let upper = name.to_uppercase();
+    let trimmed = upper.trim();
     
-    // If it explicitly matches foreign patterns, it's not English
-    // Use O(1) HashSet lookups instead of mega-regex
+    // Whitelist: categories explicitly prefixed with English markers always pass
+    // User requested to keep VIP content
+    static ENGLISH_VOD_PREFIXES: &[&str] = &[
+        "EN|", "EN |", "US|", "US |", "USA|", "USA |", "AM|", "AM |", "VIP|", "VIP |",
+    ];
+    
+    let is_english_prefix = ENGLISH_VOD_PREFIXES.iter().any(|p| trimmed.starts_with(p));
+    
+    if is_english_prefix {
+        // Even with EN/VIP prefix, block if it contains explicitly foreign sub-content
+        // e.g. "EN| TURKISH SERIES" or "EN| KOREAN SERIES", unless it's a VIP
+        let after_prefix = if let Some(pos) = trimmed.find('|') {
+            trimmed[pos+1..].trim()
+        } else {
+            trimmed
+        };
+        // Check the content after the prefix for foreign keywords
+        // But for VIP, maybe allow everything?
+        // the user said "Keep the VIP content though", let's allow VIP entirely.
+        if trimmed.starts_with("VIP") {
+            return true;
+        }
+
+        if FOREIGN_KEYWORDS.iter().any(|&k| after_prefix.contains(k)) {
+            return false;
+        }
+        return true;
+    }
+    
+    // Non-English prefixed categories: check the prefix itself
+    // If the category starts with a known foreign country code prefix (e.g. "FR|", "TR|", "SW|"),
+    // it's foreign.
+    if let Some(pipe_pos) = trimmed.find('|') {
+        let prefix = trimmed[..pipe_pos].trim();
+        // Check if the prefix is a foreign country code
+        if FOREIGN_COUNTRY_CODES.contains(prefix) {
+            return false;
+        }
+        // Check compound prefixes like PT-BR
+        if prefix.contains('-') {
+            let parts: Vec<&str> = prefix.split('-').collect();
+            if parts.iter().any(|p| FOREIGN_COUNTRY_CODES.contains(*p)) {
+                return false;
+            }
+        }
+    }
+    
+    // If it explicitly matches foreign patterns (keywords or structural codes), block it
     if FOREIGN_VOD_KEYWORDS.iter().any(|&k| upper.contains(k)) || matches_foreign(&upper) {
         return false;
     }
     
-    // For VOD, we assume it is English unless proven otherwise by foreign markers,
-    // as movie titles rarely contain "EN" prefixes unlike Live TV channels.
+    // For VOD, assume English unless proven otherwise
     true
 }
 

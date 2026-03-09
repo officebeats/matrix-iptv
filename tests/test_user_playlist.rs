@@ -26,7 +26,7 @@ fn test_user_real_playlist_msnbc() {
 
         // 4. Fetch ALL Live Streams
         println!("Fetching live streams from provider... (this may take a few seconds)");
-        match client.get_live_streams("ALL").await {
+        match client.get_live_streams("ALL", None).await {
             Ok(mut streams) => {
                 println!("Downloaded {} raw streams.", streams.len());
                 assert!(streams.len() > 0, "Provider returned 0 streams!");
@@ -35,7 +35,7 @@ fn test_user_real_playlist_msnbc() {
                 let favorites = HashSet::new();
                 let modes = vec![ProcessingMode::Merica];
                 
-                preprocess_streams(&mut streams, &favorites, &modes, true, &account.name);
+                preprocess_streams(&mut streams, &favorites, &modes, true, &account.name, None);
                 
                 println!("Filtered down to {} streams using 'Merica mode.", streams.len());
 

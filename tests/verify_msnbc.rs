@@ -39,8 +39,8 @@ fn test_merica_mode_msnbc_verification() {
     let modes = vec![ProcessingMode::Merica];
     
     // 2. Execution: Run the preprocessing logic
-    // Note: The signature is (streams, favorites, modes, is_live, account_name)
-    preprocess_streams(&mut streams, &favorites, &modes, true, "TestAccount");
+    // Note: The signature is (streams, favorites, modes, is_live, account_name, channel_tx)
+    preprocess_streams(&mut streams, &favorites, &modes, true, "TestAccount", None);
 
     // 3. Verification: Check what survived
     let names: Vec<String> = streams.iter().map(|s| s.name.clone()).collect();

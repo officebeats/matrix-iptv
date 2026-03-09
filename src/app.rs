@@ -43,8 +43,22 @@ pub enum AsyncAction {
     PlayerFailed(String),
     LoadingMessage(String),
     TotalChannelsLoaded(Vec<Stream>),
+    PartialChannelsLoaded(Vec<Stream>),
     TotalMoviesLoaded(Vec<Stream>),
     TotalSeriesLoaded(Vec<Stream>),
+    FinalizeChannelsLoaded {
+        streams: Vec<Arc<Stream>>,
+        counts: std::collections::HashMap<String, usize>,
+        by_cat: std::collections::HashMap<String, Vec<Arc<Stream>>>,
+    },
+    FinalizeMoviesLoaded {
+        streams: Vec<Arc<Stream>>,
+        by_cat: std::collections::HashMap<String, Vec<Arc<Stream>>>,
+    },
+    FinalizeSeriesLoaded {
+        streams: Vec<Arc<Stream>>,
+        by_cat: std::collections::HashMap<String, Vec<Arc<Stream>>>,
+    },
     PlaylistRefreshed(IptvClient, Option<UserInfo>, Option<ServerInfo>),
     EpgLoaded(String, String), // stream_id, program_title
     StreamHealthLoaded(String, u64), // stream_id, latency_ms
@@ -153,7 +167,7 @@ pub struct App {
     pub all_vod_categories: Vec<Arc<Category>>,
     pub vod_categories: Vec<Arc<Category>>,
     pub selected_vod_category_index: usize,
-    pub vod_category_list_state: ListState,
+    pub vod_category_list_state: ratatui::widgets::TableState,
 
     // VOD Streams
     pub all_vod_streams: Vec<Arc<Stream>>,
@@ -165,7 +179,7 @@ pub struct App {
     pub all_series_categories: Vec<Arc<Category>>,
     pub series_categories: Vec<Arc<Category>>,
     pub selected_series_category_index: usize,
-    pub series_category_list_state: ListState,
+    pub series_category_list_state: ratatui::widgets::TableState,
 
     pub all_series_streams: Vec<Arc<Stream>>, // Series are treated as 'Streams' for listing
     pub series_streams: Vec<Arc<Stream>>,
@@ -181,8 +195,11 @@ pub struct App {
     
     // Global caches for "ALL" categories
     pub global_all_streams: Vec<Arc<Stream>>,
+    pub global_streams_by_cat: std::collections::HashMap<String, Vec<Arc<Stream>>>,
     pub global_all_vod_streams: Vec<Arc<Stream>>,
+    pub global_vod_streams_by_cat: std::collections::HashMap<String, Vec<Arc<Stream>>>,
     pub global_all_series_streams: Vec<Arc<Stream>>,
+    pub global_series_streams_by_cat: std::collections::HashMap<String, Vec<Arc<Stream>>>,
 
     // Settings
     pub playlist_mode_list_state: ListState,
@@ -196,6 +213,8 @@ pub struct App {
     pub input_timezone: Input,
     pub timezone_list: Vec<String>,
     pub timezone_list_state: ListState,
+
+    pub last_search_query: String,
 
     // DNS selection
     pub dns_list_state: ListState,
@@ -220,7 +239,7 @@ pub struct App {
     // Search/Filter
     pub search_state: SearchState,
     pub search_mode: bool,
-    pub last_search_query: String, // Track last query for incremental narrowing
+    // Track last query for incremental narrowing
     
     // Loading progress
     pub loading_progress: Option<LoadingProgress>,
@@ -242,6 +261,7 @@ pub struct App {
     pub loading_message: Option<String>,
     pub player_error: Option<String>,
     pub loading_log: std::collections::VecDeque<String>,
+    pub needs_stream_refresh: bool,
 
     // Account details
     pub account_info: Option<UserInfo>,
@@ -275,12 +295,6 @@ pub struct App {
     pub focus_timestamp: Option<std::time::Instant>,
     #[cfg(target_arch = "wasm32")]
     pub focus_timestamp: Option<f64>,
-
-    // Detail panel lazy rendering
-    #[cfg(not(target_arch = "wasm32"))]
-    pub detail_last_index: usize,
-    #[cfg(not(target_arch = "wasm32"))]
-    pub detail_settle_time: Option<std::time::Instant>,
 
     // Global Search
     pub global_search_results: Vec<Arc<Stream>>,
@@ -407,10 +421,6 @@ impl App {
             epg_cache: std::collections::HashMap::new(),
             last_focused_stream_id: None,
             focus_timestamp: None,
-            #[cfg(not(target_arch = "wasm32"))]
-            detail_last_index: usize::MAX,
-            #[cfg(not(target_arch = "wasm32"))]
-            detail_settle_time: None,
 
             editing_account_index: None,
 
@@ -439,20 +449,21 @@ impl App {
             stream_list_state: ListState::default(),
 
             all_vod_categories: vec![],
-            vod_categories: vec![],
+            vod_categories: Vec::new(),
             selected_vod_category_index: 0,
-            vod_category_list_state: ListState::default(),
+            vod_category_list_state: ratatui::widgets::TableState::default(),
 
-            all_vod_streams: vec![],
-            vod_streams: vec![],
+            // VOD Streams
+            all_vod_streams: Vec::new(),
+            vod_streams: Vec::new(),
             selected_vod_stream_index: 0,
             vod_stream_list_state: ListState::default(),
 
-            // Series Init
-            all_series_categories: vec![],
-            series_categories: vec![],
+            // Series Data
+            all_series_categories: Vec::new(),
+            series_categories: Vec::new(),
             selected_series_category_index: 0,
-            series_category_list_state: ListState::default(),
+            series_category_list_state: ratatui::widgets::TableState::default(),
             all_series_streams: vec![],
             series_streams: vec![],
             selected_series_stream_index: 0,
@@ -467,8 +478,11 @@ impl App {
             
             // Global Caches
             global_all_streams: vec![],
+            global_streams_by_cat: std::collections::HashMap::new(),
             global_all_vod_streams: vec![],
+            global_vod_streams_by_cat: std::collections::HashMap::new(),
             global_all_series_streams: vec![],
+            global_series_streams_by_cat: std::collections::HashMap::new(),
 
             global_search_results: vec![],
             global_search_list_state: ListState::default(),
@@ -504,7 +518,7 @@ impl App {
             auto_refresh_list_state: ListState::default(),
 
             active_pane: Pane::Categories,
-            category_grid_view: true,
+            category_grid_view: false,
             grid_cols: 3, // default, overwritten by renderer
             search_state: SearchState::new(),
             search_mode: false,
@@ -606,6 +620,7 @@ impl App {
             groups: GroupManagementState::new(),
             category_mgmt: CategoryManagementState::new(),
             loading_log: VecDeque::with_capacity(30),
+            needs_stream_refresh: false,
         };
 
         app.refresh_settings_options();
@@ -642,10 +657,37 @@ impl App {
         let sort_order = acc.category_sort_order;
         let hidden = &acc.hidden_categories;
 
+        let pms = &self.config.processing_modes;
+        let use_merica = pms.contains(&crate::config::ProcessingMode::Merica);
+        let use_all_english = pms.contains(&crate::config::ProcessingMode::AllEnglish);
+
         // Helper for filtering/sorting
-        let process = |cats: &[Arc<Category>], hidden: &std::collections::HashSet<String>, order: crate::config::CategorySortOrder| -> Vec<Arc<Category>> {
+        let process = |cats: &[Arc<Category>], 
+                       hidden: &std::collections::HashSet<String>, 
+                       order: crate::config::CategorySortOrder,
+                       is_vod: bool| -> Vec<Arc<Category>> {
             let mut filtered: Vec<_> = cats.iter()
-                .filter(|c| !hidden.contains(&c.category_id) || c.category_id == "ALL" || c.category_id == "FAVORITES")
+                .filter(|c| {
+                    if c.category_id == "ALL" || c.category_id == "FAVORITES" { return true; }
+                    if hidden.contains(&c.category_id) { return false; }
+                    
+                    // Apply 'Merica/English filtering
+                    if is_vod {
+                        if (use_merica || use_all_english) && !crate::parser::is_english_vod(&c.category_name) {
+                            return false;
+                        }
+                    } else if use_merica {
+                        if !crate::parser::is_american_live(&c.category_name) {
+                            return false;
+                        }
+                    } else if use_all_english {
+                        if !crate::parser::is_english_live(&c.category_name) {
+                            return false;
+                        }
+                    }
+                    
+                    true
+                })
                 .cloned()
                 .collect();
 
@@ -669,10 +711,39 @@ impl App {
             filtered
         };
 
-        self.categories = process(&self.all_categories, hidden, sort_order);
-        self.vod_categories = process(&self.all_vod_categories, hidden, sort_order);
-        self.series_categories = process(&self.all_series_categories, hidden, sort_order);
+        self.categories = process(&self.all_categories, hidden, sort_order, false);
+        self.vod_categories = process(&self.all_vod_categories, hidden, sort_order, true);
+        self.series_categories = process(&self.all_series_categories, hidden, sort_order, true);
     }
+
+    pub fn on_channels_loaded(&mut self, streams: Vec<Stream>, reset_selection: bool) {
+        let wrapped: Vec<Arc<Stream>> = streams.into_iter().map(Arc::new).collect();
+        
+        if reset_selection {
+            self.global_all_streams = wrapped.clone();
+            self.all_streams = wrapped;
+            self.current_screen = CurrentScreen::Streams;
+            self.active_pane = Pane::Streams;
+            self.update_search();
+            self.state_loading = false;
+            self.loading_message = None;
+        } else {
+            // Partial update during pipelined ingestion:
+            // Append and update counts
+            for s in wrapped {
+                if let Some(ref cid) = s.category_id {
+                    *self.category_channel_counts.entry(cid.clone()).or_insert(0) += 1;
+                }
+                self.global_all_streams.push(s);
+            }
+
+            // Sync with current view if we are on the streams screen
+            if self.current_screen == CurrentScreen::Streams || self.current_screen == CurrentScreen::Categories {
+                 self.update_search();
+            }
+        }
+    }
+
 
     pub fn get_score_for_stream(&self, stream_name: &str) -> Option<&crate::scores::ScoreGame> {
         // Strip leading emojis/icons from team names (preprocessing adds 🏀, etc.)
@@ -899,17 +970,100 @@ impl App {
     }
 
     pub fn next_category(&mut self) {
-        let len = self.categories.len();
-        if len == 0 { return; }
-        let next = (self.selected_category_index + 1) % len;
-        self.select_category(next);
+        self.move_category_y(true);
     }
 
     pub fn previous_category(&mut self) {
-        let len = self.categories.len();
+        self.move_category_y(false);
+    }
+    
+    pub fn get_current_category_indices(&self) -> (usize, usize) {
+        match self.current_screen {
+            CurrentScreen::VodCategories | CurrentScreen::VodStreams => (self.vod_categories.len(), self.selected_vod_category_index),
+            CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => (self.series_categories.len(), self.selected_series_category_index),
+            _ => (self.categories.len(), self.selected_category_index),
+        }
+    }
+
+    fn apply_category_move(&mut self, new_index: usize) {
+        match self.current_screen {
+            CurrentScreen::VodCategories | CurrentScreen::VodStreams => self.select_vod_category(new_index),
+            CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => self.select_series_category(new_index),
+            _ => self.select_category(new_index),
+        }
+    }
+
+    pub fn move_category_x(&mut self, is_right: bool) {
+        let (len, selected) = self.get_current_category_indices();
         if len == 0 { return; }
-        let prev = if self.selected_category_index == 0 { len - 1 } else { self.selected_category_index - 1 };
-        self.select_category(prev);
+        
+        let cols = self.grid_cols.max(1);
+        let rows = (len + cols - 1) / cols;
+        let full_cols = if len % cols == 0 { cols } else { len % cols };
+        
+        let mut c = 0;
+        let mut r = selected;
+        for col in 0..cols {
+            let col_size = if col < full_cols { rows } else { rows - 1 };
+            if r < col_size {
+                c = col;
+                break;
+            }
+            r -= col_size;
+        }
+
+        let next_c = if is_right {
+            if c + 1 < cols { c + 1 } else { c }
+        } else {
+            c.saturating_sub(1)
+        };
+
+        let next_col_size = if next_c < full_cols { rows } else { rows - 1 };
+        let next_r = if r >= next_col_size { next_col_size.saturating_sub(1) } else { r };
+
+        let mut next = 0;
+        for col in 0..next_c {
+            next += if col < full_cols { rows } else { rows - 1 };
+        }
+        
+        self.apply_category_move(next + next_r);
+    }
+    
+    pub fn move_category_y(&mut self, is_down: bool) {
+        let (len, selected) = self.get_current_category_indices();
+        if len == 0 { return; }
+        
+        let cols = self.grid_cols.max(1);
+        let rows = (len + cols - 1) / cols;
+        let full_cols = if len % cols == 0 { cols } else { len % cols };
+        
+        let mut c = 0;
+        let mut r = selected;
+        for col in 0..cols {
+            let col_size = if col < full_cols { rows } else { rows - 1 };
+            if r < col_size {
+                c = col;
+                break;
+            }
+            r -= col_size;
+        }
+
+        let col_size = if c < full_cols { rows } else { rows - 1 };
+        
+        if is_down {
+            if r + 1 < col_size { 
+                r += 1;
+            }
+        } else {
+            r = r.saturating_sub(1);
+        }
+
+        let mut next = 0;
+        for col in 0..c {
+            next += if col < full_cols { rows } else { rows - 1 };
+        }
+        
+        self.apply_category_move(next + r);
     }
 
     pub fn jump_to_category(&mut self, index: usize) {
@@ -933,34 +1087,67 @@ impl App {
     /// Primary navigation logic for Categories
     /// Updates selection AND filters the streams pane from global cache immediately (Auto-Load)
     pub fn select_category(&mut self, index: usize) {
+        if index >= self.categories.len() { return; }
         self.selected_category_index = index;
-        self.category_list_state.select(Some(index));
+        self.category_list_state.select(Some(index / self.grid_cols.max(1)));
+        
+        self.selected_stream_index = 0;
+        self.stream_list_state.select(Some(0));
+        
+        self.needs_stream_refresh = true;
+    }
 
-        // Fix #1: Auto-populate streams pane from global cache if available
-        if !self.global_all_streams.is_empty() {
-            let cat_id = self.categories[index].category_id.clone();
-            
-            // 1. Filter source
+    pub fn select_vod_category(&mut self, index: usize) {
+        if index >= self.vod_categories.len() { return; }
+        self.selected_vod_category_index = index;
+        self.vod_category_list_state.select(Some(index));
+
+        self.needs_stream_refresh = true;
+    }
+
+    pub fn select_series_category(&mut self, index: usize) {
+        if index >= self.series_categories.len() { return; }
+        self.selected_series_category_index = index;
+        self.series_category_list_state.select(Some(index));
+
+        self.needs_stream_refresh = true;
+    }
+    
+    pub fn refresh_streams_from_cache(&mut self) {
+        if !self.categories.is_empty() && self.selected_category_index < self.categories.len() {
+            let cat_id = &self.categories[self.selected_category_index].category_id;
             if cat_id == "ALL" {
                 self.all_streams = self.global_all_streams.clone();
+            } else if let Some(streams) = self.global_streams_by_cat.get(cat_id) {
+                self.all_streams = streams.clone();
             } else {
-                // Determine filtered set
-                // Cloning Arcs is cheap (pointer copy)
-                self.all_streams = self.global_all_streams.iter()
-                    .filter(|s| s.category_id.as_deref() == Some(&cat_id))
-                    .cloned()
-                    .collect();
+                self.all_streams.clear();
             }
-
-            // 2. Apply display filters (American Mode, Search Query if any) via update_search
-            // This ensures self.streams (the visible list) matches self.all_streams (the category context)
-            self.update_search();
-        } else {
-            // If we don't have global data yet, visible streams should be cleared 
-            // so we don't show "Sports" channels while "Movies" is selected
-            self.streams.clear();
-            self.all_streams.clear();
         }
+        
+        if !self.vod_categories.is_empty() && self.selected_vod_category_index < self.vod_categories.len() {
+            let cat_id = &self.vod_categories[self.selected_vod_category_index].category_id;
+            if cat_id == "ALL" {
+                self.all_vod_streams = self.global_all_vod_streams.clone();
+            } else if let Some(streams) = self.global_vod_streams_by_cat.get(cat_id) {
+                self.all_vod_streams = streams.clone();
+            } else {
+                self.all_vod_streams.clear();
+            }
+        }
+
+        if !self.series_categories.is_empty() && self.selected_series_category_index < self.series_categories.len() {
+            let cat_id = &self.series_categories[self.selected_series_category_index].category_id;
+            if cat_id == "ALL" {
+                self.all_series_streams = self.global_all_series_streams.clone();
+            } else if let Some(streams) = self.global_series_streams_by_cat.get(cat_id) {
+                self.all_series_streams = streams.clone();
+            } else {
+                self.all_series_streams.clear();
+            }
+        }
+        
+        self.update_search();
     }
 
     pub fn next_stream(&mut self) {
@@ -1003,21 +1190,14 @@ impl App {
     }
 
     pub fn next_vod_category(&mut self) {
-        Self::navigate_list(
-            self.vod_categories.len(),
-            &mut self.selected_vod_category_index,
-            &mut self.vod_category_list_state,
-            true,
-        );
+        let new_idx = (self.selected_vod_category_index + 1) % self.vod_categories.len().max(1);
+        self.select_vod_category(new_idx);
     }
 
     pub fn previous_vod_category(&mut self) {
-        Self::navigate_list(
-            self.vod_categories.len(),
-            &mut self.selected_vod_category_index,
-            &mut self.vod_category_list_state,
-            false,
-        );
+        let len = self.vod_categories.len();
+        let new_idx = (self.selected_vod_category_index + len - 1) % len.max(1);
+        self.select_vod_category(new_idx);
     }
 
     pub fn next_vod_stream(&mut self) {
@@ -1127,13 +1307,33 @@ impl App {
         }
     }
 
-    /// Build a map of category_id → channel count from global_all_streams.
-    /// Called once after TotalChannelsLoaded to display counts next to category names.
-    pub fn build_category_counts(&mut self) {
+    /// Build a map of category_id → channel count from global_all_streams,
+    /// and pre-compute O(1) filtering HashMaps to enable instantaneous zero-latency navigation.
+    pub fn build_category_indices(&mut self) {
         self.category_channel_counts.clear();
+        self.global_streams_by_cat.clear();
+        self.global_vod_streams_by_cat.clear();
+        self.global_series_streams_by_cat.clear();
+
+        // Live Streams
         for s in &self.global_all_streams {
             if let Some(ref cid) = s.category_id {
                 *self.category_channel_counts.entry(cid.clone()).or_insert(0) += 1;
+                self.global_streams_by_cat.entry(cid.clone()).or_default().push(s.clone());
+            }
+        }
+        
+        // VOD Streams
+        for s in &self.global_all_vod_streams {
+            if let Some(ref cid) = s.category_id {
+                self.global_vod_streams_by_cat.entry(cid.clone()).or_default().push(s.clone());
+            }
+        }
+        
+        // Series Streams
+        for s in &self.global_all_series_streams {
+            if let Some(ref cid) = s.category_id {
+                self.global_series_streams_by_cat.entry(cid.clone()).or_default().push(s.clone());
             }
         }
     }
@@ -1165,14 +1365,7 @@ impl App {
         }
 
         let query = self.search_state.query.to_lowercase();
-        
-        // Phase 3: Incremental Search Narrowing
-        // Only re-filter if the query has actually changed
-        // Note: Empty query always passes through to allow view resets
-        if !query.is_empty() && query == self.last_search_query {
-            return; // No change, skip re-filtering
-        }
-        
+        let query_changed = query != self.last_search_query;
         // Update the last search query
         self.last_search_query = query.clone();
         
@@ -1194,11 +1387,9 @@ impl App {
                             })
                             .cloned()
                             .collect();
-                        self.selected_category_index = 0;
-                        if !self.categories.is_empty() {
-                            self.category_list_state.select(Some(0));
-                        } else {
-                            self.category_list_state.select(None);
+                        if query_changed {
+                            self.selected_category_index = 0;
+                            self.category_list_state.select(if self.categories.is_empty() { None } else { Some(0) });
                         }
 
                         // Cross-pane search: also search streams so users can find channels
@@ -1224,11 +1415,9 @@ impl App {
                         }
                         // pre_cache_parsed removed from search hot path — renderer falls back to
                         // parse_stream when cached_parsed is None, avoiding 1000 regex ops per keystroke
-                        self.selected_stream_index = 0;
-                        if !self.streams.is_empty() {
-                            self.stream_list_state.select(Some(0));
-                        } else {
-                            self.stream_list_state.select(None);
+                        if query_changed {
+                            self.selected_stream_index = 0;
+                            self.stream_list_state.select(if self.streams.is_empty() { None } else { Some(0) });
                         }
                     }
                     Pane::Streams => {
@@ -1279,40 +1468,31 @@ impl App {
                             })
                             .cloned()
                             .collect();
-                        self.selected_vod_category_index = 0;
-                        if !self.vod_categories.is_empty() {
-                            self.vod_category_list_state.select(Some(0));
-                        } else {
-                            self.vod_category_list_state.select(None);
+                        if query_changed {
+                            self.selected_vod_category_index = 0;
+                            self.vod_category_list_state.select(if self.vod_categories.is_empty() { None } else { Some(0) });
                         }
                     }
                     Pane::Streams => {
-                        if query.is_empty() {
-                            self.vod_streams = self.all_vod_streams.iter()
-                                .filter(|s| !is_merica || s.is_english)
-                                .take(1000)
-                                .cloned()
-                                .collect();
-                        } else {
-                            let mut results: Vec<Arc<Stream>> = self.all_vod_streams.par_iter()
-                                .filter(|s| {
-                                    if is_merica && !s.is_english { return false; }
-                                    if s.search_name.contains(&query) { return true; }
-                                    query.len() >= 3 && s.fuzzy_match(&query, 60)
-                                })
-                                .cloned()
-                                .collect();
-                            
+                        let mut results: Vec<Arc<Stream>> = self.all_vod_streams.par_iter()
+                            .filter(|s| {
+                                if is_merica && !s.is_english { return false; }
+                                if query.is_empty() { return true; }
+                                if s.search_name.contains(&query) { return true; }
+                                query.len() >= 3 && s.fuzzy_match(&query, 60)
+                            })
+                            .cloned()
+                            .collect();
+                        
+                        if !query.is_empty() {
                             results.sort_by_cached_key(|s| !s.search_name.contains(&query));
-                            self.vod_streams = results.into_iter().take(1000).collect();
                         }
+                        self.vod_streams = results.into_iter().take(1000).collect();
 
                         App::pre_cache_parsed(&mut self.vod_streams, self.provider_timezone.as_deref());
-                        self.selected_vod_stream_index = 0;
-                        if !self.vod_streams.is_empty() {
-                            self.vod_stream_list_state.select(Some(0));
-                        } else {
-                            self.vod_stream_list_state.select(None);
+                        if query_changed {
+                            self.selected_vod_stream_index = 0;
+                            self.vod_stream_list_state.select(if self.vod_streams.is_empty() { None } else { Some(0) });
                         }
                     }
                     Pane::Episodes => {}
@@ -1327,41 +1507,32 @@ impl App {
                             })
                             .cloned()
                             .collect();
-                        self.selected_series_category_index = 0;
-                        if !self.series_categories.is_empty() {
-                            self.series_category_list_state.select(Some(0));
-                        } else {
-                            self.series_category_list_state.select(None);
+                        if query_changed {
+                            self.selected_series_category_index = 0;
+                            self.series_category_list_state.select(if self.series_categories.is_empty() { None } else { Some(0) });
                         }
                     }
                     Pane::Streams => {
-                        if query.is_empty() {
-                            self.series_streams = self.all_series_streams.iter()
-                                .filter(|s| !is_merica || s.is_english)
-                                .take(1000)
-                                .cloned()
-                                .collect();
-                        } else {
-                            let mut results: Vec<Arc<Stream>> = self.all_series_streams.par_iter()
-                                .filter(|s| {
-                                    if is_merica && !s.is_english { return false; }
-                                    if s.search_name.contains(&query) { return true; }
-                                    query.len() >= 3 && s.fuzzy_match(&query, 60)
-                                })
-                                .cloned()
-                                .collect();
+                        let mut results: Vec<Arc<Stream>> = self.all_series_streams.par_iter()
+                            .filter(|s| {
+                                if is_merica && !s.is_english { return false; }
+                                if query.is_empty() { return true; }
+                                if s.search_name.contains(&query) { return true; }
+                                query.len() >= 3 && s.fuzzy_match(&query, 60)
+                            })
+                            .cloned()
+                            .collect();
 
+                        if !query.is_empty() {
                             results.sort_by_cached_key(|s| !s.search_name.contains(&query));
-                            self.series_streams = results.into_iter().take(1000).collect();
                         }
+                        self.series_streams = results.into_iter().take(1000).collect();
 
 
                         App::pre_cache_parsed(&mut self.series_streams, self.provider_timezone.as_deref());
-                        self.selected_series_stream_index = 0;
-                        if !self.series_streams.is_empty() {
-                            self.series_stream_list_state.select(Some(0));
-                        } else {
-                            self.series_stream_list_state.select(None);
+                        if query_changed {
+                            self.selected_series_stream_index = 0;
+                            self.series_stream_list_state.select(if self.series_streams.is_empty() { None } else { Some(0) });
                         }
                     }
                     Pane::Episodes => {}
@@ -1409,21 +1580,14 @@ impl App {
 
     // Series Navigation Helpers
     pub fn next_series_category(&mut self) {
-        Self::navigate_list(
-            self.series_categories.len(),
-            &mut self.selected_series_category_index,
-            &mut self.series_category_list_state,
-            true,
-        );
+        let new_idx = (self.selected_series_category_index + 1) % self.series_categories.len().max(1);
+        self.select_series_category(new_idx);
     }
 
     pub fn previous_series_category(&mut self) {
-        Self::navigate_list(
-            self.series_categories.len(),
-            &mut self.selected_series_category_index,
-            &mut self.series_category_list_state,
-            false,
-        );
+        let len = self.series_categories.len();
+        let new_idx = (self.selected_series_category_index + len - 1) % len.max(1);
+        self.select_series_category(new_idx);
     }
 
     pub fn next_series_stream(&mut self) {
@@ -1620,16 +1784,26 @@ impl App {
                         }
                         KeyCode::Char('j') | KeyCode::Down => {
                             if self.active_pane == Pane::Categories {
-                                self.next_category();
+                                self.move_category_y(true);
                             } else {
                                 self.next_stream();
                             }
                         }
                         KeyCode::Char('k') | KeyCode::Up => {
                             if self.active_pane == Pane::Categories {
-                                self.previous_category();
+                                self.move_category_y(false);
                             } else {
                                 self.previous_stream();
+                            }
+                        }
+                        KeyCode::Char('l') | KeyCode::Right => {
+                            if self.active_pane == Pane::Categories {
+                                self.move_category_x(true);
+                            }
+                        }
+                        KeyCode::Char('h') | KeyCode::Left => {
+                            if self.active_pane == Pane::Categories {
+                                self.move_category_x(false);
                             }
                         }
                         KeyCode::Char('g') => {
@@ -1843,6 +2017,7 @@ impl App {
 mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use crate::flex_id::FlexId;
 
     fn make_key(code: KeyCode) -> KeyEvent {
         KeyEvent {
@@ -2115,5 +2290,55 @@ mod tests {
 
         assert_eq!(app.streams.len(), 1, "Search should find CNN from global cache");
         assert_eq!(app.streams[0].name, "CNN");
+    }
+
+    #[test]
+    fn test_categories_grid_navigation() {
+        let mut app = App::new();
+        // Mock some categories
+        for i in 0..10 {
+            app.categories.push(Arc::new(Category {
+                category_id: i.to_string(),
+                category_name: format!("Cat {}", i),
+                parent_id: FlexId::Null,
+                ..Default::default()
+            }));
+        }
+        
+        // Emulate 4-column responsive grid
+        app.grid_cols = 4;
+        
+        // Horizontal testing
+        app.selected_category_index = 0; // Starts at 0
+        app.move_category_x(true); // Right -> 1
+        assert_eq!(app.selected_category_index, 1);
+        
+        app.move_category_x(false); // Left -> 0
+        assert_eq!(app.selected_category_index, 0);
+        
+        app.move_category_x(false); // Left bounded -> 0
+        assert_eq!(app.selected_category_index, 0);
+        
+        // Vertical testing (2D grid logic)
+        app.move_category_y(true); // Down -> 0 + 4 = 4
+        assert_eq!(app.selected_category_index, 4);
+        
+        app.move_category_y(true); // Down -> 4 + 4 = 8
+        assert_eq!(app.selected_category_index, 8);
+        
+        app.move_category_y(true); // Down -> 8 + 4 = 12 (snaps to max 9)
+        assert_eq!(app.selected_category_index, 9);
+        
+        // Jump bottom boundary check
+        app.move_category_y(false); // Up -> 9 - 4 = 5
+        assert_eq!(app.selected_category_index, 5);
+        
+        // Edge boundaries over uneven sizes
+        app.selected_category_index = 3; // End of row 1
+        app.move_category_y(true); // Down from 3 -> 7
+        assert_eq!(app.selected_category_index, 7);
+        
+        app.move_category_y(true); // Down from 7 -> 11 (snaps to max 9)
+        assert_eq!(app.selected_category_index, 9);
     }
 }

@@ -228,12 +228,11 @@ pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
 
     let selected = app.selected_content_type_index;
 
-    // 4 options including Sports — each shows its instant-access key badge
+    // 3 options - Sports temporarily hidden
     let options: Vec<(usize, &str, &str, &str, &str)> = vec![
-        (0, "[1]", "📺", "Live Channels",  "real-time TV broadcasts"),
-        (1, "[2]", "🎬", "Movies (VOD)",   "on-demand movie library"),
-        (2, "[3]", "📼", "TV Series",      "episodic content"),
-        (3, "[s]", "🏆", "Sports",         "live sports dashboard"),
+        (0, "[1]", "►", "Live Channels",  "real-time TV broadcasts"),
+        (1, "[2]", "▸", "Movies (VOD)",   "on-demand movie library"),
+        (2, "[3]", "▸", "TV Series",      "episodic content"),
     ];
 
     let items: Vec<ListItem> = options
@@ -281,7 +280,7 @@ pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
         0 => "Browse live TV categories and thousands of channels organized by region, sport, and genre.",
         1 => "Explore your provider's full movie catalogue with ratings, runtime, and plot summaries.",
         2 => "Browse TV series, seasons, and episodes. Stream any episode on demand.",
-        _ => "Live score overlays, match intelligence, and real-time sports streams from your playlist.",
+        _ => "",
     };
     f.render_widget(
         Paragraph::new(desc)

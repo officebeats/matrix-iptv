@@ -110,6 +110,19 @@ impl<'de> Deserialize<'de> for FlexId {
             {
                 Ok(FlexId::Number(v))
             }
+
+            fn visit_f64<E>(self, v: f64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                // Most provider IDs are numeric, but ratings are floats.
+                // We'll store as Number if it's whole, otherwise String.
+                if v == v.trunc() {
+                    Ok(FlexId::Number(v as i64))
+                } else {
+                    Ok(FlexId::String(v.to_string()))
+                }
+            }
             
             fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
             where

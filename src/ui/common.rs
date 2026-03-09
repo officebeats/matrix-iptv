@@ -8,6 +8,8 @@ use crate::parser::{Quality, ContentType};
 use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM, MODERN_BG};
 use crate::sports::SportsEvent;
 
+use crate::ui::utils::{scrub_emojis};
+
 pub fn stylize_channel_name(
     name: &str,
     is_vip: bool,
@@ -17,6 +19,7 @@ pub fn stylize_channel_name(
     sports_event: Option<&SportsEvent>,
     base_style: Style,
 ) -> (Vec<Span<'static>>, Option<&'static str>) {
+    let clean_name = scrub_emojis(name);
     let mut spans = Vec::new();
     
     let (ppv_color, vip_color, raw_color, hd_color, fhd_color, uhd_color, fps_color) = if is_ended {
@@ -52,17 +55,17 @@ pub fn stylize_channel_name(
         for word in words {
              let check = word.replace(&['(', ')', '[', ']', '{', '}', ':'][..], "").trim().to_uppercase();
              detected_sport_icon = match check.as_str() {
-                 "NBA" => "🏀",
-                 "NFL" => "🏈",
-                 "MLB" => "⚾",
-                 "NHL" => "🏒",
-                 "UFC" | "MMA" => "🥊",
-                 "F1" | "NASCAR" | "RACING" => "🏎️",
-                 "GOLF" | "PGA" => "⛳",
-                 "TENNIS" | "ATP" | "WTA" => "🎾",
-                 "SOCCER" | "FOOTBALL" | "LEAGUE" | "BUNDESLIGA" | "LALIGA" | "PREMIER" | "UEFA" | "FIFA" => "⚽",
-                 "CRICKET" => "🏏",
-                 "RUGBY" => "🏉",
+                 "NBA" => "",
+                 "NFL" => "",
+                 "MLB" => "",
+                 "NHL" => "",
+                 "UFC" | "MMA" => "",
+                 "F1" | "NASCAR" | "RACING" => "",
+                 "GOLF" | "PGA" => "",
+                 "TENNIS" | "ATP" | "WTA" => "",
+                 "SOCCER" | "FOOTBALL" | "LEAGUE" | "BUNDESLIGA" | "LALIGA" | "PREMIER" | "UEFA" | "FIFA" => "",
+                 "CRICKET" => "",
+                 "RUGBY" => "",
                  _ => detected_sport_icon,
              };
              if !detected_sport_icon.is_empty() { break; }
@@ -74,7 +77,7 @@ pub fn stylize_channel_name(
         spans.push(Span::styled(format!("{}", event.team2), base_style.fg(TEXT_PRIMARY)));
         
     } else {
-        let words: Vec<&str> = name.split_whitespace().collect();
+        let words: Vec<&str> = clean_name.split_whitespace().collect();
         for (i, word) in words.iter().enumerate() {
             if i > 0 {
                 spans.push(Span::raw(" "));
@@ -127,17 +130,17 @@ pub fn stylize_channel_name(
                         } else {
                             if detected_sport_icon.is_empty() {
                                 detected_sport_icon = match check_word {
-                                    "NBA" => "🏀",
-                                    "NFL" => "🏈",
-                                    "MLB" => "⚾",
-                                    "NHL" => "🏒",
-                                    "UFC" | "MMA" => "🥊",
-                                    "F1" | "NASCAR" | "RACING" => "🏎️",
-                                    "GOLF" | "PGA" => "⛳",
-                                    "TENNIS" | "ATP" | "WTA" => "🎾",
-                                    "SOCCER" | "FOOTBALL" | "LEAGUE" | "BUNDESLIGA" | "LALIGA" | "PREMIER" | "UEFA" | "FIFA" => "⚽",
-                                    "CRICKET" => "🏏",
-                                    "RUGBY" => "🏉",
+                                    "NBA" => "",
+                                    "NFL" => "",
+                                    "MLB" => "",
+                                    "NHL" => "",
+                                    "UFC" | "MMA" => "",
+                                    "F1" | "NASCAR" | "RACING" => "",
+                                    "GOLF" | "PGA" => "",
+                                    "TENNIS" | "ATP" | "WTA" => "",
+                                    "SOCCER" | "FOOTBALL" | "LEAGUE" | "BUNDESLIGA" | "LALIGA" | "PREMIER" | "UEFA" | "FIFA" => "",
+                                    "CRICKET" => "",
+                                    "RUGBY" => "",
                                     _ => "",
                                 };
                             }

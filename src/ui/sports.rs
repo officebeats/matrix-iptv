@@ -55,14 +55,14 @@ fn render_sports_matches_pane(f: &mut Frame, app: &mut App, area: Rect) {
         let mut spans = Vec::new();
         
         let icon = match m.category.as_str() {
-            "football" => "⚽ ",
-            "basketball" => "🏀 ",
-            "baseball" => "⚾ ",
-            "hockey" => "🏒 ",
-            "ufc" | "mma" => "🥊 ",
-            "f1" | "racing" => "🏎️  ",
-            "tennis" => "🎾 ",
-            _ => "  ",
+            "football" => "",
+            "basketball" => "",
+            "baseball" => "",
+            "hockey" => "",
+            "ufc" | "mma" => "",
+            "f1" | "racing" => "",
+            "tennis" => "",
+            _ => "",
         };
         spans.push(Span::styled(icon, Style::default()));
 
@@ -79,7 +79,7 @@ fn render_sports_matches_pane(f: &mut Frame, app: &mut App, area: Rect) {
         }
 
         if m.popular {
-            spans.push(Span::styled(" ●", Style::default().fg(Color::Rgb(255, 100, 100))));
+            spans.push(Span::styled(" *", Style::default().fg(Color::Rgb(255, 100, 100))));
         }
 
         ListItem::new(Line::from(spans))
@@ -113,7 +113,7 @@ fn render_sports_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
         details.push(Line::from(vec![
             Span::styled("status  ", Style::default().fg(TEXT_SECONDARY)),
             if m.popular {
-                Span::styled("live · trending", Style::default().fg(Color::Rgb(255, 100, 100)).add_modifier(Modifier::BOLD))
+                Span::styled("live - trending", Style::default().fg(Color::Rgb(255, 100, 100)).add_modifier(Modifier::BOLD))
             } else {
                 Span::styled("scheduled", Style::default().fg(TEXT_SECONDARY))
             }
@@ -157,7 +157,7 @@ fn render_sports_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
             for stream in &app.current_sports_streams {
                 let quality = if stream.hd { "HD" } else { "SD" };
                 details.push(Line::from(vec![
-                    Span::styled("  ▸ ", Style::default().fg(SOFT_GREEN)),
+                    Span::styled("  > ", Style::default().fg(SOFT_GREEN)),
                     Span::styled(format!("Ch {} ", stream.stream_no), Style::default().fg(TEXT_PRIMARY)),
                     Span::styled(format!("({}) ", stream.language), Style::default().fg(TEXT_SECONDARY)),
                     Span::styled(quality, Style::default().fg(MATRIX_GREEN)),

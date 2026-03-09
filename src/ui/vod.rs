@@ -7,9 +7,7 @@ use ratatui::{
 };
 use crate::app::{App, Pane};
 use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, DARK_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
-use crate::parser::{parse_category, parse_stream};
 use crate::ui::common::stylize_channel_name;
-use crate::ui::utils::calculate_vod_three_column_split;
 
 /// Strip provider-prefixed country/region codes from a title.
 /// e.g.  "EN| The Arborist"        → "The Arborist"
@@ -39,75 +37,33 @@ fn truncate_to(s: &str, max_chars: usize) -> String {
 }
 
 pub fn render_vod_view(f: &mut Frame, app: &mut App, area: Rect) {
-    let (cat_width, stream_width, details_width) = calculate_vod_three_column_split(
-        &app.vod_categories,
-        &app.vod_streams,
-        area.width,
-    );
-
-    let chunks = ratatui::layout::Layout::default()
-        .direction(ratatui::layout::Direction::Horizontal)
-        .constraints([
-            ratatui::layout::Constraint::Length(cat_width),
-            ratatui::layout::Constraint::Length(stream_width),
-            ratatui::layout::Constraint::Min(details_width),
-        ])
-        .split(area);
-
-    app.area_categories = chunks[0];
-    app.area_streams = chunks[1];
-
-    render_vod_categories_pane(f, app, chunks[0]);
-    render_vod_streams_pane(f, app, chunks[1]);
-    render_vod_details_pane(f, app, chunks[2]);
-}
-
-pub fn render_vod_categories_pane(f: &mut Frame, app: &mut App, area: Rect) {
-    let visible_height = area.height.saturating_sub(2) as usize;
-    let total = app.vod_categories.len();
-    let selected = app.selected_vod_category_index;
-
-    let half_window = visible_height / 2;
-    let start = if selected > half_window { selected - half_window } else { 0 };
-    let end = (start + visible_height + half_window).min(total);
-    let adjusted_start = if end == total && end > visible_height + half_window {
-        end.saturating_sub(visible_height + half_window)
-    } else { start };
-
-    // Inner width for truncation: border left/right (2) + highlight symbol (2)
-    let inner_w = area.width.saturating_sub(4) as usize;
-
-    let items: Vec<ListItem> = app.vod_categories.iter().enumerate()
-        .skip(adjusted_start)
-        .take(end - adjusted_start)
-        .map(|(_, c)| {
-            let parsed = parse_category(&c.category_name);
-            let display = truncate_to(&parsed.display_name, inner_w);
-            let (styled_name, _) = stylize_channel_name(
-                &display, parsed.is_vip, false,
-                parsed.quality, parsed.content_type, None,
-                Style::default().fg(MATRIX_GREEN),
-            );
-            ListItem::new(Line::from(styled_name))
-        }).collect();
-
-    let title = if total == 0 {
-        "movies".to_string()
+    if app.active_pane == Pane::Categories {
+        // Categories stage: Full screen categories (Grid or List)
+        crate::ui::panes::render_categories_pane(f, app, area, SOFT_GREEN);
     } else {
-        format!("movies ({}/{})", selected.saturating_add(1), total)
-    };
-    let is_active = app.active_pane == Pane::Categories;
-    let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
-    let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
+        // Streams stage: Master-Detail view (Streams | Details)
+        let show_detail = area.width >= 80;
+        
+        if show_detail {
+            let detail_width = 40u16.min(area.width / 2);
+            let streams_width = area.width.saturating_sub(detail_width);
+            
+            let h_chunks = ratatui::layout::Layout::default()
+                .direction(ratatui::layout::Direction::Horizontal)
+                .constraints([
+                    ratatui::layout::Constraint::Length(streams_width),
+                    ratatui::layout::Constraint::Length(detail_width),
+                ])
+                .split(area);
 
-    let list = List::new(items)
-        .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
-        .highlight_symbol(" ▎");
-
-    let mut adjusted_state = app.vod_category_list_state.clone();
-    if adjusted_start > 0 { adjusted_state.select(Some(selected - adjusted_start)); }
-    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
+            render_vod_streams_pane(f, app, h_chunks[0]);
+            render_vod_details_pane(f, app, h_chunks[1]);
+        } else {
+            render_vod_streams_pane(f, app, area);
+        }
+    }
 }
+
 
 pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let visible_height = area.height.saturating_sub(2) as usize;
@@ -128,29 +84,29 @@ pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .skip(adjusted_start)
         .take(end - adjusted_start)
         .map(|(_, s)| {
-            let parsed = parse_stream(&s.name, app.provider_timezone.as_deref());
+            let parsed = if let Some(ref cached) = s.cached_parsed {
+                 cached.as_ref().clone()
+            } else {
+                crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref())
+            };
             let mut spans = vec![];
 
-            // Build display name (cleaned + optional year)
-            let mut name = parsed.display_name.clone();
-            let re_year = regex::Regex::new(r"[\(\[](19|20)\d{2}[\)\]]").unwrap();
-            if let Some(mat) = re_year.find(&s.name) {
-                let year_clean = mat.as_str().replace('[', "(").replace(']', ")");
-                if !name.contains(&year_clean) {
-                    name.push(' ');
-                    name.push_str(&year_clean);
-                }
-            }
+            // Metadata parsing (cached)
+            let name = parsed.display_name.clone();
 
             // Check if recently watched (progress indicator)
             let is_watched = app.config.recently_watched.iter().any(|(id, _)| id == &s.stream_id.to_string());
             let prefix = if is_watched { "✓ "} else { "" };
             let prefixed_name = format!("{}{}", prefix, name);
 
-            // Reserve space for rating — " 8.5" = 4 chars
+            // Reserve space for year and rating: " (2024)" [7] + " [8.5]" [6] = 13 chars
+            let has_year = parsed.year.is_some();
             let has_rating = s.rating.map(|r| r > 0.0).unwrap_or(false);
-            let rating_reserve = if has_rating { 5 } else { 0 };
-            let max_name_len = inner_w.saturating_sub(rating_reserve);
+            let mut metadata_reserve = 0;
+            if has_year { metadata_reserve += 7; }
+            if has_rating { metadata_reserve += 6; }
+            
+            let max_name_len = inner_w.saturating_sub(metadata_reserve);
 
             // Hard-truncate title so it never overflows the column
             let display_name = truncate_to(&prefixed_name, max_name_len);
@@ -176,13 +132,21 @@ pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
 
             spans.extend(styled_name);
 
-            // Rating: only when > 0, with color coding
+            // Year: in light blue parentheses
+            if let Some(y) = &parsed.year {
+                spans.push(ratatui::text::Span::styled(
+                    format!(" ({})", y),
+                    Style::default().fg(ratatui::style::Color::LightBlue),
+                ));
+            }
+
+            // Rating: in brackets, with color coding
             if let Some(rating_f) = s.rating {
                 if rating_f > 0.0 {
                     let rating_str = format!("{:.1}", rating_f);
                     let rating_color = crate::ui::utils::get_rating_color(&rating_str);
                     spans.push(ratatui::text::Span::styled(
-                        format!(" {}", rating_str),
+                        format!(" [{}]", rating_str),
                         Style::default().fg(rating_color),
                     ));
                 }
@@ -192,11 +156,7 @@ pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
         }).collect();
 
     // Show total count in title — position indicator is less useful than total here
-    let title = if total == 0 {
-        "movies".to_string()
-    } else {
-        format!("movies  {} / {}", selected.saturating_add(1), total)
-    };
+    let title = "movies";
     let is_active = app.active_pane == Pane::Streams;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
     let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
@@ -215,30 +175,35 @@ pub fn render_vod_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let panel_w = inner_area.width.saturating_sub(1) as usize;
 
     let mut details_text: Vec<Line> = Vec::new();
-
+    let current_selection = app.vod_streams.get(app.selected_vod_stream_index);
+    
     if let Some(vod_info) = &app.current_vod_info {
         if let Some(info) = &vod_info.info {
             // ── Title ──────────────────────────────────────────────
-            // Strip IPTV provider prefix ("EN|", "MULTI-LANG|", etc.)
             let raw_title = info.get("name").and_then(|v| v.as_str()).map(|s| s.to_string())
                 .or_else(|| vod_info.movie_data.as_ref().and_then(|m| m.name.clone()))
-                .unwrap_or_default();
+                .unwrap_or_else(|| current_selection.map(|s| s.name.clone()).unwrap_or_default());
 
             let mut title = strip_provider_prefix(&raw_title).to_string();
 
-            // Append year from stream name if not already present
+            // Append year from stream name or cache if not already present
             if !title.contains('(') && !title.contains('[') {
-                if let Some(stream) = app.vod_streams.get(app.selected_vod_stream_index) {
-                    let re_year = regex::Regex::new(r"[\(\[](19|20)\d{2}[\)\]]").unwrap();
-                    if let Some(mat) = re_year.find(&stream.name) {
-                        title.push(' ');
-                        title.push_str(mat.as_str());
+                if let Some(stream) = current_selection {
+                    if let Some(ref parsed) = stream.cached_parsed {
+                        if let Some(ref y) = parsed.year {
+                            title.push_str(&format!(" ({})", y));
+                        }
+                    } else {
+                        let re_year = regex::Regex::new(r"[\(\[](19|20)\d{2}[\)\]]").unwrap();
+                        if let Some(mat) = re_year.find(&stream.name) {
+                            title.push(' ');
+                            title.push_str(mat.as_str());
+                        }
                     }
                 }
             }
 
             if !title.is_empty() {
-                // Wrap long titles at panel width
                 details_text.push(Line::from(vec![
                     ratatui::text::Span::styled(
                         truncate_to(&title, panel_w),
@@ -249,20 +214,20 @@ pub fn render_vod_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
             }
 
             // ── Rating ─────────────────────────────────────────────
-            // Only show when rating > 0 (0 = no data, not a bad film)
             if let Some(rating_raw) = info.get("rating").and_then(|v| {
                 match v {
                     serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
                     serde_json::Value::Number(n) => Some(n.to_string()),
                     _ => None,
                 }
-            }) {
+            }).or_else(|| current_selection.and_then(|s| s.rating.map(|r| r.to_string()))) 
+            {
                 let rating_val: f64 = rating_raw.parse().unwrap_or(0.0);
                 if rating_val > 0.0 {
                     let rating_color = crate::ui::utils::get_rating_color(&rating_raw);
                     let filled = ((rating_val / 2.0).round() as usize).min(5);
                     let empty = 5usize.saturating_sub(filled);
-                    let stars = format!("{}{}", "★".repeat(filled), "☆".repeat(empty));
+                    let stars = format!("{}{}", "*".repeat(filled), "-".repeat(empty));
                     details_text.push(Line::from(vec![
                         ratatui::text::Span::styled("rating  ", Style::default().fg(TEXT_SECONDARY)),
                         ratatui::text::Span::styled(
@@ -304,7 +269,6 @@ pub fn render_vod_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
                 if !genre.is_empty() {
                     details_text.push(Line::from(vec![
                         ratatui::text::Span::styled("genre   ", Style::default().fg(TEXT_SECONDARY)),
-                        // Use TEXT_PRIMARY instead of MATRIX_GREEN — genre doesn't need accent color
                         ratatui::text::Span::styled(genre, Style::default().fg(TEXT_PRIMARY)),
                     ]));
                 }
@@ -328,7 +292,6 @@ pub fn render_vod_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
                 .or_else(|| info.get("actors").and_then(|v| v.as_str()))
             {
                 if !cast.is_empty() {
-                    // Truncate long cast lists to fit the panel
                     let cast_display = truncate_to(cast, panel_w.saturating_sub(5));
                     details_text.push(Line::from(vec![
                         ratatui::text::Span::styled("cast ", Style::default().fg(TEXT_SECONDARY)),
@@ -337,6 +300,41 @@ pub fn render_vod_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
                 }
             }
         }
+    } else if let Some(stream) = current_selection {
+        // SNAPPY FALLBACK: Show basic info from cache while loading detailed info
+        let (display_name, _) = if let Some(ref parsed) = stream.cached_parsed {
+            (parsed.display_name.clone(), parsed.quality)
+        } else {
+            let p = crate::parser::parse_stream(&stream.name, app.provider_timezone.as_deref());
+            (p.display_name, p.quality)
+        };
+
+        details_text.push(Line::from(vec![
+            ratatui::text::Span::styled(
+                truncate_to(&display_name, panel_w),
+                Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD),
+            ),
+        ]));
+        
+        if let Some(rating_f) = stream.rating {
+            if rating_f > 0.0 {
+                let rating_str = format!("{:.1}", rating_f);
+                let rating_color = crate::ui::utils::get_rating_color(&rating_str);
+                details_text.push(Line::from(vec![
+                    ratatui::text::Span::styled("rating  ", Style::default().fg(TEXT_SECONDARY)),
+                    ratatui::text::Span::styled(
+                        format!("{}/10 (cached)", rating_str),
+                        Style::default().fg(rating_color),
+                    ),
+                ]));
+            }
+        }
+
+        details_text.push(Line::from(""));
+        details_text.push(Line::from(ratatui::text::Span::styled(
+            "Loading extended details...",
+            Style::default().fg(TEXT_DIM).add_modifier(Modifier::ITALIC),
+        )));
     } else {
         // Empty state: centered prompt
         let empty_y = inner_area.height / 2;
@@ -355,8 +353,6 @@ pub fn render_vod_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
         return;
     }
 
-    let paragraph = Paragraph::new(details_text)
-        .wrap(Wrap { trim: true });
-
+    let paragraph = Paragraph::new(details_text).wrap(Wrap { trim: true });
     f.render_widget(paragraph, inner_area);
 }

@@ -1,11 +1,13 @@
+use std::sync::Arc;
 use ratatui::{
     layout::{Rect, Layout, Constraint, Direction},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{List, ListItem, Paragraph},
+    widgets::{List, ListItem, Paragraph, Block, Borders, Cell, Row, Table},
     Frame,
 };
 use crate::app::{App, CurrentScreen};
+use crate::api::Category;
 use crate::parser::{parse_category, parse_stream, country_flag, country_color};
 use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 use crate::ui::common::stylize_channel_name;
@@ -36,84 +38,43 @@ fn list_highlight_style() -> Style {
 }
 
 pub fn render_categories_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
-    if app.active_pane == crate::app::Pane::Categories && app.category_grid_view {
+    if app.category_grid_view {
         render_categories_grid(f, app, area, border_color);
     } else {
         render_categories_list(f, app, area, border_color);
     }
 }
 
-/// Pick the best icon for a category name. Returns empty string when no relevant icon exists,
-/// which keeps generic network cells clean (ABC, CBS, etc. don't need an icon).
-fn category_icon(upper_cat: &str) -> &'static str {
-    if upper_cat.contains("NBA") || upper_cat.contains("BASKETBALL") { return "\u{1f3c0}"; }
-    if upper_cat.contains("NFL") || upper_cat.contains("FOOTBALL") { return "\u{1f3c8}"; }
-    if upper_cat.contains("MLB") || upper_cat.contains("BASEBALL") { return "\u{26be}"; }
-    if upper_cat.contains("NHL") || upper_cat.contains("HOCKEY") { return "\u{1f3d2}"; }
-    if upper_cat.contains("UFC") || upper_cat.contains("BOXING") || upper_cat.contains("MMA") { return "\u{1f94a}"; }
-    if upper_cat.contains("SOCCER") || upper_cat.contains("MLS") || upper_cat.contains("FIFA") || upper_cat.contains("UEFA") || upper_cat.contains("PREMIER") { return "\u{26bd}"; }
-    if upper_cat.contains("TENNIS") || upper_cat.contains("ATP") || upper_cat.contains("WTA") { return "\u{1f3be}"; }
-    if upper_cat.contains("GOLF") || upper_cat.contains("PGA") { return "\u{26f3}"; }
-    if upper_cat.contains("NASCAR") || upper_cat.contains("F1") || upper_cat.contains("RACING") || upper_cat.contains("MOTOGP") { return "\u{1f3ce}"; }
-    if upper_cat.contains("RUGBY") { return "\u{1f3c9}"; }
-    if upper_cat.contains("CRICKET") { return "\u{1f3cf}"; }
-    if upper_cat.contains("OLYMPICS") { return "\u{1f3c5}"; }
-    if upper_cat.contains("SPORT") || upper_cat.contains("PPV") || upper_cat.contains("NCAA") { return "\u{1f3c6}"; }
-    if upper_cat.contains("NEWS") || upper_cat.contains("MSNBC") || upper_cat.contains("CNN") { return "\u{1f4f0}"; }
-    if upper_cat.contains("DOCUMENTARY") || upper_cat.contains("DOCU") || upper_cat.contains("NATIONAL") { return "\u{1f39e}"; }
-    if upper_cat.contains("MUSIC") || upper_cat.contains("CONCERT") || upper_cat.contains("FESTIVAL") { return "\u{1f3b5}"; }
-    if upper_cat.contains("KIDS") || upper_cat.contains("FAMILY") || upper_cat.contains("CHILDREN") || upper_cat.contains("DISNEY") { return "\u{1f9d2}"; }
-    if upper_cat.contains("MOVIES") || upper_cat.contains("CINEMA") || upper_cat.contains("FILM") { return "\u{1f3ac}"; }
-    if upper_cat.contains("SERIES") || upper_cat.contains("SHOWS") { return "\u{1f4fa}"; }
-    if upper_cat.contains("ADULT") || upper_cat.contains("XXX") { return "\u{1f51e}"; }
-    if upper_cat.contains("WEATHER") { return "\u{26c5}"; }
-    if upper_cat.contains("SHOPPING") { return "\u{1f6cd}"; }
-    if upper_cat.contains("COMEDY") { return "\u{1f602}"; }
-    if upper_cat.contains("HORROR") || upper_cat.contains("THRILLER") { return "\u{1f47b}"; }
-    if upper_cat.contains("SCI") || upper_cat.contains("SCIENCE") || upper_cat.contains("TECH") { return "\u{1f9ea}"; }
-    if upper_cat.contains("HISTORY") || upper_cat.contains("HISTOR") { return "\u{1f4dc}"; }
-    if upper_cat.contains("TRAVEL") || upper_cat.contains("ADVENTURE") { return "\u{1f30d}"; }
-    if upper_cat.contains("FOOD") || upper_cat.contains("COOKING") { return "\u{1f373}"; }
-    if upper_cat.contains("ENTERTAINMENT") { return "\u{1f3a4}"; }
-    if upper_cat.contains("24/7") || upper_cat.contains("24-7") { return "\u{1f4e1}"; }
-    ""  // Generic network/channel — no icon; the clean name is enough
-}
-
-/// Color-code the count badge by relative size so users can spot content-rich categories at a glance.
-fn count_badge_color(count: usize, is_selected: bool) -> Color {
-    if is_selected { return Color::Black; }
-    if count >= 200 { TEXT_PRIMARY }                    // mega-category → bright white
-    else if count >= 100 { Color::Rgb(160, 255, 120) } // large → bright green
-    else if count >= 50  { SOFT_GREEN }                // medium → soft green
-    else if count >= 20  { Color::Rgb(0, 160, 40) }   // small → dim green
-    else                 { Color::Rgb(80, 80, 80) }    // tiny → very dim
+fn get_category_data(app: &App) -> (&Vec<Arc<Category>>, usize, &ratatui::widgets::TableState) {
+    match app.current_screen {
+        CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
+            (&app.vod_categories, app.selected_vod_category_index, &app.vod_category_list_state)
+        }
+        CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
+            (&app.series_categories, app.selected_series_category_index, &app.series_category_list_state)
+        }
+        _ => {
+            (&app.categories, app.selected_category_index, &app.category_list_state)
+        }
+    }
 }
 
 fn render_categories_grid(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
-    let row_height: u16 = 3; // Box height (border + 1 line of content + border)
-    
-    // Cleaner title — GRID VIEW is obvious from layout; no need to repeat it
-    let title = if app.categories.is_empty() {
-        "categories".to_string()
-    } else {
-        format!("categories  {}/{}", app.selected_category_index.saturating_add(1), app.categories.len())
-    };
-    
+    let row_height: u16 = 3;
+    let title = " categories ";
     let is_active = app.active_pane == crate::app::Pane::Categories;
     let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
     
-    // Dynamic column count based on cached longest cleaned display name
     let max_name_len = app.max_category_name_len;
-    
-    // Min cell width = up to 2 icon chars + 1 space + name + count ("(1000)") + borders
     let min_cell_width = (max_name_len as u16 + 10).max(14);
     let cols = ((inner_area.width / min_cell_width) as usize).max(1).min(8);
-    app.grid_cols = cols;
+    app.grid_cols = cols; // UPDATE BEFORE BORROWING categories_ref
+    
+    let (categories_ref, selected, _) = get_category_data(app);
     
     let max_rows = (inner_area.height / row_height).max(1) as usize;
     let items_per_page = max_rows * cols;
-    let total    = app.categories.len();
-    let selected = app.selected_category_index;
+    let total    = categories_ref.len();
 
     let page      = selected / items_per_page.max(1);
     let start_idx = page * items_per_page;
@@ -136,50 +97,39 @@ fn render_categories_grid(f: &mut Frame, app: &mut App, area: Rect, border_color
             let idx = start_idx + (i * cols) + j;
             if idx >= end_idx { break; }
             
-            let category  = &app.categories[idx];
+            let category  = &categories_ref[idx];
             let is_selected = idx == selected;
             
             let block_style = if is_selected {
-                Style::default().fg(Color::Rgb(0, 0, 0)).bg(MATRIX_GREEN)
+                Style::default().fg(Color::Black).bg(MATRIX_GREEN)
             } else {
-                Style::default().fg(MATRIX_GREEN).bg(Color::Rgb(0, 0, 0))
+                Style::default().fg(Color::White).bg(Color::Rgb(0, 0, 0))
             };
             
-            let parsed    = parse_category(&category.category_name);
-            let upper_cat = parsed.display_name.to_uppercase();
-            
-            // Semantic icon — empty string for plain network channels (cleaner cells)
-            let icon = category_icon(&upper_cat);
+            let parsed = if let Some(ref cached) = category.cached_parsed {
+                cached.as_ref().clone()
+            } else {
+                parse_category(&category.category_name)
+            };
 
-            let count = app.category_channel_counts.get(&category.category_id).copied().unwrap_or(0);
-            let count_str = if count > 0 { format!(" ({})", count) } else { String::new() };
-
-            // Border: bright for selected, subtle dark for unselected (content is the focus)
             let card_block = Block::default()
                 .borders(Borders::ALL)
-                .border_style(if is_selected {
-                    Style::default().fg(Color::Black)
-                } else {
-                    Style::default().fg(Color::Rgb(0, 60, 15))  // very dim border = less noise
-                })
+                .border_style(Style::default().fg(Color::White))
                 .style(block_style);
 
-            let name_style  = if is_selected {
+            let mut name_style  = if is_selected {
                 Style::default().fg(Color::Black).add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(MATRIX_GREEN)
+                Style::default().fg(Color::White)
             };
-            let count_color = count_badge_color(count, is_selected);
 
-            // Build line: [icon ][name][ (count)]
+            // Apply cyan color to NEW RELEASES if not selected
+            if parsed.display_name.to_uppercase().contains("NEW RELEASES") && !is_selected {
+                name_style = name_style.fg(Color::Cyan);
+            }
+
             let mut spans = vec![];
-            if !icon.is_empty() {
-                spans.push(Span::styled(format!("{} ", icon), name_style));
-            }
             spans.push(Span::styled(parsed.display_name.as_str(), name_style));
-            if !count_str.is_empty() {
-                spans.push(Span::styled(&count_str, Style::default().fg(count_color)));
-            }
 
             let content = Paragraph::new(vec![Line::from(spans)])
                 .block(card_block)
@@ -190,123 +140,119 @@ fn render_categories_grid(f: &mut Frame, app: &mut App, area: Rect, border_color
     }
 }
 
-use ratatui::widgets::{Cell, Row, Table, Block, Borders}; // Imports for Table
-
 fn render_categories_list(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
-    let hidden_count = app.all_categories.len().saturating_sub(app.categories.len());
-    let title = if hidden_count > 0 {
-        format!(" categories ({} hidden) ", hidden_count)
-    } else {
-        " categories ".to_string()
-    };
+    let title = " categories ";
     let is_active = app.active_pane == crate::app::Pane::Categories;
     let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active); 
 
-    let total = app.categories.len();
+    let max_name_len = app.max_category_name_len as u16;
+    let min_col_width = (max_name_len + 15).max(30); 
+    let cols = (inner_area.width / min_col_width).max(1).min(4) as usize;
+    app.grid_cols = cols; // UPDATE BEFORE BORROWING categories_ref
+    
+    let (categories_ref, selected, list_state_ref) = get_category_data(app);
+    let total = categories_ref.len();
     if total == 0 {
         return;
     }
 
-    // Determine number of columns based on available width
-    // A single category takes about 35 chars (27 for name + 8 for count)
-    let min_col_width = 35; 
-    let num_columns = (inner_area.width / min_col_width).max(1).min(4) as usize; // Max 4 columns
-    let num_rows = (total + num_columns - 1) / num_columns;
+    let mut constraints = Vec::new();
+    for i in 0..cols {
+        constraints.push(ratatui::layout::Constraint::Ratio(1, cols as u32));
+        if i < cols - 1 {
+            constraints.push(ratatui::layout::Constraint::Length(1));
+        }
+    }
 
-    let visible_height = inner_area.height.saturating_sub(2) as usize; // Account for header
-    let selected = app.selected_category_index;
+    let rows = (total + cols - 1) / cols;
+    let full_cols = if total % cols == 0 { cols } else { total % cols };
     
-    // Calculate which row is selected
-    let selected_row = selected / num_columns;
+    let mut list_items = Vec::new();
 
-    let half_window = visible_height / 2;
-    let start_row = if selected_row > half_window {
-        selected_row - half_window
-    } else {
-        0
-    };
-    let end_row = (start_row + visible_height).min(num_rows);
-    let adjusted_start_row = if end_row == num_rows && end_row > visible_height {
-        end_row.saturating_sub(visible_height)
-    } else {
-        start_row
-    };
-
-    // Phonophor states 
-    let (base_style, highlight_style) = if app.active_pane == crate::app::Pane::Categories {
-        (
-            Style::default().fg(Color::Rgb(0, 255, 65)), 
-            Style::default().bg(Color::Rgb(0, 255, 65)).fg(Color::Black).add_modifier(Modifier::BOLD), 
-        )
-    } else {
-        (
-            Style::default().fg(Color::DarkGray), 
-            Style::default().fg(Color::DarkGray).add_modifier(Modifier::REVERSED),
-        )
-    };
-
-    let mut rows: Vec<Row> = Vec::new();
-    
-    for r in adjusted_start_row..end_row {
+    for r in 0..rows {
         let mut cells = Vec::new();
-        // Since we can't easily highlight just one cell in a normal Table Row, 
-        // we'll style the individual cells manually if they are the selected index
-        for c in 0..num_columns {
-            let idx = r * num_columns + c;
+        
+        for c in 0..cols {
+            let col_size = if c < full_cols { rows } else { rows - 1 };
             
-            if idx < total {
-                let cat = &app.categories[idx];
-                let is_selected = idx == selected;
+            if r < col_size {
+                let mut base_idx = 0;
+                for i in 0..c {
+                    base_idx += if i < full_cols { rows } else { rows - 1 };
+                }
+                let abs_idx = base_idx + r;
+                let cat = &categories_ref[abs_idx];
+
+                let is_selected = abs_idx == selected;
                 
-                let parsed = parse_category(&cat.category_name);
-                let upper_cat = parsed.display_name.to_uppercase();
-                let cat_icon = if upper_cat.contains("NBA") || upper_cat.contains("NCAAB") || upper_cat.contains("BASKETBALL") { "\u{1f3c0}" } else if upper_cat.contains("NFL") || upper_cat.contains("NCAAF") || upper_cat.contains("FOOTBALL") { "\u{1f3c8}" } else if upper_cat.contains("MLB") || upper_cat.contains("MILB") || upper_cat.contains("BASEBALL") { "\u{26be}" } else if upper_cat.contains("NHL") || upper_cat.contains("HOCKEY") { "\u{1f3d2}" } else if upper_cat.contains("UFC") || upper_cat.contains("FIGHT") || upper_cat.contains("BOXING") { "\u{1f94a}" } else if upper_cat.contains("TENNIS") || upper_cat.contains("ATP") || upper_cat.contains("WTA") { "\u{1f3be}" } else if upper_cat.contains("GOLF") || upper_cat.contains("PGA") || upper_cat.contains("MASTERS") { "\u{26f3}" } else if upper_cat.contains("NASCAR") || upper_cat.contains("F1") || upper_cat.contains("RACING") || upper_cat.contains("MOTOCROSS") { "\u{1f3ce}" } else if upper_cat.contains("SOCCER") || upper_cat.contains("MLS") || upper_cat.contains("PREMIER") || upper_cat.contains("LALIGA") || upper_cat.contains("FIFA") || upper_cat.contains("UEFA") { "\u{26bd}" } else if upper_cat.contains("RUGBY") { "\u{1f3c9}" } else if upper_cat.contains("CRICKET") || upper_cat.contains("IPL") { "\u{1f3cf}" } else if upper_cat.contains("PPV") || upper_cat.contains("EVENT") { "\u{1f3ab}" } else if upper_cat.contains("ESPN") || upper_cat.contains("BALLY") || upper_cat.contains("DAZN") { "\u{1f4fa}" } else { " " };
+                let upper_cat = if let Some(ref parsed) = cat.cached_parsed {
+                    parsed.display_name.to_uppercase()
+                } else {
+                    crate::parser::parse_category(&cat.category_name).display_name.to_uppercase()
+                };
+                
                 let fav_marker = if app.config.favorites.categories.contains(&cat.category_id) { "*" } else { " " };
-                
-                let cell_style = if is_selected && app.active_pane == crate::app::Pane::Categories { highlight_style } else { base_style };
-                let cursor = if is_selected && app.active_pane == crate::app::Pane::Categories { "█ " } else { "  " };
+                let pre_pad = if is_selected && is_active { "█ " } else { "  " };
+                let name_clean = format!("{}{}{}", pre_pad, fav_marker, upper_cat);
 
-                let clean_name = format!("{}{}{} {}", cursor, fav_marker, cat_icon, parsed.display_name.to_uppercase());
-                let count = app.category_channel_counts.get(&cat.category_id).copied().unwrap_or(0);
-                let formatted_count = format!("[{:04}]", count);
+                let mut style = if is_selected && is_active {
+                    list_highlight_style()
+                } else if is_selected && !is_active {
+                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::REVERSED)
+                } else if !is_active {
+                    Style::default().fg(Color::DarkGray)
+                } else {
+                    Style::default().fg(TEXT_PRIMARY)
+                };
 
-                cells.push(Cell::from(clean_name).style(cell_style));
-                cells.push(Cell::from(formatted_count).style(cell_style));
+                // Apply cyan color to NEW RELEASES if not selected (which has its own highlight)
+                if upper_cat.contains("NEW RELEASES") && !is_selected {
+                    style = style.fg(Color::Cyan);
+                }
+
+                cells.push(Cell::from(name_clean).style(style));
             } else {
-                // Empty padding for uneven rows
-                cells.push(Cell::from("").style(base_style));
-                cells.push(Cell::from("").style(base_style));
+                cells.push(Cell::from(""));
+            }
+            
+            if c < cols - 1 {
+                cells.push(Cell::from(""));
             }
         }
-        rows.push(Row::new(cells));
+        
+        list_items.push(Row::new(cells));
     }
 
-    let mut constraints = Vec::new();
-    let col_width = 100 / num_columns as u16;
-    for _ in 0..num_columns {
-        // We use Percentage roughly calculated minus the absolute length for the count
-        constraints.push(Constraint::Percentage(col_width));
-        constraints.push(Constraint::Length(8)); 
+    let list_widget = Table::new(list_items, constraints).column_spacing(0);
+
+    let mut r = selected;
+    for col in 0..cols {
+        let col_size = if col < full_cols { rows } else { rows - 1 };
+        if r < col_size {
+            break;
+        }
+        r -= col_size;
     }
 
-    let mut header_cells: Vec<Cell> = Vec::new();
-    for _ in 0..num_columns {
-        header_cells.push(Cell::from("  Category"));
-        header_cells.push(Cell::from(""));
+    // We can't update app.category_list_state directly if it's not the right one.
+    // We'll update the state based on screen.
+    let mut state = list_state_ref.clone();
+    state.select(Some(r));
+    
+    // Update the app's state for the specific screen
+    match app.current_screen {
+        CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
+            app.vod_category_list_state = state.clone();
+        }
+        CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
+            app.series_category_list_state = state.clone();
+        }
+        _ => {
+            app.category_list_state = state.clone();
+        }
     }
 
-    let category_table = Table::new(rows, constraints)
-        .block(Block::default()
-            .borders(Borders::NONE)
-            .padding(ratatui::widgets::Padding::new(1, 1, 0, 0)))
-        .header(
-            Row::new(header_cells)
-            .style(base_style.add_modifier(Modifier::BOLD | Modifier::DIM))
-            .bottom_margin(1)
-        );
-
-    // Render stateless since we manually calculated row constraints and highlighting 
-    f.render_widget(category_table, inner_area);
+    f.render_stateful_widget(list_widget, inner_area, &mut state);
 }
 
 pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
@@ -338,17 +284,11 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         .skip(adjusted_start)
         .take(end - adjusted_start)
         .map(|(idx, s)| {
-            let s_id = crate::api::get_id_str(&s.stream_id);
-            let display_name = app.epg_cache.get(&s_id).unwrap_or(&s.name);
+            let _s_id = crate::api::get_id_str(&s.stream_id);
+            let display_name = &s.name;
             
             let parsed = if let Some(ref cached) = s.cached_parsed {
-                // If we have an EPG update, we might need to ignore the cached_parsed
-                // which was computed from the original name.
-                if app.epg_cache.contains_key(&s_id) {
-                     crate::parser::parse_stream(display_name, app.provider_timezone.as_deref())
-                } else {
-                     cached.as_ref().clone()
-                }
+                 cached.as_ref().clone()
             } else {
                 crate::parser::parse_stream(display_name, app.provider_timezone.as_deref())
             };
@@ -376,50 +316,50 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             // 0. Row number column (fixed width, right-aligned)
             let row_num = format!("{:>4} ", idx + 1);
             spans.push(ratatui::text::Span::styled(row_num, Style::default().fg(TEXT_DIM)));
-            spans.push(ratatui::text::Span::styled("│ ", Style::default().fg(TEXT_DIM)));
+            spans.push(ratatui::text::Span::styled(" ", Style::default().fg(TEXT_DIM)));
             
             // 1. Icon Logic (Sports Only)
             let mut league_icon_span: Option<ratatui::text::Span> = None;
             let upper_name = parsed.display_name.to_uppercase();
             if upper_name.contains("NBA") || upper_name.contains("NCAAB") {
-                league_icon_span = Some(ratatui::text::Span::styled("\u{1f3c0} ", Style::default().fg(Color::Rgb(255, 140, 0))));
+                league_icon_span = Some(ratatui::text::Span::styled("NBA ", Style::default().fg(Color::Rgb(255, 140, 0))));
             } else if upper_name.contains("NFL") || upper_name.contains("NCAAF") {
-                league_icon_span = Some(ratatui::text::Span::styled("\u{1f3c8} ", Style::default().fg(Color::Rgb(210, 180, 140))));
+                league_icon_span = Some(ratatui::text::Span::styled("NFL ", Style::default().fg(Color::Rgb(210, 180, 140))));
             } else if upper_name.contains("MLB") || upper_name.contains("MILB") {
-                league_icon_span = Some(ratatui::text::Span::raw("\u{26be} "));
+                league_icon_span = Some(ratatui::text::Span::raw("MLB "));
             } else if upper_name.contains("NHL") {
-                league_icon_span = Some(ratatui::text::Span::raw("\u{1f3d2} "));
+                league_icon_span = Some(ratatui::text::Span::raw("NHL "));
             } else if upper_name.contains("UFC") || upper_name.contains("FIGHT") || upper_name.contains("BOXING") {
-                league_icon_span = Some(ratatui::text::Span::raw("\u{1f94a} "));
+                league_icon_span = Some(ratatui::text::Span::raw("COMBAT "));
             } else if upper_name.contains("TENNIS") || upper_name.contains("ATP") || upper_name.contains("WTA") {
-                league_icon_span = Some(ratatui::text::Span::styled("\u{1f3be} ", Style::default().fg(Color::Rgb(144, 238, 144))));
+                league_icon_span = Some(ratatui::text::Span::styled("TENNIS ", Style::default().fg(Color::Rgb(144, 238, 144))));
             } else if upper_name.contains("GOLF") || upper_name.contains("PGA") || upper_name.contains("MASTERS") {
-                league_icon_span = Some(ratatui::text::Span::raw("\u{26f3} "));
+                league_icon_span = Some(ratatui::text::Span::raw("GOLF "));
             } else if upper_name.contains("SUPERCROSS") || upper_name.contains("MOTOCROSS") || upper_name.contains("F1") || upper_name.contains("NASCAR") || upper_name.contains("RACING") {
-                league_icon_span = Some(ratatui::text::Span::styled("\u{1f3ce} ", Style::default().fg(Color::Rgb(255, 100, 100))));
+                league_icon_span = Some(ratatui::text::Span::styled("RACE ", Style::default().fg(Color::Rgb(255, 100, 100))));
             } else if upper_name.contains("SOCCER") || upper_name.contains("MLS") || upper_name.contains("PREMIER") || upper_name.contains("LALIGA") || upper_name.contains("FIFA") || upper_name.contains("UEFA") {
-                league_icon_span = Some(ratatui::text::Span::styled("\u{26bd} ", Style::default().fg(Color::Rgb(255, 182, 193))));
+                league_icon_span = Some(ratatui::text::Span::styled("SOCCER ", Style::default().fg(Color::Rgb(255, 182, 193))));
             } else if upper_name.contains("RUGBY") {
-                league_icon_span = Some(ratatui::text::Span::raw("\u{1f3c9} "));
+                league_icon_span = Some(ratatui::text::Span::raw("RUGBY "));
             } else if upper_name.contains("EVENT") || upper_name.contains("PPV") {
-                league_icon_span = Some(ratatui::text::Span::raw("\u{1f3ab} "));
+                league_icon_span = Some(ratatui::text::Span::raw("EVENT "));
             } else if upper_name.contains("ESPN") || upper_name.contains("DAZN") || upper_name.contains("B/R") || upper_name.contains("BALLY") {
-                league_icon_span = Some(ratatui::text::Span::raw("\u{1f4fa} "));
+                league_icon_span = Some(ratatui::text::Span::raw("TV "));
             }
 
             if let Some(icon) = league_icon_span {
                  spans.push(icon);
             } else {
-                // Extended Auto-Discovery
+                // Extended Auto-Discovery (Silent discovery, no icons needed if not matched above)
                 let name = parsed.display_name.to_uppercase();
                 if name.contains("FOOTBALL") || name.contains("LIGUE") || name.contains("BUNDESLIGA") || name.contains("SERIE A") {
-                    spans.push(ratatui::text::Span::styled("\u{26bd} ", Style::default().fg(Color::Rgb(200, 255, 200))));
+                    spans.push(ratatui::text::Span::styled("SOCCER ", Style::default().fg(Color::Rgb(200, 255, 200))));
                 } else if name.contains("BASKETBALL") || name.contains("EUROLEAGUE") {
-                    spans.push(ratatui::text::Span::styled("\u{1f3c0} ", Style::default().fg(Color::Rgb(255, 140, 0))));
+                    spans.push(ratatui::text::Span::styled("BASKET ", Style::default().fg(Color::Rgb(255, 140, 0))));
                 } else if name.contains("AUTO") || name.contains("MOTOR") {
-                    spans.push(ratatui::text::Span::raw("\u{1f3ce} "));
+                    spans.push(ratatui::text::Span::raw("RACE "));
                 } else if name.contains("CRICKET") || name.contains("IPL") {
-                    spans.push(ratatui::text::Span::raw("\u{1f3cf} "));
+                    spans.push(ratatui::text::Span::raw("CRICKET "));
                 }
             }
 
@@ -434,7 +374,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             // 3. Favorite indicator
             let s_id = crate::api::get_id_str(&s.stream_id);
             if app.config.favorites.streams.contains(&s_id) {
-                spans.push(ratatui::text::Span::styled("★ ", Style::default().fg(MATRIX_GREEN)));
+                spans.push(ratatui::text::Span::styled("* ", Style::default().fg(MATRIX_GREEN)));
             }
 
             // 3. Country Flag
@@ -624,11 +564,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         })
         .collect();
 
-    let title = if app.streams.is_empty() {
-        format!("streams · {}", tz_display)
-    } else {
-        format!("streams ({}/{}) · {}", selected.saturating_add(1), app.streams.len(), tz_display)
-    };
+    let title = format!("streams · {}", tz_display);
     let is_active = app.active_pane == crate::app::Pane::Streams;
     let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
 
@@ -723,14 +659,10 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .take(end - adjusted_start)
         .map(|(_, s)| {
             let s_id = crate::api::get_id_str(&s.stream_id);
-            let display_name = app.epg_cache.get(&s_id).unwrap_or(&s.name);
+            let display_name = &s.name;
 
             let parsed = if let Some(ref cached) = s.cached_parsed {
-                if app.epg_cache.contains_key(&s_id) {
-                     crate::parser::parse_stream(display_name, app.provider_timezone.as_deref())
-                } else {
-                     cached.as_ref().clone()
-                }
+                 cached.as_ref().clone()
             } else {
                 crate::parser::parse_stream(display_name, app.provider_timezone.as_deref())
             };
@@ -822,31 +754,7 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
         return;
     };
 
-    // ── Debounce: skip expensive rendering during fast scrolling ──
-    #[cfg(not(target_arch = "wasm32"))]
-    {
-        if app.detail_last_index != selected_idx {
-            app.detail_last_index = selected_idx;
-            app.detail_settle_time = Some(std::time::Instant::now());
-        }
-        if let Some(t) = app.detail_settle_time {
-            if t.elapsed().as_millis() < 80 {
-                // Fast-scroll mode: render just the name, skip expensive fields
-                let inner = crate::ui::common::render_matrix_box(f, area, "details", border_color);
-                let name = if let Some(ref cached) = s.cached_parsed {
-                    cached.display_name.clone()
-                } else {
-                    s.name.clone()
-                };
-                let w = inner.width as usize;
-                let truncated: String = name.chars().take(w.saturating_sub(1)).collect();
-                let p = Paragraph::new(truncated)
-                    .style(Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD));
-                f.render_widget(p, inner);
-                return;
-            }
-        }
-    }
+    // Debounce removed: The `parsed_cache` guarantees O(1) allocation overhead here.
 
     let parsed = if let Some(ref cached) = s.cached_parsed {
         cached.as_ref().clone()
@@ -930,22 +838,25 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
     lines.push(Line::from(Span::styled(cat_trunc, value_style)));
     lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
 
-    // EPG + Stream ID row
-    let epg_str = s.epg_channel_id.as_ref()
-        .filter(|e| !e.is_empty())
-        .map(|e| if e.chars().count() > half.saturating_sub(1) { 
-            let s: String = e.chars().take(half.saturating_sub(2)).collect();
-            format!("{}…", s) 
-        } else { e.clone() })
+    // EPG Now Playing + Stream ID row
+    let s_id_for_epg = crate::api::get_id_str(&s.stream_id);
+    let now_playing = app.epg_cache.get(&s_id_for_epg)
+        .map(|s| s.clone())
         .unwrap_or_else(|| "—".to_string());
-    let sid = crate::api::get_id_str(&s.stream_id);
+        
+    let epg_trunc = if now_playing.chars().count() > half.saturating_sub(1) {
+        let sc: String = now_playing.chars().take(half.saturating_sub(2)).collect();
+        format!("{}…", sc)
+    } else { now_playing };
+    
+    let sid = s_id_for_epg;
     
     lines.push(Line::from(vec![
-        Span::styled(format!("{:<half$}", "EPG"), Style::default().fg(label_color)),
+        Span::styled(format!("{:<half$}", "Now Playing"), Style::default().fg(label_color)),
         Span::styled("Stream ID", Style::default().fg(label_color)),
     ]));
     lines.push(Line::from(vec![
-        Span::styled(format!("{:<half$}", epg_str), value_style),
+        Span::styled(format!("{:<half$}", epg_trunc), value_style),
         Span::styled(&sid, dim_style),
     ]));
     lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
@@ -953,11 +864,11 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
     // Favorite + Rating row
     let s_id = crate::api::get_id_str(&s.stream_id);
     let is_fav = app.config.favorites.streams.contains(&s_id);
-    let fav_str = if is_fav { "★ Yes" } else { "☆ No" };
+    let fav_str = if is_fav { "* Yes" } else { "- No" };
     let rating_str = s.rating
         .filter(|r| *r > 0.0)
         .map(|r| {
-            let stars = "★".repeat((r / 2.0).ceil() as usize);
+            let stars = "*".repeat((r / 2.0).ceil() as usize);
             let stars_trunc: String = stars.chars().take(5).collect();
             format!("{} {:.1}", stars_trunc, r)
         })

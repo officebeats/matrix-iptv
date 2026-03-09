@@ -150,3 +150,14 @@ pub fn get_rating_color(rating: &str) -> ratatui::style::Color {
         ratatui::style::Color::White
     }
 }
+
+/// Wipe any terminal-breaking wide unicode characters (Emojis, complex symbols)
+/// to ensure strict geometric alignment on all terminal engines (Wave, Alacritty, etc).
+pub fn scrub_emojis(s: &str) -> String {
+    // Regex covering common emoji ranges and misc symbols that often report incorrect widths
+    // \u{1F300}-\u{1F9FF} : Misc Symbols and Pictographs + variants
+    // \u{2600}-\u{26FF}   : Misc Symbols
+    // \u{2700}-\u{27BF}   : Dingbats
+    let re = regex::Regex::new(r"[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]").unwrap();
+    re.replace_all(s, "").trim().to_string()
+}

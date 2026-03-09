@@ -488,22 +488,16 @@ pub async fn handle_key_event(
                     app.update_search();
                 }
                 KeyCode::Char('j') | KeyCode::Down => {
-                    app.selected_content_type_index = (app.selected_content_type_index + 1) % 4;
+                    app.selected_content_type_index = (app.selected_content_type_index + 1) % 3;
                 }
                 KeyCode::Char('k') | KeyCode::Up => {
                     if app.selected_content_type_index == 0 {
-                        app.selected_content_type_index = 3;
+                        app.selected_content_type_index = 2;
                     } else {
                         app.selected_content_type_index -= 1;
                     }
                 }
-                KeyCode::Char('s') | KeyCode::Char('S') => {
-                    app.selected_content_type_index = 3;
-                    app.current_screen = CurrentScreen::SportsDashboard;
-                    app.active_pane = Pane::Categories;
-                    app.sports_matches.clear();
-                    app.sports_category_list_state.select(Some(0));
-                }
+
                 KeyCode::Enter => {
                     match app.selected_content_type_index {
                         0 => {
@@ -535,13 +529,6 @@ pub async fn handle_key_event(
                             app.search_state.query.clear();
                             app.last_search_query.clear();
                             app.update_search();
-                        }
-                        3 => {
-                            // Sports dashboard
-                            app.current_screen = CurrentScreen::SportsDashboard;
-                            app.active_pane = Pane::Categories;
-                            app.sports_matches.clear();
-                            app.sports_category_list_state.select(Some(0));
                         }
                         _ => {}
                     }
@@ -876,72 +863,24 @@ pub async fn handle_key_event(
                         }
                     }
                     KeyCode::Char('j') | KeyCode::Down => match app.active_pane {
-                        Pane::Categories => {
-                            if app.category_grid_view {
-                                // Grid navigation: Down = jump by columns
-                                let cols = app.grid_cols.max(1);
-                                let new_idx = app.selected_category_index + cols;
-                                if new_idx < app.categories.len() {
-                                    app.selected_category_index = new_idx;
-                                    app.category_list_state.select(Some(new_idx));
-                                } else if app.selected_category_index < app.categories.len().saturating_sub(1) {
-                                    app.selected_category_index = app.categories.len() - 1;
-                                    app.category_list_state.select(Some(app.selected_category_index));
-                                }
-                            } else {
-                                // List navigation: Down = +1
-                                if app.selected_category_index < app.categories.len().saturating_sub(1) {
-                                    app.selected_category_index += 1;
-                                    app.category_list_state.select(Some(app.selected_category_index));
-                                }
-                            }
-                        },
+                        Pane::Categories => app.move_category_y(true),
                         Pane::Streams => app.next_stream(),
                         _ => {}
                     },
                     KeyCode::Char('k') | KeyCode::Up => match app.active_pane {
-                        Pane::Categories => {
-                            if app.category_grid_view {
-                                // Grid navigation: Up = jump by columns
-                                let cols = app.grid_cols.max(1);
-                                if app.selected_category_index >= cols {
-                                    app.selected_category_index -= cols;
-                                } else {
-                                    app.selected_category_index = 0;
-                                }
-                                app.category_list_state.select(Some(app.selected_category_index));
-                            } else {
-                                // List navigation: Up = -1
-                                if app.selected_category_index > 0 {
-                                    app.selected_category_index -= 1;
-                                    app.category_list_state.select(Some(app.selected_category_index));
-                                }
-                            }
-                        },
+                        Pane::Categories => app.move_category_y(false),
                         Pane::Streams => app.previous_stream(),
                         _ => {}
                     },
-                    KeyCode::Left => {
-                        if app.active_pane == Pane::Categories && app.category_grid_view {
-                            // Grid: move left one cell
-                            if app.selected_category_index > 0 {
-                                app.selected_category_index -= 1;
-                                app.category_list_state.select(Some(app.selected_category_index));
-                            }
-                        } else if app.active_pane == Pane::Streams {
-                            app.active_pane = Pane::Categories; 
-                        }
+                    KeyCode::Char('h') | KeyCode::Left => match app.active_pane {
+                        Pane::Categories => app.move_category_x(false),
+                        Pane::Streams => { app.active_pane = Pane::Categories; }
+                        _ => {}
                     },
-                    KeyCode::Right => {
-                        if app.active_pane == Pane::Categories && app.category_grid_view {
-                            // Grid: move right one cell
-                            if app.selected_category_index < app.categories.len().saturating_sub(1) {
-                                app.selected_category_index += 1;
-                                app.category_list_state.select(Some(app.selected_category_index));
-                            }
-                        } else if app.active_pane == Pane::Streams && !app.streams.is_empty() {
-                            app.active_pane = Pane::Streams;
-                        }
+                    KeyCode::Char('l') | KeyCode::Right => match app.active_pane {
+                        Pane::Categories => app.move_category_x(true),
+                        Pane::Streams => { if !app.streams.is_empty() { app.active_pane = Pane::Streams; } }
+                        _ => {}
                     },
                     KeyCode::Char('g') => {
                         if app.active_pane == Pane::Categories {
@@ -1090,7 +1029,6 @@ pub async fn handle_key_event(
                                                         seen.insert(id)
                                                     });
                                                 }
-                                                let _ = tx.send(AsyncAction::LoadingMessage(format!("Processing {} channels...", all_streams.len()))).await;
                                                 preprocessing::preprocess_streams(&mut all_streams, &favs, &pms, true, &account_name, None);
                                                 let _ = tx.send(AsyncAction::TotalChannelsLoaded(all_streams)).await;
                                             });
@@ -1236,18 +1174,37 @@ pub async fn handle_key_event(
                         app.last_search_query.clear();
                         app.current_screen = CurrentScreen::ContentTypeSelection;
                     }
-                    KeyCode::Char('j') | KeyCode::Down => app.next_vod_category(),
-                    KeyCode::Char('k') | KeyCode::Up => app.previous_vod_category(),
-                    KeyCode::Char('g') => {
-                        if !app.vod_categories.is_empty() {
-                            app.selected_vod_category_index = app.vod_categories.len() - 1;
-                            app.vod_category_list_state.select(Some(app.vod_categories.len() - 1));
+                    KeyCode::Char('j') | KeyCode::Down => app.move_category_y(true),
+                    KeyCode::Char('k') | KeyCode::Up => app.move_category_y(false),
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        let (_, before) = app.get_current_category_indices();
+                        app.move_category_x(false);
+                        let (_, after) = app.get_current_category_indices();
+                        
+                        // If index didn't change, we are at the leftmost edge
+                        if before == after {
+                             app.vod_streams.clear();
+                             app.all_vod_streams.clear();
+                             app.selected_vod_category_index = 0;
+                             app.selected_vod_stream_index = 0;
+                             app.vod_category_list_state.select(None);
+                             app.vod_stream_list_state.select(None);
+                             app.search_mode = false;
+                             app.search_state.query.clear();
+                             app.last_search_query.clear();
+                             app.current_screen = CurrentScreen::ContentTypeSelection;
                         }
+                    }
+                    KeyCode::Char('l') | KeyCode::Right => {
+                         app.move_category_x(true);
+                    }
+                    KeyCode::Char('g') => {
+                        app.category_grid_view = !app.category_grid_view;
                     }
                     KeyCode::Char('G') => {
                         if !app.vod_categories.is_empty() {
-                            app.selected_vod_category_index = 0;
-                            app.vod_category_list_state.select(Some(0));
+                            app.selected_vod_category_index = app.vod_categories.len() - 1;
+                            app.vod_category_list_state.select(Some(app.vod_categories.len() - 1));
                         }
                     }
                     KeyCode::Char('0') => {
@@ -1312,23 +1269,20 @@ pub async fn handle_key_event(
                     }
                     KeyCode::Enter => {
                         if !app.vod_categories.is_empty() {
-                            let cat_id = app.vod_categories[app.selected_vod_category_index].category_id.clone();
-                            if cat_id == "ALL" && !app.global_all_vod_streams.is_empty() {
-                                app.all_vod_streams = app.global_all_vod_streams.clone();
-                                let mut display_streams = app.all_vod_streams.clone();
-                                display_streams.truncate(1000);
-                                app.vod_streams = display_streams;
+                            let idx = app.selected_vod_category_index;
+                            if !app.global_all_vod_streams.is_empty() {
+                                app.select_vod_category(idx);
                                 app.current_screen = CurrentScreen::VodStreams;
                                 app.active_pane = Pane::Streams;
-                                app.selected_vod_stream_index = 0;
-                                app.vod_stream_list_state.select(Some(0));
                             } else if let Some(client) = &app.current_client {
+                                let cat_id = app.vod_categories[idx].category_id.clone();
                                 let client = client.clone();
                                 let tx = tx.clone();
                                 let pms = app.config.processing_modes.clone();
                                 let favs = app.config.favorites.vod_streams.clone();
                                 let account_name = account_name.clone();
                                 app.state_loading = true;
+                                app.loading_message = Some("Loading movies...".to_string());
                                 tokio::spawn(async move {
                                     if cat_id == "ALL" {
                                         match client.get_vod_streams_all().await {
@@ -1372,10 +1326,32 @@ pub async fn handle_key_event(
                         app.all_vod_streams.clear();
                         app.selected_vod_stream_index = 0;
                         app.vod_stream_list_state.select(None);
+                        app.active_pane = Pane::Categories;
                         app.current_screen = CurrentScreen::VodCategories;
                     }
                     KeyCode::Char('j') | KeyCode::Down => app.next_vod_stream(),
                     KeyCode::Char('k') | KeyCode::Up => app.previous_vod_stream(),
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        app.vod_streams.clear();
+                        app.all_vod_streams.clear();
+                        app.selected_vod_stream_index = 0;
+                        app.vod_stream_list_state.select(None);
+                        app.active_pane = Pane::Categories;
+                        app.current_screen = CurrentScreen::VodCategories;
+                    }
+                    KeyCode::Char('l') | KeyCode::Right => {
+                        if !app.vod_streams.is_empty() {
+                            let stream = &app.vod_streams[app.selected_vod_stream_index];
+                            if let Some(client) = &app.current_client {
+                                let id = crate::api::get_id_str(&stream.stream_id);
+                                let extension = stream.container_extension.as_deref().unwrap_or("ts");
+                                let url = client.get_vod_url(&id, extension);
+                                app.pending_play_url = Some(url);
+                                app.pending_play_title = Some(stream.name.clone());
+                                app.show_play_details = true;
+                            }
+                        }
+                    }
                     KeyCode::Char('g') => {
                         if !app.vod_streams.is_empty() {
                             app.selected_vod_stream_index = app.vod_streams.len() - 1;
@@ -1448,13 +1424,6 @@ pub async fn handle_key_event(
                             app.vod_stream_list_state.select(Some(8));
                         }
                     }
-                    KeyCode::Left => {
-                        app.vod_streams.clear();
-                        app.all_vod_streams.clear();
-                        app.selected_vod_stream_index = 0;
-                        app.vod_stream_list_state.select(None);
-                        app.current_screen = CurrentScreen::VodCategories;
-                    }
                     KeyCode::Enter => {
                         if !app.vod_streams.is_empty() {
                             let stream = &app.vod_streams[app.selected_vod_stream_index];
@@ -1503,13 +1472,31 @@ pub async fn handle_key_event(
                         app.last_search_query.clear();
                         app.current_screen = CurrentScreen::ContentTypeSelection;
                     }
-                    KeyCode::Char('j') | KeyCode::Down => app.next_series_category(),
-                    KeyCode::Char('k') | KeyCode::Up => app.previous_series_category(),
-                    KeyCode::Char('g') => {
-                        if !app.series_categories.is_empty() {
-                            app.selected_series_category_index = app.series_categories.len() - 1;
-                            app.series_category_list_state.select(Some(app.series_categories.len() - 1));
+                    KeyCode::Char('j') | KeyCode::Down => app.move_category_y(true),
+                    KeyCode::Char('k') | KeyCode::Up => app.move_category_y(false),
+                    KeyCode::Char('h') | KeyCode::Left => {
+                        let (_, before) = app.get_current_category_indices();
+                        app.move_category_x(false);
+                        let (_, after) = app.get_current_category_indices();
+                        
+                        if before == after {
+                            app.series_streams.clear();
+                            app.all_series_streams.clear();
+                            app.selected_series_category_index = 0;
+                            app.selected_series_stream_index = 0;
+                            app.series_category_list_state.select(None);
+                            app.series_stream_list_state.select(None);
+                            app.search_mode = false;
+                            app.search_state.query.clear();
+                            app.last_search_query.clear();
+                            app.current_screen = CurrentScreen::ContentTypeSelection;
                         }
+                    }
+                    KeyCode::Char('l') | KeyCode::Right => {
+                         app.move_category_x(true);
+                    }
+                    KeyCode::Char('g') => {
+                        app.category_grid_view = !app.category_grid_view;
                     }
                     KeyCode::Char('G') => {
                         if !app.series_categories.is_empty() {
@@ -1571,30 +1558,21 @@ pub async fn handle_key_event(
                             app.series_category_list_state.select(Some(7));
                         }
                     }
-                    KeyCode::Char('9') => {
-                        if app.series_categories.len() > 8 {
-                            app.selected_series_category_index = 8;
-                            app.series_category_list_state.select(Some(8));
-                        }
-                    }
                     KeyCode::Enter => {
                         if !app.series_categories.is_empty() {
-                            let cat_id = app.series_categories[app.selected_series_category_index].category_id.clone();
-                            if cat_id == "ALL" && !app.global_all_series_streams.is_empty() {
-                                app.all_series_streams = app.global_all_series_streams.clone();
-                                let mut display_streams = app.all_series_streams.clone();
-                                display_streams.truncate(1000);
-                                app.series_streams = display_streams;
+                            let idx = app.selected_series_category_index;
+                            if !app.global_all_series_streams.is_empty() {
+                                app.select_series_category(idx);
                                 app.current_screen = CurrentScreen::SeriesStreams;
                                 app.active_pane = Pane::Streams;
-                                app.selected_series_stream_index = 0;
-                                app.series_stream_list_state.select(Some(0));
                             } else if let Some(client) = &app.current_client {
+                                let cat_id = app.series_categories[idx].category_id.clone();
                                 let client = client.clone();
                                 let tx = tx.clone();
                                 let pms = app.config.processing_modes.clone();
                                 let favs = app.config.favorites.vod_streams.clone();
                                 app.state_loading = true;
+                                app.loading_message = Some("Loading series...".to_string());
                                 app.active_pane = Pane::Streams;
                                 let acc_name_cloned = account_name.clone();
                                 tokio::spawn(async move {
@@ -1625,7 +1603,7 @@ pub async fn handle_key_event(
             } else {
                  match key.code {
                     KeyCode::Char('/') | KeyCode::Char('f') => { app.search_mode = true; app.search_state.query.clear(); app.last_search_query.clear(); app.update_search(); }
-                    KeyCode::Esc | KeyCode::Backspace | KeyCode::Left => {
+                    KeyCode::Esc | KeyCode::Backspace | KeyCode::Left | KeyCode::Char('h') => {
                         match app.active_pane {
                             Pane::Episodes => { app.series_episodes.clear(); app.selected_series_episode_index = 0; app.series_episode_list_state.select(None); app.active_pane = Pane::Streams; app.search_mode = false; app.search_state.query.clear(); app.last_search_query.clear(); }
                             Pane::Streams => { app.series_streams.clear(); app.all_series_streams.clear(); app.selected_series_stream_index = 0; app.series_stream_list_state.select(None); app.active_pane = Pane::Categories; app.search_mode = false; app.search_state.query.clear(); app.last_search_query.clear(); }
@@ -1642,17 +1620,15 @@ pub async fn handle_key_event(
                         Pane::Streams => app.previous_series_stream(),
                         Pane::Episodes => app.previous_series_episode(),
                     },
-                    KeyCode::Enter => match app.active_pane {
+                    KeyCode::Char('l') | KeyCode::Right => match app.active_pane {
                         Pane::Categories => {
                              if !app.series_categories.is_empty() {
-                                let cat_id = app.series_categories[app.selected_series_category_index].category_id.clone();
-                                if cat_id == "ALL" && !app.global_all_series_streams.is_empty() {
-                                    app.all_series_streams = app.global_all_series_streams.clone();
-                                    app.series_streams = app.all_series_streams.clone();
+                                let idx = app.selected_series_category_index;
+                                if !app.global_all_series_streams.is_empty() {
+                                    app.select_series_category(idx);
                                     app.active_pane = Pane::Streams;
-                                    app.selected_series_stream_index = 0;
-                                    app.series_stream_list_state.select(Some(0));
                                 } else if let Some(client) = &app.current_client {
+                                    let cat_id = app.series_categories[idx].category_id.clone();
                                     let client = client.clone();
                                     let tx = tx.clone();
                                     let pms = app.config.processing_modes.clone();
@@ -1678,6 +1654,71 @@ pub async fn handle_key_event(
                                 if let Some(client) = &app.current_client {
                                     let id = get_id_str(&stream.stream_id);
                                     app.state_loading = true;
+                                    app.loading_message = Some("Loading episodes...".to_string());
+                                    app.active_pane = Pane::Episodes;
+                                    let tx = tx.clone();
+                                    let client = client.clone();
+                                    tokio::spawn(async move {
+                                        match client.get_series_info(&id).await {
+                                            Ok(info) => { let _ = tx.send(AsyncAction::SeriesInfoLoaded(info)).await; }
+                                            Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        Pane::Episodes => {
+                             if !app.series_episodes.is_empty() {
+                                let episode = &app.series_episodes[app.selected_series_episode_index];
+                                if let Some(client) = &app.current_client {
+                                    let id = episode.id.as_ref().map(|v| get_id_str(v)).unwrap_or_default();
+                                    if !id.is_empty() {
+                                        let ext = episode.container_extension.as_deref().unwrap_or("mp4");
+                                        let url = client.get_series_url(&id, ext);
+                                        app.pending_play_url = Some(url);
+                                        app.pending_play_title = episode.title.clone();
+                                        app.show_play_details = true;
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    KeyCode::Enter => match app.active_pane {
+                        Pane::Categories => {
+                             if !app.series_categories.is_empty() {
+                                let idx = app.selected_series_category_index;
+                                if !app.global_all_series_streams.is_empty() {
+                                    app.select_series_category(idx);
+                                    app.active_pane = Pane::Streams;
+                                } else if let Some(client) = &app.current_client {
+                                    let cat_id = app.series_categories[idx].category_id.clone();
+                                    let client = client.clone();
+                                    let tx = tx.clone();
+                                    let pms = app.config.processing_modes.clone();
+                                    let favs = app.config.favorites.vod_streams.clone();
+                                    app.state_loading = true;
+                                    app.loading_message = Some("Loading series...".to_string());
+                                    app.active_pane = Pane::Streams;
+                                    let acc_name_cloned = account_name.clone();
+                                    tokio::spawn(async move {
+                                        match client.get_series_streams(&cat_id).await {
+                                            Ok(mut streams) => {
+                                                preprocessing::preprocess_streams(&mut streams, &favs, &pms, false, &acc_name_cloned, None);
+                                                let _ = tx.send(AsyncAction::SeriesStreamsLoaded(streams, cat_id)).await;
+                                            }
+                                            Err(e) => { let _ = tx.send(AsyncAction::Error(e.to_string())).await; }
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                        Pane::Streams => {
+                            if !app.series_streams.is_empty() {
+                                let stream = &app.series_streams[app.selected_series_stream_index];
+                                if let Some(client) = &app.current_client {
+                                    let id = get_id_str(&stream.stream_id);
+                                    app.state_loading = true;
+                                    app.loading_message = Some("Loading episodes...".to_string());
                                     app.active_pane = Pane::Episodes;
                                     let tx = tx.clone();
                                     let client = client.clone();

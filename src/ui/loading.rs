@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph, Wrap},
+    widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
 use crate::app::App;
@@ -20,7 +20,8 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
         .style(Style::default().fg(Color::DarkGray).bg(Color::Rgb(0, 0, 0)));
     f.render_widget(dim_paragraph, area);
 
-    let popup_area = centered_rect(62, 50, area);
+    // Perfectly fitted fixed-height modal popup
+    let popup_area = centered_rect(80, 9, area);
     f.render_widget(Clear, popup_area);
 
     // Dynamic title: show % when progress is available
@@ -44,31 +45,37 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
 
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .margin(2)
+        .margin(1)
         .constraints([
             Constraint::Length(1), // Hero: spinner + current message
             Constraint::Length(1), // Gap
             Constraint::Length(1), // Progress bar (or empty)
-            Constraint::Length(1), // Gap
-            Constraint::Length(1), // Separator
-            Constraint::Min(4),    // Log stream
+            Constraint::Min(0),    // Spacer
             Constraint::Length(1), // Footer
         ])
         .split(popup_area);
 
     let tick = app.loading_tick;
 
-    // Braille spinner — same chars as Claude Code
-    let spinner_chars = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-    let spinner = spinner_chars[(tick / 2 % spinner_chars.len() as u64) as usize];
+    // Matrix style Katakana spinner and decoding effect
+    let katakana = ['ｦ', 'ｧ', 'ｨ', 'ｩ', 'ｪ', 'ｫ', 'ｬ', 'ｭ', 'ｮ', 'ｯ', 'ｰ', 'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ｶ', 'ｷ', 'ｸ', 'ｹ', 'ｺ', 'ｻ', 'ｼ', 'ｽ', 'ｾ', 'ｿ', 'ﾀ', 'ﾁ', 'ﾂ', 'ﾃ', 'ﾄ', 'ﾅ', 'ﾆ', 'ﾇ', 'ﾈ', 'ﾉ', 'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ', 'ﾎ', 'ﾏ', 'ﾐ', 'ﾑ', 'ﾒ', 'ﾓ', 'ﾔ', 'ﾕ', 'ﾖ', 'ﾗ', 'ﾘ', 'ﾙ', 'ﾚ', 'ﾛ', 'ﾜ', 'ﾝ'];
+    let spinner = katakana[(tick as usize) % katakana.len()];
 
-    let current_msg = app.loading_message.as_deref().unwrap_or("Initializing...");
+    let glitch_len = 8;
+    let mut glitch_str = String::with_capacity(glitch_len);
+    for i in 0..glitch_len {
+        let char_idx = (tick.wrapping_add((i * 13) as u64) as usize) % katakana.len();
+        glitch_str.push(katakana[char_idx]);
+    }
+
+    let current_msg = app.loading_message.as_deref().unwrap_or("Initializing system...");
 
     // ── Hero line ─────────────────────────────────────────────
-    // Claude Code style: spinner glyph directly before the current operation
+    // Matrix style: Katakana spinner + Message + Glitch decoding tail
     let hero = Paragraph::new(Line::from(vec![
-        Span::styled(format!("{} ", spinner), Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(format!("{} ", spinner), Style::default().fg(Color::Rgb(200, 255, 200)).add_modifier(Modifier::BOLD)),
         Span::styled(current_msg, Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
+        Span::styled(format!(" [{}]", glitch_str), Style::default().fg(MATRIX_GREEN)),
     ]));
     f.render_widget(hero, chunks[0]);
 
@@ -101,60 +108,33 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
         f.render_widget(bar_line, chunks[2]);
     }
 
-    // ── Separator ─────────────────────────────────────────────
-    let sep = Block::default()
-        .borders(Borders::BOTTOM)
-        .border_style(Style::default().fg(Color::DarkGray));
-    f.render_widget(sep, chunks[4]);
-
-    // ── Log stream ────────────────────────────────────────────
-    // Most recent entry is brightest; older entries fade to TEXT_DIM.
-    // Uses › chevron (Gemini CLI / Claude Code style)
-    let log_entries: Vec<Line> = app
-        .loading_log
-        .iter()
-        .rev()
-        .take(8)
-        .enumerate()
-        .map(|(i, msg)| {
-            let text_color = if i == 0 { TEXT_SECONDARY } else { TEXT_DIM };
-            Line::from(vec![
-                Span::styled(" › ", Style::default().fg(Color::DarkGray)),
-                Span::styled(msg.as_str(), Style::default().fg(text_color)),
-            ])
-        })
-        .collect();
-
-    let log_p = Paragraph::new(log_entries)
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true });
-    f.render_widget(log_p, chunks[5]);
-
     // ── Footer ────────────────────────────────────────────────
     let footer = Paragraph::new(Line::from(Span::styled(
         "esc to cancel",
         Style::default().fg(TEXT_DIM),
     )))
     .alignment(Alignment::Center);
-    f.render_widget(footer, chunks[6]);
+    f.render_widget(footer, chunks[4]);
 }
 
-fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {
+fn centered_rect(percent_x: u16, height: u16, r: Rect) -> Rect {
+    let vertical_margin = r.height.saturating_sub(height) / 2;
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Percentage((100 - percent_y) / 2),
-            Constraint::Percentage(percent_y),
-            Constraint::Percentage((100 - percent_y) / 2),
+            Constraint::Length(vertical_margin),
+            Constraint::Length(height),
+            Constraint::Min(0),
         ])
         .split(r);
 
+    let horizontal_margin = (100_u16.saturating_sub(percent_x)) / 2;
     Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Percentage(horizontal_margin),
             Constraint::Percentage(percent_x),
-            Constraint::Percentage((100 - percent_x) / 2),
+            Constraint::Min(0),
         ])
         .split(popup_layout[1])[1]
 }

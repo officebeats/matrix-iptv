@@ -1,5 +1,5 @@
 use crate::app::{App, AsyncAction, CurrentScreen, Pane};
-use crate::api::{Stream, get_id_str, SeriesEpisode, Category};
+use crate::api::{Stream, SeriesEpisode, Category};
 use crate::{preprocessing, parser};
 use crate::cache::CachedCatalog;
 use tokio::sync::mpsc;
@@ -217,6 +217,9 @@ pub async fn handle_async_action(
                 }
             }
         }
+        AsyncAction::PartialChannelsLoaded(streams) => {
+            app.on_channels_loaded(streams, false);
+        }
         AsyncAction::LoginFailed(e) => {
             app.login_error = Some(e);
             app.state_loading = false;
@@ -357,18 +360,46 @@ pub async fn handle_async_action(
             }
         }
         AsyncAction::TotalChannelsLoaded(streams) => {
+            let tx_clone = tx.clone();
+            let tz = app.provider_timezone.clone();
+            let _ = tx.try_send(AsyncAction::LoadingMessage("Offloading stream processing ops...".to_string()));
+            
+            tokio::task::spawn_blocking(move || {
+                let mut wrapped: Vec<Arc<Stream>> = streams.into_iter().map(Arc::new).collect();
+                crate::app::App::pre_cache_parsed(&mut wrapped, tz.as_deref());
+                
+                let mut counts = std::collections::HashMap::new();
+                let mut by_cat = std::collections::HashMap::new();
+                for s in &wrapped {
+                    if let Some(ref cid) = s.category_id {
+                        *counts.entry(cid.clone()).or_insert(0) += 1;
+                        by_cat.entry(cid.clone()).or_insert_with(Vec::new).push(s.clone());
+                    }
+                }
+                
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::FinalizeChannelsLoaded {
+                    streams: wrapped,
+                    counts,
+                    by_cat,
+                });
+            });
+        }
+        AsyncAction::FinalizeChannelsLoaded { streams, counts, by_cat } => {
             let count = streams.len();
             app.total_channels = count;
-            app.global_all_streams = streams.into_iter().map(Arc::new).collect();
-            let tz = app.provider_timezone.clone();
-            App::pre_cache_parsed(&mut app.global_all_streams, tz.as_deref());
+            app.global_all_streams = streams;
+            
+            // Fast O(1) map injections on the main thread
+            app.category_channel_counts.retain(|k, _| app.global_vod_streams_by_cat.contains_key(k) || app.global_series_streams_by_cat.contains_key(k));
+            for (k, v) in counts {
+                *app.category_channel_counts.entry(k).or_insert(0) += v;
+            }
+            app.global_streams_by_cat = by_cat;
+
             if let Some(account) = app.config.accounts.get_mut(app.selected_account_index) {
                 account.total_channels = Some(count);
                 let _ = app.config.save();
             }
-
-            // Build category → channel count map for UI display
-            app.build_category_counts();
 
             // Save to cache for instant startup on next launch
             let account_name = app.config.accounts.get(app.selected_account_index)
@@ -376,75 +407,78 @@ pub async fn handle_async_action(
             let account_url = app.config.accounts.get(app.selected_account_index)
                 .map(|a| a.base_url.clone()).unwrap_or_default();
             
-            // Offload heavy cloning and saving to blocking thread
-            let live_categories: Vec<_> = app.all_categories.iter().map(|c| (**c).clone()).collect();
-            let live_streams: Vec<_> = app.global_all_streams.iter().map(|s| (**s).clone()).collect();
-            let vod_categories: Vec<_> = app.all_vod_categories.iter().map(|c| (**c).clone()).collect();
-            let vod_streams: Vec<_> = app.global_all_vod_streams.iter().map(|s| (**s).clone()).collect();
-            let series_categories: Vec<_> = app.all_series_categories.iter().map(|c| (**c).clone()).collect();
-            let series_streams: Vec<_> = app.global_all_series_streams.iter().map(|s| (**s).clone()).collect();
+            let arc_live_categories = app.all_categories.clone();
+            let arc_live_streams = app.global_all_streams.clone();
+            let arc_vod_categories = app.all_vod_categories.clone();
+            let arc_vod_streams = app.global_all_vod_streams.clone();
+            let arc_series_categories = app.all_series_categories.clone();
+            let arc_series_streams = app.global_all_series_streams.clone();
+            
             let category_counts = app.category_channel_counts.clone().into_iter().collect();
             let processing_modes = app.config.processing_modes.clone();
             let total_channels = app.total_channels;
             let total_movies = app.total_movies;
             let total_series = app.total_series;
-
+            
+            let tx_clone = tx.clone();
             tokio::task::spawn_blocking(move || {
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::LoadingMessage("Extracting background reference state...".to_string()));
+
+                let live_categories: Vec<_> = arc_live_categories.iter().map(|c| (**c).clone()).collect();
+                let live_streams: Vec<_> = arc_live_streams.iter().map(|s| (**s).clone()).collect();
+                let vod_categories: Vec<_> = arc_vod_categories.iter().map(|c| (**c).clone()).collect();
+                let vod_streams: Vec<_> = arc_vod_streams.iter().map(|s| (**s).clone()).collect();
+                let series_categories: Vec<_> = arc_series_categories.iter().map(|c| (**c).clone()).collect();
+                let series_streams: Vec<_> = arc_series_streams.iter().map(|s| (**s).clone()).collect();
+
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::LoadingMessage("Updating Matrix Database Cache...".to_string()));
+
                 let cache = CachedCatalog {
                     version: 1,
-                    cached_at: SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs(),
-                    account_name,
-                    account_url,
-                    live_categories,
-                    live_streams,
-                    vod_categories,
-                    vod_streams,
-                    series_categories,
-                    series_streams,
-                    total_channels,
-                    total_movies,
-                    total_series,
-                    category_counts,
-                    processing_modes,
+                    cached_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                    account_name, account_url, live_categories, live_streams, vod_categories, vod_streams, series_categories, series_streams,
+                    total_channels, total_movies, total_series, category_counts, processing_modes,
                 };
                 let _ = cache.save();
+                
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::LoadingMessage("Cache Saved Successfully.".to_string()));
             });
 
-            // Refresh view context-aware:
-            // Instead of dumping ALL streams into the view (which overwrites specific category views),
-            // re-select the current category to trigger the new auto-filtering logic.
-            // This ensures if the user navigated to "Sports" while loading, they see "Sports", not "All".
             let current_idx = app.selected_category_index;
             app.select_category(current_idx);
-
-            // If user triggered this load from the Categories screen on "ALL", switch to Streams
-            // (REMOVED: by user request, we want to stay on the categories view after background fetch completes)
-            /*
-            let on_categories = app.current_screen == crate::app::CurrentScreen::Categories;
-            let selected_all = app.categories.get(app.selected_category_index)
-                .map(|c| c.category_id == "ALL").unwrap_or(false);
-            if on_categories && selected_all && app.state_loading {
-                app.current_screen = crate::app::CurrentScreen::Streams;
-                app.active_pane = crate::app::Pane::Streams;
-                app.category_grid_view = false;
-                app.selected_stream_index = 0;
-                app.stream_list_state.select(Some(0));
-            }
-            */
 
             app.state_loading = false;
             app.loading_message = None;
             app.loading_progress = None;
         }
         AsyncAction::TotalMoviesLoaded(streams) => {
+            let tx_clone = tx.clone();
+            let tz = app.provider_timezone.clone();
+            let _ = tx.try_send(AsyncAction::LoadingMessage("Offloading movie processing ops...".to_string()));
+            
+            tokio::task::spawn_blocking(move || {
+                let mut wrapped: Vec<Arc<Stream>> = streams.into_iter().map(Arc::new).collect();
+                crate::app::App::pre_cache_parsed(&mut wrapped, tz.as_deref());
+                
+                let mut by_cat = std::collections::HashMap::new();
+                for s in &wrapped {
+                    if let Some(ref cid) = s.category_id {
+                        by_cat.entry(cid.clone()).or_insert_with(Vec::new).push(s.clone());
+                    }
+                }
+                
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::FinalizeMoviesLoaded {
+                    streams: wrapped,
+                    by_cat,
+                });
+            });
+        }
+        AsyncAction::FinalizeMoviesLoaded { streams, by_cat } => {
             let count = streams.len();
             app.total_movies = count;
-            app.global_all_vod_streams = streams.into_iter().map(Arc::new).collect();
-            let tz = app.provider_timezone.clone();
-            App::pre_cache_parsed(&mut app.global_all_vod_streams, tz.as_deref());
+            app.global_all_vod_streams = streams;
+            app.global_vod_streams_by_cat = by_cat;
+
             if let Some(account) = app.config.accounts.get_mut(app.selected_account_index) {
                 account.total_movies = Some(count);
                 let _ = app.config.save();
@@ -456,41 +490,41 @@ pub async fn handle_async_action(
             let account_url = app.config.accounts.get(app.selected_account_index)
                 .map(|a| a.base_url.clone()).unwrap_or_default();
             
-            // Offload heavy cloning and saving to blocking thread
-            let live_categories: Vec<_> = app.all_categories.iter().map(|c| (**c).clone()).collect();
-            let live_streams: Vec<_> = app.global_all_streams.iter().map(|s| (**s).clone()).collect();
-            let vod_categories: Vec<_> = app.all_vod_categories.iter().map(|c| (**c).clone()).collect();
-            let vod_streams: Vec<_> = app.global_all_vod_streams.iter().map(|s| (**s).clone()).collect();
-            let series_categories: Vec<_> = app.all_series_categories.iter().map(|c| (**c).clone()).collect();
-            let series_streams: Vec<_> = app.global_all_series_streams.iter().map(|s| (**s).clone()).collect();
+            let arc_live_categories = app.all_categories.clone();
+            let arc_live_streams = app.global_all_streams.clone();
+            let arc_vod_categories = app.all_vod_categories.clone();
+            let arc_vod_streams = app.global_all_vod_streams.clone();
+            let arc_series_categories = app.all_series_categories.clone();
+            let arc_series_streams = app.global_all_series_streams.clone();
+            
             let category_counts = app.category_channel_counts.clone().into_iter().collect();
             let processing_modes = app.config.processing_modes.clone();
             let total_channels = app.total_channels;
             let total_movies = app.total_movies;
             let total_series = app.total_series;
-
+            
+            let tx_clone = tx.clone();
             tokio::task::spawn_blocking(move || {
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::LoadingMessage("Extracting background reference state...".to_string()));
+
+                let live_categories: Vec<_> = arc_live_categories.iter().map(|c| (**c).clone()).collect();
+                let live_streams: Vec<_> = arc_live_streams.iter().map(|s| (**s).clone()).collect();
+                let vod_categories: Vec<_> = arc_vod_categories.iter().map(|c| (**c).clone()).collect();
+                let vod_streams: Vec<_> = arc_vod_streams.iter().map(|s| (**s).clone()).collect();
+                let series_categories: Vec<_> = arc_series_categories.iter().map(|c| (**c).clone()).collect();
+                let series_streams: Vec<_> = arc_series_streams.iter().map(|s| (**s).clone()).collect();
+
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::LoadingMessage("Updating Matrix Database Cache...".to_string()));
+
                 let cache = CachedCatalog {
                     version: 1,
-                    cached_at: SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs(),
-                    account_name,
-                    account_url,
-                    live_categories,
-                    live_streams,
-                    vod_categories,
-                    vod_streams,
-                    series_categories,
-                    series_streams,
-                    total_channels,
-                    total_movies,
-                    total_series,
-                    category_counts,
-                    processing_modes,
+                    cached_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                    account_name, account_url, live_categories, live_streams, vod_categories, vod_streams, series_categories, series_streams,
+                    total_channels, total_movies, total_series, category_counts, processing_modes,
                 };
                 let _ = cache.save();
+                
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::LoadingMessage("Cache Saved Successfully.".to_string()));
             });
 
             if app.search_mode { app.update_search(); }
@@ -498,11 +532,33 @@ pub async fn handle_async_action(
             app.loading_message = None;
         }
         AsyncAction::TotalSeriesLoaded(series) => {
-            let count = series.len();
-            app.total_series = count;
-            app.global_all_series_streams = series.into_iter().map(Arc::new).collect();
+            let tx_clone = tx.clone();
             let tz = app.provider_timezone.clone();
-            App::pre_cache_parsed(&mut app.global_all_series_streams, tz.as_deref());
+            let _ = tx.try_send(AsyncAction::LoadingMessage("Offloading series processing ops...".to_string()));
+            
+            tokio::task::spawn_blocking(move || {
+                let mut wrapped: Vec<Arc<Stream>> = series.into_iter().map(Arc::new).collect();
+                crate::app::App::pre_cache_parsed(&mut wrapped, tz.as_deref());
+                
+                let mut by_cat = std::collections::HashMap::new();
+                for s in &wrapped {
+                    if let Some(ref cid) = s.category_id {
+                        by_cat.entry(cid.clone()).or_insert_with(Vec::new).push(s.clone());
+                    }
+                }
+                
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::FinalizeSeriesLoaded {
+                    streams: wrapped,
+                    by_cat,
+                });
+            });
+        }
+        AsyncAction::FinalizeSeriesLoaded { streams, by_cat } => {
+            let count = streams.len();
+            app.total_series = count;
+            app.global_all_series_streams = streams;
+            app.global_series_streams_by_cat = by_cat;
+
             if let Some(account) = app.config.accounts.get_mut(app.selected_account_index) {
                 account.total_series = Some(count);
                 let _ = app.config.save();
@@ -514,41 +570,42 @@ pub async fn handle_async_action(
             let account_url = app.config.accounts.get(app.selected_account_index)
                 .map(|a| a.base_url.clone()).unwrap_or_default();
             
-            // Offload heavy cloning and saving to blocking thread
-            let live_categories: Vec<_> = app.all_categories.iter().map(|c| (**c).clone()).collect();
-            let live_streams: Vec<_> = app.global_all_streams.iter().map(|s| (**s).clone()).collect();
-            let vod_categories: Vec<_> = app.all_vod_categories.iter().map(|c| (**c).clone()).collect();
-            let vod_streams: Vec<_> = app.global_all_vod_streams.iter().map(|s| (**s).clone()).collect();
-            let series_categories: Vec<_> = app.all_series_categories.iter().map(|c| (**c).clone()).collect();
-            let series_streams: Vec<_> = app.global_all_series_streams.iter().map(|s| (**s).clone()).collect();
+            let arc_live_categories = app.all_categories.clone();
+            let arc_live_streams = app.global_all_streams.clone();
+            let arc_vod_categories = app.all_vod_categories.clone();
+            let arc_vod_streams = app.global_all_vod_streams.clone();
+            let arc_series_categories = app.all_series_categories.clone();
+            let arc_series_streams = app.global_all_series_streams.clone();
+            
             let category_counts = app.category_channel_counts.clone().into_iter().collect();
             let processing_modes = app.config.processing_modes.clone();
             let total_channels = app.total_channels;
             let total_movies = app.total_movies;
             let total_series = app.total_series;
-
+            
+            let tx_clone = tx.clone();
             tokio::task::spawn_blocking(move || {
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::LoadingMessage("Extracting background reference state...".to_string()));
+
+                let live_categories: Vec<_> = arc_live_categories.iter().map(|c| (**c).clone()).collect();
+                let live_streams: Vec<_> = arc_live_streams.iter().map(|s| (**s).clone()).collect();
+                let vod_categories: Vec<_> = arc_vod_categories.iter().map(|c| (**c).clone()).collect();
+                let vod_streams: Vec<_> = arc_vod_streams.iter().map(|s| (**s).clone()).collect();
+                let series_categories: Vec<_> = arc_series_categories.iter().map(|c| (**c).clone()).collect();
+                let series_streams: Vec<_> = arc_series_streams.iter().map(|s| (**s).clone()).collect();
+
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::LoadingMessage("Updating Matrix Database Cache...".to_string()));
+
                 let cache = CachedCatalog {
                     version: 1,
-                    cached_at: SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .unwrap_or_default()
-                        .as_secs(),
-                    account_name,
-                    account_url,
-                    live_categories,
-                    live_streams,
-                    vod_categories,
-                    vod_streams,
-                    series_categories,
-                    series_streams,
-                    total_channels,
-                    total_movies,
-                    total_series,
-                    category_counts,
-                    processing_modes,
+                    cached_at: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
+                    account_name, account_url, live_categories, live_streams, vod_categories, vod_streams, series_categories, series_streams,
+                    total_channels, total_movies, total_series, category_counts, processing_modes,
                 };
                 let _ = cache.save();
+
+                
+                let _ = tx_clone.blocking_send(crate::app::AsyncAction::LoadingMessage("Cache Saved Successfully.".to_string()));
             });
 
             if app.search_mode { app.update_search(); }
@@ -761,64 +818,64 @@ pub fn spawn_live_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
             let total      = cat_info.len();
 
             let _ = tx.send(AsyncAction::LoadingMessage(format!(
-                "{} mode: fetching {} filtered categories...", mode_label, total
+                "{} mode: pipelining {} categories...", mode_label, total
             ))).await;
 
             let sem = std::sync::Arc::new(tokio::sync::Semaphore::new(8));
-            let mut handles: Vec<tokio::task::JoinHandle<Vec<crate::api::Stream>>> =
-                Vec::with_capacity(total);
+            let mut set = tokio::task::JoinSet::new();
 
-            for (cat_id, _) in &cat_info {
+            for (cat_id, c_name) in &cat_info {
                 let c      = client.clone();
                 let cid    = cat_id.clone();
+                let c_n    = c_name.clone();
                 let permit = sem.clone();
-                handles.push(tokio::spawn(async move {
+                set.spawn(async move {
                     let _p = permit.acquire().await.unwrap();
-                    tokio::time::sleep(std::time::Duration::from_millis(80)).await;
-                    c.get_live_streams(&cid, None).await.unwrap_or_default()
-                }));
+                    let streams = c.get_live_streams(&cid, None).await.unwrap_or_default();
+                    (streams, c_n)
+                });
             }
 
-            let mut all_streams: Vec<crate::api::Stream> = Vec::new();
-            for (i, handle) in handles.into_iter().enumerate() {
-                if let Ok(streams) = handle.await {
-                    all_streams.extend(streams);
+            let mut completed = 0;
+            let mut all_collected = Vec::new();
+            while let Some(res) = set.join_next().await {
+                match res {
+                    Ok((mut streams, cat_name)) => {
+                        completed += 1;
+                        if !streams.is_empty() {
+                            // Immediate Preprocessing for Pipelined Results
+                            let favs_c = stream_favs.clone();
+                            let pms_c = pms.clone();
+                            let acc_c = account_name.clone();
+                            let tx_c = tx.clone();
+                            
+                            tokio::task::block_in_place(|| {
+                                preprocessing::preprocess_streams(
+                                    &mut streams, &favs_c, &pms_c, true, &acc_c, Some(tx_c),
+                                );
+                            });
+                            
+                            all_collected.extend(streams.clone());
+                            let _ = tx.send(AsyncAction::PartialChannelsLoaded(streams)).await;
+                        }
+
+                        let pct        = (completed * 100) / total;
+                        let bar_filled = pct / 5;
+                        let bar_empty  = 20usize.saturating_sub(bar_filled);
+                        let bar        = format!("{}{}", "█".repeat(bar_filled), "░".repeat(bar_empty));
+                        let _ = tx.send(AsyncAction::LoadingMessage(format!(
+                            "{} mode [{}/{}]  {}%  [{}]  streaming · {}",
+                            mode_label, completed, total, pct, bar, cat_name
+                        ))).await;
+                    }
+                    Err(_) => {
+                        completed += 1;
+                    }
                 }
-                let completed  = i + 1;
-                let pct        = (completed * 100) / total;
-                let bar_filled = pct / 5;
-                let bar_empty  = 20usize.saturating_sub(bar_filled);
-                let bar        = format!("{}{}", "█".repeat(bar_filled), "░".repeat(bar_empty));
-                let cat_name   = &cat_info[i].1;
-                let _ = tx.send(AsyncAction::LoadingMessage(format!(
-                    "{} mode [{}/{}]  {}%  [{}]  {} found · {}",
-                    mode_label, completed, total, pct, bar, all_streams.len(), cat_name
-                ))).await;
             }
-
-            // Deduplicate (some providers list the same stream in multiple categories)
-            {
-                use std::collections::HashSet;
-                let mut seen = HashSet::with_capacity(all_streams.len());
-                all_streams.retain(|s| seen.insert(crate::api::get_id_str(&s.stream_id)));
-            }
-
-            let _ = tx.send(AsyncAction::LoadingMessage(format!(
-                "Processing {} {} channels...", all_streams.len(), mode_label
-            ))).await;
-
-            let tx_clone = tx.clone();
-            let result = tokio::task::spawn_blocking(move || {
-                preprocessing::preprocess_streams(
-                    &mut all_streams, &stream_favs, &pms, true, &account_name, Some(tx_clone),
-                );
-                all_streams
-            }).await;
-
-            if let Ok(processed) = result {
-                let _ = tx.send(AsyncAction::TotalChannelsLoaded(processed)).await;
-            }
+            let _ = tx.send(AsyncAction::TotalChannelsLoaded(all_collected)).await;
             return;
+
         }
 
         // ── FAST PATH ────────────────────────────────────────────────────────────
@@ -835,14 +892,13 @@ pub fn spawn_live_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
                     "Phase 2/3: Preprocessing & deduplicating {} channels...", count
                 ))).await;
 
-                // Offload CPU-heavy rayon work to a blocking thread
                 let tx_clone = tx.clone();
-                let result = tokio::task::spawn_blocking(move || {
+                tokio::task::block_in_place(|| {
                     preprocessing::preprocess_streams(
                         &mut all_streams, &stream_favs, &pms, true, &account_name, Some(tx_clone),
                     );
-                    all_streams
-                }).await;
+                });
+                let result: Result<Vec<Stream>, String> = Ok(all_streams);
 
                 match result {
                     Ok(processed) => {
@@ -879,7 +935,6 @@ pub fn spawn_live_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
 
         for (i, (cat_id, cat_name)) in cat_info.into_iter().enumerate() {
             let _permit = sem.acquire().await.unwrap();
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
             let completed  = i + 1;
             let pct        = (completed * 100) / total_cats;
@@ -912,12 +967,12 @@ pub fn spawn_live_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
         ))).await;
 
         let tx_clone = tx.clone();
-        let result = tokio::task::spawn_blocking(move || {
+        tokio::task::block_in_place(|| {
             preprocessing::preprocess_streams(
                 &mut all_streams, &stream_favs, &pms, true, &account_name, Some(tx_clone),
             );
-            all_streams
-        }).await;
+        });
+        let result: Result<Vec<Stream>, String> = Ok(all_streams);
 
         if let Ok(processed) = result {
             let _ = tx.send(AsyncAction::TotalChannelsLoaded(processed)).await;
@@ -949,10 +1004,8 @@ pub fn spawn_vod_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
                     let _ = tx.send(AsyncAction::LoadingMessage(format!("Received {} movies. Processing metadata...", count))).await;
                     
                     let tx_clone = tx.clone();
-                    let result = tokio::task::spawn_blocking(move || {
-                        preprocessing::preprocess_streams(&mut streams, &vod_favs, &pms, false, &account_name, Some(tx_clone));
-                        streams
-                    }).await;
+                    preprocessing::preprocess_streams(&mut streams, &vod_favs, &pms, false, &account_name, Some(tx_clone));
+                    let result: Result<Vec<Stream>, String> = Ok(streams);
                     
                     if let Ok(processed) = result {
                         let _ = tx.send(AsyncAction::TotalMoviesLoaded(processed)).await;
@@ -1006,14 +1059,11 @@ pub fn spawn_vod_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
             });
         }
 
-        let _ = tx.send(AsyncAction::LoadingMessage(format!(
-            "Processing {} movies...", all_streams.len()
-        ))).await;
         let tx_clone = tx.clone();
-        let result = tokio::task::spawn_blocking(move || {
+        tokio::task::block_in_place(|| {
             preprocessing::preprocess_streams(&mut all_streams, &vod_favs, &pms, false, &account_name, Some(tx_clone));
-            all_streams
-        }).await;
+        });
+        let result: Result<Vec<Stream>, String> = Ok(all_streams);
         if let Ok(processed) = result {
             let _ = tx.send(AsyncAction::TotalMoviesLoaded(processed)).await;
         }
@@ -1044,10 +1094,8 @@ pub fn spawn_series_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
                     let _ = tx.send(AsyncAction::LoadingMessage(format!("Received {} series. Processing metadata...", count))).await;
                     
                     let tx_clone = tx.clone();
-                    let result = tokio::task::spawn_blocking(move || {
-                        preprocessing::preprocess_streams(&mut streams, &series_favs, &pms, false, &account_name, Some(tx_clone));
-                        streams
-                    }).await;
+                    preprocessing::preprocess_streams(&mut streams, &series_favs, &pms, false, &account_name, Some(tx_clone));
+                    let result: Result<Vec<Stream>, String> = Ok(streams);
                     
                     if let Ok(processed) = result {
                         let _ = tx.send(AsyncAction::TotalSeriesLoaded(processed)).await;
@@ -1101,14 +1149,11 @@ pub fn spawn_series_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
             });
         }
 
-        let _ = tx.send(AsyncAction::LoadingMessage(format!(
-            "Processing {} series...", all_streams.len()
-        ))).await;
         let tx_clone = tx.clone();
-        let result = tokio::task::spawn_blocking(move || {
+        tokio::task::block_in_place(|| {
             preprocessing::preprocess_streams(&mut all_streams, &series_favs, &pms, false, &account_name, Some(tx_clone));
-            all_streams
-        }).await;
+        });
+        let result: Result<Vec<Stream>, String> = Ok(all_streams);
         if let Ok(processed) = result {
             let _ = tx.send(AsyncAction::TotalSeriesLoaded(processed)).await;
         }

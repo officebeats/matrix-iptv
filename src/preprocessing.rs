@@ -99,6 +99,11 @@ pub fn preprocess_categories(
             c.clean_name = c.category_name.clone();
         }
         c.search_name = c.clean_name.to_lowercase();
+        
+        // Cache parsed metadata to enable O(1) TUI rendering
+        if c.cached_parsed.is_none() {
+            c.cached_parsed = Some(Box::new(crate::parser::parse_category(&c.category_name)));
+        }
     });
 
     // 3. Sort - Parallelized
@@ -132,7 +137,6 @@ pub fn preprocess_streams(
     _account_name: &str,
     tx: Option<tokio::sync::mpsc::Sender<crate::app::AsyncAction>>,
 ) {
-    use rayon::prelude::*;
     use crate::api::get_id_str;
 
     let use_merica = modes.contains(&crate::config::ProcessingMode::Merica);
@@ -191,71 +195,68 @@ pub fn preprocess_streams(
         keep
     });
 
-    // 2. Process (Clean names & Metadata) - Parallelized but chunked for progress reporting
+    // 2. Process (Clean names & Metadata) - Parallelized via Rayon
+    use rayon::prelude::*;
     let should_clean = use_merica;
-    let total_streams = streams.len();
-    if total_streams > 0 {
-        let chunk_size = (total_streams / 20).max(1); // 5% chunks
-        for (i, chunk) in streams.chunks_mut(chunk_size).enumerate() {
-            let current = (i * chunk_size).min(total_streams);
-            let pct = if total_streams > 0 { (current * 100) / total_streams } else { 0 };
-            
-            if let Some(ref tx) = tx {
-                let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
-                    format!("Phase 2/3: Cleaning metadata... {}%", pct)
-                ));
-            }
-            
-            chunk.par_iter_mut().for_each(|s| {
-                if should_clean {
-                    s.clean_name = crate::parser::clean_american_name(&s.name);
-                    s.name = s.clean_name.clone(); 
-                } else {
-                    s.clean_name = s.name.clone();
-                };
-                
-                // Sports Mode Icon Prefixing
-                if use_sports && is_live {
-                    if let Some(league) = s.epg_channel_id.as_ref().or(Some(&s.name)) {
-                        let lower = league.to_lowercase();
-                        if lower.contains("nba") { s.clean_name = format!("🏀 {}", s.clean_name); }
-                        else if lower.contains("nfl") { s.clean_name = format!("🏈 {}", s.clean_name); }
-                        else if lower.contains("mlb") { s.clean_name = format!("⚾ {}", s.clean_name); }
-                        else if lower.contains("nhl") { s.clean_name = format!("🏒 {}", s.clean_name); }
-                    }
-                }
-
-                s.stream_display_name = Some(s.clean_name.clone());
-                s.search_name = s.clean_name.to_lowercase();
-                s.account_name = Some(_account_name.to_string());
-            });
-        }
-    }
     
     if let Some(ref tx) = tx {
         let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
-            format!("Phase 3/3: Sorting {} streams algorithmically...", streams.len())
+            format!("Phase 2/3: Cleaning metadata for {} streams (Multi-Core)...", streams.len())
         ));
     }
 
-    // 3. Sort - Parallelized
-    streams.par_sort_by(|a, b| {
+    streams.par_iter_mut().for_each(|s| {
+        if should_clean {
+            s.clean_name = crate::parser::clean_american_name(&s.name);
+            s.name = s.clean_name.clone(); 
+        } else {
+            s.clean_name = s.name.clone();
+        }
+        
+        // Sports Mode Icon Prefixing
+        if use_sports && is_live {
+            if let Some(league) = s.epg_channel_id.as_ref().or(Some(&s.name)) {
+                let lower = league.to_lowercase();
+                if lower.contains("nba") { s.clean_name = format!("🏀 {}", s.clean_name); }
+                else if lower.contains("nfl") { s.clean_name = format!("🏈 {}", s.clean_name); }
+                else if lower.contains("mlb") { s.clean_name = format!("⚾ {}", s.clean_name); }
+                else if lower.contains("nhl") { s.clean_name = format!("🏒 {}", s.clean_name); }
+            }
+        }
+
+        s.stream_display_name = Some(s.clean_name.clone());
+        s.search_name = s.clean_name.to_lowercase();
+        s.account_name = Some(_account_name.to_string());
+
+        // Cache parsed metadata to enable O(1) TUI rendering
+        if s.cached_parsed.is_none() {
+            s.cached_parsed = Some(Box::new(crate::parser::parse_stream(&s.name, None)));
+        }
+    });
+    
+    // 3. Sort - Zero-Copy Architectural Pattern
+    streams.sort_by(|a, b| {
         let a_id = get_id_str(&a.stream_id);
         let b_id = get_id_str(&b.stream_id);
         let a_fav = favorites.contains(&a_id);
         let b_fav = favorites.contains(&b_id);
         
+        // Tier 1: Favorites Hoisting
         match (a_fav, b_fav) {
-            (true, false) => std::cmp::Ordering::Less,
-            (false, true) => std::cmp::Ordering::Greater,
-            _ => {
-                let a_num = a.num.as_ref().and_then(|v| v.as_i64()).unwrap_or(i64::MAX) as u64;
-                let b_num = b.num.as_ref().and_then(|v| v.as_i64()).unwrap_or(i64::MAX) as u64;
-                match a_num.cmp(&b_num) {
-                    std::cmp::Ordering::Equal => a.name.cmp(&b.name),
-                    other => other,
-                }
-            }
+            (true, false) => return std::cmp::Ordering::Less,
+            (false, true) => return std::cmp::Ordering::Greater,
+            _ => {}
         }
+
+        // Tier 2: Numerical Order (Provider Num)
+        let a_num = a.num.as_ref().and_then(|v| v.as_i64()).unwrap_or(i64::MAX);
+        let b_num = b.num.as_ref().and_then(|v| v.as_i64()).unwrap_or(i64::MAX);
+        match a_num.cmp(&b_num) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+
+        // Tier 3: Lexicographical fallback (O(1) reference comparison)
+        a.name.cmp(&b.name)
     });
 }

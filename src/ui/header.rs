@@ -67,59 +67,47 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
     let right_inner = right_block.inner(chunks[1]);
     f.render_widget(right_block, chunks[1]);
 
-    // Breadcrumb Content
-    let breadcrumb_parts: Vec<(&str, bool)> = match app.current_screen {
-        CurrentScreen::Home => vec![("home", true)],
-        CurrentScreen::Categories => vec![("home", false), ("tv", true)],
-        CurrentScreen::Streams => {
-            vec![("home", false), ("tv", false), ("streams", true)]
-        },
-        CurrentScreen::VodCategories => vec![("home", false), ("movies", true)],
-        CurrentScreen::VodStreams => vec![("home", false), ("movies", false), ("browse", true)],
-        CurrentScreen::SeriesCategories => vec![("home", false), ("series", true)],
-        CurrentScreen::SeriesStreams => vec![("home", false), ("series", false), ("browse", true)],
-        CurrentScreen::Settings => vec![("home", false), ("settings", true)],
-        CurrentScreen::SportsDashboard => vec![("home", false), ("sports", true)],
-        CurrentScreen::GlobalSearch => vec![("home", false), ("search", true)],
-        _ => vec![("matrix-iptv", true)],
-    };
-
     let mut left_spans: Vec<Span> = Vec::new();
     
-    for (i, (part, is_active)) in breadcrumb_parts.iter().enumerate() {
-        if i > 0 {
+    // Breadcrumb Content setup
+    let mut add_breadcrumb = |text: &str, is_active: bool| {
+        if !left_spans.is_empty() {
             left_spans.push(Span::styled(" › ", Style::default().fg(TEXT_DIM)));
         }
-        if *is_active {
-            left_spans.push(Span::styled(*part, Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
+        if is_active {
+            left_spans.push(Span::styled(text.to_string(), Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
         } else {
-            left_spans.push(Span::styled(*part, Style::default().fg(TEXT_SECONDARY)));
+            left_spans.push(Span::styled(text.to_string(), Style::default().fg(TEXT_SECONDARY)));
         }
-    }
+    };
 
-    // Mode keys (Filter-like look)
-    if !app.config.processing_modes.is_empty() {
-        left_spans.push(Span::styled("  │  ", Style::default().fg(TEXT_DIM))); // Separator like a filter bar
-        
-        let mut first = true;
-        for mode in &app.config.processing_modes {
-            if !first {
-                left_spans.push(Span::styled(" ", Style::default()));
+    match app.current_screen {
+        CurrentScreen::Home => add_breadcrumb("home", true),
+        CurrentScreen::Categories => { add_breadcrumb("home", false); add_breadcrumb("tv", true); },
+        CurrentScreen::Streams => {
+            add_breadcrumb("home", false); add_breadcrumb("tv", false); add_breadcrumb("streams", false);
+            if let Some(cat) = app.categories.get(app.selected_category_index) {
+                add_breadcrumb(&cat.category_name, true);
             }
-            first = false;
-
-            match mode {
-                crate::config::ProcessingMode::Merica => {
-                    left_spans.push(Span::styled("'MERICA", Style::default().fg(Color::Rgb(0, 0, 0)).bg(Color::Rgb(255, 200, 80)).add_modifier(Modifier::BOLD)));
-                }
-                crate::config::ProcessingMode::Sports => {
-                    left_spans.push(Span::styled("SPORTS", Style::default().fg(Color::Rgb(0, 0, 0)).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
-                }
-                crate::config::ProcessingMode::AllEnglish => {
-                    left_spans.push(Span::styled("EN", Style::default().fg(Color::Rgb(0, 0, 0)).bg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)));
-                }
+        },
+        CurrentScreen::VodCategories => { add_breadcrumb("home", false); add_breadcrumb("movies", true); },
+        CurrentScreen::VodStreams => {
+            add_breadcrumb("home", false); add_breadcrumb("movies", false); add_breadcrumb("browse", false);
+            if let Some(cat) = app.vod_categories.get(app.selected_vod_category_index) {
+                add_breadcrumb(&cat.category_name, true);
             }
-        }
+        },
+        CurrentScreen::SeriesCategories => { add_breadcrumb("home", false); add_breadcrumb("series", true); },
+        CurrentScreen::SeriesStreams => {
+            add_breadcrumb("home", false); add_breadcrumb("series", false); add_breadcrumb("browse", false);
+            if let Some(cat) = app.series_categories.get(app.selected_series_category_index) {
+                add_breadcrumb(&cat.category_name, true);
+            }
+        },
+        CurrentScreen::Settings => { add_breadcrumb("home", false); add_breadcrumb("settings", true); },
+        CurrentScreen::SportsDashboard => { add_breadcrumb("home", false); add_breadcrumb("sports", true); },
+        CurrentScreen::GlobalSearch => { add_breadcrumb("home", false); add_breadcrumb("search", true); },
+        _ => add_breadcrumb("matrix-iptv", true),
     }
 
     // Background refresh
@@ -154,6 +142,31 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
         };
 
         let mut right_spans = Vec::new();
+        
+        // Mode keys (Filter-like look) - Moved to right side
+        if !app.config.processing_modes.is_empty() {
+            let mut first = true;
+            for mode in &app.config.processing_modes {
+                if !first {
+                    right_spans.push(Span::styled(" ", Style::default()));
+                }
+                first = false;
+
+                match mode {
+                    crate::config::ProcessingMode::Merica => {
+                        right_spans.push(Span::styled("'MERICA", Style::default().fg(Color::Rgb(0, 0, 0)).bg(Color::Rgb(255, 200, 80)).add_modifier(Modifier::BOLD)));
+                    }
+                    crate::config::ProcessingMode::Sports => {
+                        right_spans.push(Span::styled("SPORTS", Style::default().fg(Color::Rgb(0, 0, 0)).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
+                    }
+                    crate::config::ProcessingMode::AllEnglish => {
+                        right_spans.push(Span::styled("EN", Style::default().fg(Color::Rgb(0, 0, 0)).bg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)));
+                    }
+                }
+            }
+            right_spans.push(Span::styled("  │  ", Style::default().fg(TEXT_DIM)));
+        }
+
         // Account Badge
         right_spans.push(Span::styled(format!(" {} ", name), Style::default().fg(Color::Rgb(0, 0, 0)).bg(MATRIX_GREEN).add_modifier(Modifier::BOLD)));
         right_spans.push(Span::styled(" ", Style::default()));

@@ -24,6 +24,8 @@ pub struct Category {
     pub is_english: bool,
     #[serde(skip)]
     pub clean_name: String,
+    #[serde(skip)]
+    pub cached_parsed: Option<Box<crate::parser::ParsedCategory>>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Default)]
@@ -716,42 +718,59 @@ impl XtreamClient {
 
             if let Some(ref sender) = tx {
                 let bytes_mb = bytes.len() as f64 / 1_048_576.0;
-                let msg = format!("Phase 1/3: Parsing {:.1} MB data stream...", bytes_mb);
+                let msg = format!("Phase 1/3: Received {:.1} MB data stream. Preparing memory mapping...", bytes_mb);
                 let _ = sender.send(crate::app::AsyncAction::LoadingMessage(msg)).await;
             }
 
-            let streams = tokio::task::spawn_blocking(move || {
-                serde_json::from_slice::<Vec<Stream>>(&bytes)
-            }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))?
-              .map_err(|e| anyhow::anyhow!("Failed to parse live streams JSON (category {}): {}", category_id, e))?;
+            let tx_clone = tx.clone();
+            let cat_id = category_id.to_string();
             
-            // Deduplicate streams based on ID AND name
-            // Optimized for performance: avoided unnecessary lowercasing and optimized pre-allocation
-            use std::collections::HashSet;
-            let mut seen_ids = HashSet::with_capacity(streams.len());
-            let mut seen_names = HashSet::with_capacity(streams.len());
-            
-            let unique_streams: Vec<Stream> = streams
-                .into_iter()
-                .filter(|s| {
-                    // Efficient ID conversion
-                    let id_str = get_id_str(&s.stream_id);
+            let unique_streams = tokio::task::spawn_blocking(move || -> Result<Vec<Stream>, anyhow::Error> {
+                if let Some(ref sender) = tx_clone {
+                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!("Phase 2/3: Deserializing JSON structures out of RAM heap...")));
+                }
 
-                    // Check ID first (fastest)
-                    if seen_ids.contains(&id_str) {
-                        return false;
-                    }
-                    
-                    // Then check Name (Exact match is usually sufficient and much faster)
-                    if seen_names.contains(&s.name) {
-                        return false;
-                    }
+                let streams = serde_json::from_slice::<Vec<Stream>>(&bytes)
+                    .map_err(|e| anyhow::anyhow!("Failed to parse live streams JSON (category {}): {}", cat_id, e))?;
+                
+                if let Some(ref sender) = tx_clone {
+                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!("Phase 3/3: Deduplicating {} structured streams...", streams.len())));
+                }
+                
+                // Deduplicate streams based on ID AND name
+                // Optimized for performance: avoided unnecessary lowercasing and optimized pre-allocation
+                use std::collections::HashSet;
+                let mut seen_ids = HashSet::with_capacity(streams.len());
+                let mut seen_names = HashSet::with_capacity(streams.len());
+                
+                let filtered: Vec<Stream> = streams
+                    .into_iter()
+                    .filter(|s| {
+                        // Efficient ID conversion
+                        let id_str = get_id_str(&s.stream_id);
 
-                    seen_ids.insert(id_str);
-                    seen_names.insert(s.name.clone());
-                    true
-                })
-                .collect();
+                        // Check ID first (fastest)
+                        if seen_ids.contains(&id_str) {
+                            return false;
+                        }
+                        
+                        // Then check Name (Exact match is usually sufficient and much faster)
+                        if seen_names.contains(&s.name) {
+                            return false;
+                        }
+
+                        seen_ids.insert(id_str);
+                        seen_names.insert(s.name.clone());
+                        true
+                    })
+                    .collect();
+
+                if let Some(ref sender) = tx_clone {
+                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!("Finalized: Extracted {} unique validated streams...", filtered.len())));
+                }
+
+                Ok(filtered)
+            }).await.map_err(|e| anyhow::anyhow!("Spawn blocking failed: {}", e))??;
 
             Ok(unique_streams)
         }.await;
@@ -1062,8 +1081,25 @@ impl XtreamClient {
         );
         let resp = self.execute_request(&url, 30).await
             .map_err(|e| anyhow::anyhow!(e))?;
-        let epg: EpgResponse = resp.json().await
+        let mut epg: EpgResponse = resp.json().await
             .map_err(|e| anyhow::anyhow!("Failed to parse EPG JSON (stream {}): {}", stream_id, e))?;
+            
+        use base64::{engine::general_purpose, Engine as _};
+        for listing in &mut epg.epg_listings {
+            if let Ok(decoded) = general_purpose::STANDARD.decode(&listing.title) {
+                if let Ok(decoded_str) = String::from_utf8(decoded) {
+                    listing.title = decoded_str;
+                }
+            }
+            if let Some(desc) = &listing.description {
+                if let Ok(decoded) = general_purpose::STANDARD.decode(desc) {
+                    if let Ok(decoded_str) = String::from_utf8(decoded) {
+                        listing.description = Some(decoded_str);
+                    }
+                }
+            }
+        }
+        
         Ok(epg)
     }
 }

@@ -101,7 +101,7 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     // Async Channel
-    let (tx, mut rx) = mpsc::channel::<AsyncAction>(32);
+    let (tx, mut rx) = mpsc::channel::<AsyncAction>(1024);
 
     // Initial background tasks
     if !args.skip_update {
@@ -169,6 +169,14 @@ async fn run_app<B: ratatui::backend::Backend>(
     let mut needs_redraw = true;
 
     loop {
+        if app.needs_stream_refresh {
+            app.refresh_streams_from_cache();
+            app.needs_stream_refresh = false;
+            needs_redraw = true;
+        }
+        
+        // Debounce expired: the full UI projection is now zero-cost and renders immediately.
+
         if needs_redraw {
             terminal.draw(|f| ui::ui(f, app)).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
             needs_redraw = false;
@@ -277,6 +285,29 @@ async fn run_app<B: ratatui::backend::Backend>(
                         tokio::spawn(async move {
                             if let Ok(info) = client.get_vod_info(&fid).await {
                                 let _ = tx.send(AsyncAction::VodInfoLoaded(info)).await;
+                            }
+                        });
+                    }
+                }
+            }
+        }
+
+        // 1.7.5 Debounced Series Info Fetching
+        if app.current_screen == CurrentScreen::SeriesStreams && app.active_pane == Pane::Streams && !app.series_streams.is_empty() {
+            let focused_id = get_id_str(&app.series_streams[app.selected_series_stream_index].stream_id);
+            if app.last_focused_stream_id.as_ref() != Some(&focused_id) {
+                app.last_focused_stream_id = Some(focused_id.clone());
+                app.focus_timestamp = Some(std::time::Instant::now());
+            } else if let Some(ts) = app.focus_timestamp {
+                if ts.elapsed().as_millis() >= 500 {
+                    app.focus_timestamp = None;
+                    if let Some(client) = &app.current_client {
+                        let client = client.clone();
+                        let tx = tx.clone();
+                        let fid = focused_id.clone();
+                        tokio::spawn(async move {
+                            if let Ok(info) = client.get_series_info(&fid).await {
+                                let _ = tx.send(AsyncAction::SeriesInfoLoaded(info)).await;
                             }
                         });
                     }
@@ -450,7 +481,11 @@ async fn run_app<B: ratatui::backend::Backend>(
         }
 
         // 2. Poll inputs
-        if event::poll(Duration::from_millis(33))? {
+        let mut timeout_ms = 33;
+        if app.state_loading || app.show_matrix_rain {
+            timeout_ms = 16;
+        }
+        if event::poll(Duration::from_millis(timeout_ms))? {
             match event::read()? {
                 Event::Key(key) => {
                     match handlers::input::handle_key_event(app, key, &tx, player).await? {
