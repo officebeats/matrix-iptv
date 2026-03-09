@@ -59,15 +59,15 @@ jobs:
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           tag_name: ${{ github.event.inputs.tag_name }}
-          files: |
-            matrix-iptv-windows.exe/matrix-iptv-windows.exe
-            matrix-iptv-linux/matrix-iptv-linux
-            matrix-iptv-macos/matrix-iptv-macos
+          files: artifacts/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
