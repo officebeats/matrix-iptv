@@ -162,19 +162,22 @@ impl Player {
         // Since V4.0.9 we force this execution path for everyone by default to solve the `stream ends prematurely` bug.
         if !use_default_mpv {
             cmd.arg("--cache=yes")
-               // Emulate VLC's small, steady network caching. VLC naturally limits TCP read rate.
-               // If we buffer 10-15+ seconds instantly, we stop draining TCP, and the IPTV server drops the "dormant" socket with a premature EOF.
-               .arg("--demuxer-max-bytes=8MiB")
-               .arg("--demuxer-max-back-bytes=2MiB")
-               .arg("--demuxer-readahead-secs=2") 
-               .arg("--stream-buffer-size=1MiB")
-               .arg("--cache-pause=no")                // Don't pause reading/rendering.
-               .arg("--network-timeout=20")            // Tolerate network blips
-               // Force Lavf to unconditionally auto-reconnect on dropped TCP sockets without exiting player
-               .arg("--stream-lavf-o=reconnect=1,reconnect_at_eof=1,reconnect_streamed=1,reconnect_delay_max=5")
-               // Disable YTDL to prevent URL hook interference and speed up boot
+               // v4.0.17: 'Anti-Loop' / Pro-Stealth Profile
+               // - demuxer-max-back-bytes=0: Kills the '1-second loop' by disabling seek-back memory.
+               // - demuxer-thread=yes: Runs network I/O on a separate thread to prevent UI lag stutters.
+               // - stream-buffer-size=512KiB: Keeps a constant flow to prevent AT&T idle-resets.
+               .arg("--demuxer-max-bytes=64MiB")
+               .arg("--demuxer-max-back-bytes=0") 
+               .arg("--demuxer-readahead-secs=15") 
+               .arg("--demuxer-thread=yes")
+               .arg("--stream-buffer-size=512KiB")
+               .arg("--cache-pause=no")
+               .arg("--network-timeout=60")
+               .arg("--keep-open=yes")
+               .arg("--video-sync=audio")
+               .arg("--stream-lavf-o=reconnect=1,reconnect_at_eof=1,reconnect_streamed=1,reconnect_delay_max=5,multiple_requests=1")
+               .arg("--demuxer-lavf-o=analyzeduration=3000000,probesize=3000000,fflags=+genpts+igndts")
                .arg("--ytdl=no")
-               // Lavf specific options for better HTTP behavior
                .arg("--tls-verify=no");
 
             if cfg!(target_os = "windows") {

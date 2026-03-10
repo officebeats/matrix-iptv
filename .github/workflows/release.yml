@@ -1,12 +1,15 @@
 name: Release Build
 
 on:
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       tag_name:
         description: "Tag name for the release (e.g., v3.2.1)"
         required: true
-        default: "v3.2.1"
+        default: "v4.0.0"
 
 permissions:
   contents: write
@@ -66,8 +69,11 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ github.event.inputs.tag_name }}
+          tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
           files: artifacts/*
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

@@ -16,30 +16,38 @@ const platformMap = {
   darwin: "macos",
 };
 
-function download(url, dest) {
-  return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest);
-    https
-      .get(url, (response) => {
-        if (response.statusCode === 302 || response.statusCode === 301) {
-          download(response.headers.location, dest).then(resolve).catch(reject);
-          return;
-        }
-        if (response.statusCode !== 200) {
-          reject(new Error(`Failed to download: ${response.statusCode}`));
-          return;
-        }
-        response.pipe(file);
-        file.on("finish", () => {
-          file.close();
-          resolve();
-        });
-      })
-      .on("error", (err) => {
+const axios = require("axios");
+
+async function download(url, dest) {
+  const writer = fs.createWriteStream(dest);
+  
+  try {
+    const response = await axios({
+      method: 'get',
+      url: url,
+      responseType: 'stream',
+      headers: {
+        'Cache-Control': 'no-cache',
+        'User-Agent': 'matrix-iptv-cli-updater'
+      }
+    });
+
+    response.data.pipe(writer);
+
+    return new Promise((resolve, reject) => {
+      writer.on('finish', resolve);
+      writer.on('error', (err) => {
         fs.unlink(dest, () => {});
         reject(err);
       });
-  });
+    });
+  } catch (err) {
+    fs.unlink(dest, () => {});
+    if (err.response && err.response.status === 404) {
+      throw new Error(`Asset not found (404). This usually means the GitHub release exists but the binary hasn't been uploaded yet.`);
+    }
+    throw err;
+  }
 }
 
 async function performUpdate() {
@@ -75,22 +83,18 @@ async function performUpdate() {
     }
 
     // Replace old binary
-    // On Windows, sometimes the OS still has a lock for a split second or unlinking is restricted
     let attempts = 0;
-    const maxAttempts = 10;
+    const maxAttempts = 15;
     while (attempts < maxAttempts) {
       try {
         if (fs.existsSync(binaryPath)) {
           if (os.platform() === "win32") {
-            // "Rename-out" strategy for Windows: move the file to a temporary name first
-            // This is often allowed even if the file is lazily being released by the OS
             const oldPath = binaryPath + ".old." + Date.now();
             fs.renameSync(binaryPath, oldPath);
-            // Optionally try to delete the old one, but don't fail if we can't
             try {
               fs.unlinkSync(oldPath);
             } catch (e) {
-              // It's okay if we can't delete it now, it'll just stay as a .old file
+              // Mark for deletion on next reboot or just ignore
             }
           } else {
             fs.unlinkSync(binaryPath);
@@ -100,24 +104,35 @@ async function performUpdate() {
         break;
       } catch (e) {
         attempts++;
-        console.log(`[!] Retry ${attempts}/${maxAttempts}: ${e.message}`);
         if (attempts === maxAttempts) throw e;
-        // Increase delay on each attempt
-        await new Promise((r) => setTimeout(r, 500 + attempts * 200));
+        await new Promise((r) => setTimeout(r, 1000 + attempts * 500));
       }
     }
 
-    // Also clear quarantine on final binary path
     if (os.platform() === "darwin") {
       try {
         const { execSync } = require("child_process");
-        execSync(
-          `xattr -d com.apple.quarantine "${binaryPath}" 2>/dev/null || true`
-        );
+        execSync(`xattr -d com.apple.quarantine "${binaryPath}" 2>/dev/null || true`);
       } catch (e) {}
     }
 
     console.log(`[+] Update complete. Rebooting system...\n`);
+
+    if (os.platform() === "win32") {
+      const batchScript = `
+@echo off
+timeout /t 2 /nobreak > nul
+start "" "${binaryPath}" %*
+del "%~f0"
+`;
+      const batchPath = path.join(os.tmpdir(), "matrix-relaunch.bat");
+      fs.writeFileSync(batchPath, batchScript);
+      spawn("cmd.exe", ["/c", batchPath, ...process.argv.slice(2)], {
+        detached: true,
+        stdio: "ignore",
+      }).unref();
+      process.exit(0);
+    }
   } catch (err) {
     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
     throw err;
@@ -162,11 +177,10 @@ function launchApp(isUpdateRelaunch = false) {
     if (code === 42) {
       try {
         await performUpdate();
-        // Add a small initial delay on Windows before even trying
-        if (os.platform() === 'win32') {
-          await new Promise(resolve => setTimeout(resolve, 1000));
+        // If not win32 (which handles its own relaunch), relaunch here
+        if (os.platform() !== "win32") {
+          launchApp(true);
         }
-        launchApp(true); // Relaunch
       } catch (err) {
         console.error(`\n❌ Update failed: ${err.message}`);
         process.exit(1);
