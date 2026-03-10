@@ -53,7 +53,10 @@ async fn main() -> Result<(), anyhow::Error> {
     cmd.arg("--demuxer-max-back-bytes=64MiB");
     cmd.arg("--demuxer-readahead-secs=10");   
     cmd.arg("--stream-buffer-size=2MiB");     
-    cmd.arg("--network-timeout=20");          
+    cmd.arg("--network-timeout=20");
+    cmd.arg("--ytdl=no");
+    cmd.arg("--msg-level=all=v");
+    cmd.arg("--log-file=mpv_trace.log");
     
     cmd.stdout(std::process::Stdio::piped())
        .stderr(std::process::Stdio::piped());

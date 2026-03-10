@@ -161,19 +161,17 @@ impl Player {
         // Only apply optimizations if not using default MPV settings
         if !use_default_mpv {
             cmd.arg("--cache=yes")
-               // Moderate buffer sizes, letting MPV naturally manage TCP read rates
-               // without artificially starving the socket (which triggers IPTV server kicks).
-               .arg("--demuxer-max-bytes=256MiB")
-               .arg("--demuxer-max-back-bytes=64MiB")
-               .arg("--network-timeout=20")            // Increased timeout to prevent premature EOF closures
-               .arg("--hls-bitrate=max")               // Force highest quality HLS
-               .arg("--tls-verify=no")                 // Ignore certificate errors for internal/sketchy HTTPS streams
-               .arg("--hr-seek=yes")                   // Precise seeking
-               
-               // Keep hardware decoding but remove aggressive buffering limits
-               .arg("--hwdec=auto-copy")
-               // Optional: Reconnect flags using FFmpeg's robust libavformat options
-               .arg("--stream-lavf-o=reconnect_on_http_error=4xx,5xx,reconnect_on_network_error=1,reconnect_delay_max=10");
+               // Emulate VLC's small, steady network caching (~15 seconds) to avoid triggering "rip-bot" bans.
+               // Large buffers cause burst-then-idle read patterns which IPTV firewalls punish by dropping the socket. 
+               .arg("--demuxer-max-bytes=32MiB")
+               .arg("--demuxer-max-back-bytes=16MiB")
+               .arg("--demuxer-readahead-secs=15") 
+               .arg("--cache-pause=no")                // Don't pause rendering while catching up
+               .arg("--network-timeout=20")            // Tolerate network blips
+               // Force Lavf to unconditionally auto-reconnect on dropped TCP sockets without exiting player
+               .arg("--stream-lavf-o=reconnect=1,reconnect_at_eof=1,reconnect_streamed=1,reconnect_delay_max=5")
+               // Lavf specific options for better HTTP behavior
+               .arg("--tls-verify=no");
 
             if cfg!(target_os = "windows") {
                 cmd.arg("--d3d11-flip=yes")            // Modern Windows presentation (faster)
