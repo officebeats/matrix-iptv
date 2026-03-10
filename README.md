@@ -13,10 +13,14 @@ This project is being actively optimized by **Ernesto "Beats"** with a primary f
 ## 📸 Gallery
 
 <p align="center">
-  <img src="./assets/playlists.png" width="45%" />
-  <img src="./assets/pill.png" width="45%" />
+  <img src="./assets/selector.png" width="48%" />
+  <img src="./assets/categories.png" width="48%" />
   <br />
-  <img src="./assets/live.png" width="90%" />
+  <img src="./assets/news.png" width="48%" />
+  <img src="./assets/nba.png" width="48%" />
+  <br />
+  <img src="./assets/vod.png" width="48%" />
+  <img src="./assets/movie_details.png" width="48%" />
 </p>
 
 ---
