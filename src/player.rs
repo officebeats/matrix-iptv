@@ -41,10 +41,12 @@ impl Player {
     /// Start the selected player engine and return the IPC pipe path for monitoring
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn play(&self, url: &str, engine: PlayerEngine, use_default_mpv: bool, smooth_motion: bool) -> Result<(), anyhow::Error> {
-        // Pre-flight check: Verify stream is reachable before launching player
-        // This detects dead redirects/DNS issues early and notifies the user
-        self.check_stream_health(url).await?;
-
+        // We SKIP the pre-flight `check_stream_health(url)` here because doing a GET request
+        // immediately before launching the player can trigger the IPTV provider's
+        // "Max 1 Connection" rule (the health check leaves a ghost connection open
+        // for 30-60 seconds on their backend). This would cause the provider
+        // to gracefully kill the stream ~45 seconds in!
+        
         self.stop();
 
         match engine {
@@ -139,18 +141,14 @@ impl Player {
             }
         }
         
-        let is_live = url.contains("/live/") || url.contains(".m3u8");
+        let _is_live = url.contains("/live/") || url.contains(".m3u8");
 
         cmd.arg(url)
            .arg("--geometry=1280x720") // Start in 720p window (user preference)
            .arg("--force-window")      // Ensure window opens even if audio-only initially
            .arg("--no-fs")             // DISABLING FULLSCREEN - Force Windowed Mode
-           .arg("--osc=yes");          // Enable On Screen Controller for usability
-           
-        // If it's a live stream and the provider hits us with an EOF connection drop, instantly reopen it
-        if is_live {
-            cmd.arg("--loop-file=inf");
-        }
+           .arg("--osc=yes")           // Enable On Screen Controller for usability
+           .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"); // Mimic Chrome to bypass scraping blocks
 
         // Apply smooth motion interpolation if enabled
         if smooth_motion {
