@@ -39,9 +39,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let mut cmd = std::process::Command::new(mpv_path);
     cmd.arg(&url);
     cmd.arg("--force-window=immediate");
-    cmd.arg("--quiet");
-    cmd.arg("--idle=once");
-    cmd.arg(format!("--user-agent={}", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"));
+    cmd.arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
     
     // Add referrer matching the base url (very common IPTV requirement)
     if let Ok(parsed_url) = reqwest::Url::parse(&url) {
@@ -51,27 +49,43 @@ async fn main() -> Result<(), anyhow::Error> {
          cmd.arg(format!("--referrer={}", url));
     }
 
-    cmd.arg("--demuxer-max-bytes=128MiB");    // Restrict cache size
+    cmd.arg("--demuxer-max-bytes=128MiB");    
     cmd.arg("--demuxer-max-back-bytes=64MiB");
-    cmd.arg("--demuxer-readahead-secs=10");   // Smaller read-ahead
-    cmd.arg("--stream-buffer-size=2MiB");     // Smaller buffer size
-    cmd.arg("--network-timeout=20");          // Allow up to 20s for reconnect
-    cmd.arg("--loop-file=inf");               // Restart exactly the same stream if it drops
+    cmd.arg("--demuxer-readahead-secs=10");   
+    cmd.arg("--stream-buffer-size=2MiB");     
+    cmd.arg("--network-timeout=20");          
     
+    cmd.stdout(std::process::Stdio::piped())
+       .stderr(std::process::Stdio::piped());
+       
     let mut child = cmd.spawn()?;
     
     println!("Testing stability... waiting 130 seconds...");
     let start_time = std::time::Instant::now();
     
     while start_time.elapsed().as_secs() < 130 {
-        sleep(Duration::from_secs(5)).await;
+        sleep(Duration::from_secs(1)).await;
         if let Ok(Some(status)) = child.try_wait() {
             println!("\n[FAILURE] Player died after {} seconds! Status: {}", start_time.elapsed().as_secs(), status);
+            let mut stdout = String::new();
+            let mut stderr = String::new();
+            if let Some(mut out) = child.stdout.take() {
+                use std::io::Read;
+                out.read_to_string(&mut stdout).unwrap_or_default();
+            }
+            if let Some(mut err) = child.stderr.take() {
+                use std::io::Read;
+                err.read_to_string(&mut stderr).unwrap_or_default();
+            }
+            println!("STDOUT:\n{}", stdout);
+            println!("STDERR:\n{}", stderr);
             return Ok(());
         } else {
-            print!(".");
-            use std::io::Write;
-            std::io::stdout().flush().unwrap();
+            if start_time.elapsed().as_secs() % 5 == 0 {
+                print!(".");
+                use std::io::Write;
+                std::io::stdout().flush().unwrap();
+            }
         }
     }
     

@@ -41,12 +41,10 @@ impl Player {
     /// Start the selected player engine and return the IPC pipe path for monitoring
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn play(&self, url: &str, engine: PlayerEngine, use_default_mpv: bool, smooth_motion: bool) -> Result<(), anyhow::Error> {
-        // We SKIP the pre-flight `check_stream_health(url)` here because doing a GET request
-        // immediately before launching the player can trigger the IPTV provider's
-        // "Max 1 Connection" rule (the health check leaves a ghost connection open
-        // for 30-60 seconds on their backend). This would cause the provider
-        // to gracefully kill the stream ~45 seconds in!
-        
+        // Pre-flight check: Verify stream is reachable before launching player
+        // This detects dead redirects/DNS issues early and notifies the user
+        self.check_stream_health(url).await?;
+
         self.stop();
 
         match engine {
@@ -130,25 +128,11 @@ impl Player {
         };
 
         let mut cmd = Command::new(&mpv_path);
-        
-        // Add Referrer validation (Common anti-scraping measure)
-        if let Some(scheme_end) = url.find("://") {
-            let rest = &url[scheme_end + 3..];
-            if let Some(path_start) = rest.find('/') {
-                let host = &rest[..path_start];
-                let base = format!("{}://{}/", &url[..scheme_end], host);
-                cmd.arg(format!("--referrer={}", base));
-            }
-        }
-        
-        let _is_live = url.contains("/live/") || url.contains(".m3u8");
-
         cmd.arg(url)
            .arg("--geometry=1280x720") // Start in 720p window (user preference)
            .arg("--force-window")      // Ensure window opens even if audio-only initially
            .arg("--no-fs")             // DISABLING FULLSCREEN - Force Windowed Mode
-           .arg("--osc=yes")           // Enable On Screen Controller for usability
-           .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"); // Mimic Chrome to bypass scraping blocks
+           .arg("--osc=yes");          // Enable On Screen Controller for usability
 
         // Apply smooth motion interpolation if enabled
         if smooth_motion {
@@ -161,19 +145,32 @@ impl Player {
         // Only apply optimizations if not using default MPV settings
         if !use_default_mpv {
             cmd.arg("--cache=yes")
-               // Moderate buffer sizes, letting MPV naturally manage TCP read rates
-               // without artificially starving the socket (which triggers IPTV server kicks).
-               .arg("--demuxer-max-bytes=256MiB")
-               .arg("--demuxer-max-back-bytes=64MiB")
-               .arg("--network-timeout=20")            // Increased timeout to prevent premature EOF closures
-               .arg("--hls-bitrate=max")               // Force highest quality HLS
+               .arg("--cache-pause=yes")               // Pause when cache is starved
+               .arg("--cache-pause-wait=5")            // Wait for 5 seconds of cache before resuming (builds a buffer against live edge)
+               .arg("--cache-pause-initial=yes")       // Ensure we buffer 5 seconds initially
+               .arg("--network-timeout=10")            // Increased timeout to prevent premature EOF closures
+               .arg("--hls-bitrate=max")               // Force highest quality HLS to prevent bitrate switching loops
                .arg("--tls-verify=no")                 // Ignore certificate errors for internal/sketchy HTTPS streams
-               .arg("--hr-seek=yes")                   // Precise seeking
-               
-               // Keep hardware decoding but remove aggressive buffering limits
-               .arg("--hwdec=auto-copy")
-               // Optional: Reconnect flags using FFmpeg's robust libavformat options
-               .arg("--stream-lavf-o=reconnect_on_http_error=4xx,5xx,reconnect_on_network_error=1,reconnect_delay_max=10");
+               .arg("--hr-seek=yes")                   // Precise seeking for better buffer recovery
+               // NETWORK TURBO MODE: Aggressive Caching for Stability
+               .arg("--demuxer-max-bytes=512MiB")      // Doubled cache to 512MB
+               .arg("--demuxer-max-back-bytes=128MiB") // Increase back buffer for seeking/rewind
+               .arg("--demuxer-readahead-secs=60")     // Buffer 1 full minute ahead (Adaptive Buffering)
+               .arg("--stream-buffer-size=8MiB")       // Low-level socket buffer
+               .arg("--load-unsafe-playlists=yes")     // Stay alive through malformed HLS fragments
+               .arg("--framedrop=vo")                  // Drop frames gracefully if GPU lags
+               .arg("--vd-lavc-fast")                  // Enable fast decoding optimizations
+               .arg("--vd-lavc-skiploopfilter=all")    // Major CPU saver for low-end machines
+               .arg("--vd-lavc-threads=0")             // Maximize thread usage for decoding
+               // LOW-END FRIENDLY UPSCALING (catmull_rom: good quality, low GPU cost)
+               .arg("--scale=catmull_rom")         // Clean upscaling, ~25% faster than spline36
+               .arg("--cscale=catmull_rom")        // Matching chroma scaler
+               .arg("--dscale=catmull_rom")        // Consistent downscaling
+               .arg("--scale-antiring=0.7")        // Reduce haloing
+               .arg("--cscale-antiring=0.7")
+               .arg("--hwdec=auto-copy")           // More compatible hardware decoding
+               // RECONNECT TURBO: Auto-reconnect on network drops (avoiding aggressive EOF looping)
+               .arg("--stream-lavf-o=reconnect_on_http_error=4xx,5xx,reconnect_on_network_error=1,reconnect_streamed=1,reconnect_delay_max=5,fflags=+genpts+igndts");
 
             if cfg!(target_os = "windows") {
                 cmd.arg("--d3d11-flip=yes")            // Modern Windows presentation (faster)
