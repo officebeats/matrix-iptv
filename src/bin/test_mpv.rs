@@ -49,11 +49,17 @@ async fn main() -> Result<(), anyhow::Error> {
          cmd.arg(format!("--referrer={}", url));
     }
 
-    cmd.arg("--demuxer-max-bytes=128MiB");    
-    cmd.arg("--demuxer-max-back-bytes=64MiB");
-    cmd.arg("--demuxer-readahead-secs=10");   
-    cmd.arg("--stream-buffer-size=2MiB");     
+    // MPV Burst-Idle Prevention: 
+    // Emulate VLC's ~1-2 sec small network buffer. If we buffer 10-15+ seconds instantly, 
+    // we stop draining TCP, and the IPTV server drops the "dormant" socket with a premature EOF.
+    cmd.arg("--demuxer-max-bytes=8MiB");    
+    cmd.arg("--demuxer-max-back-bytes=2MiB");
+    cmd.arg("--demuxer-readahead-secs=2");   
+    cmd.arg("--stream-buffer-size=1MiB");     
     cmd.arg("--network-timeout=20");
+    cmd.arg("--cache-pause=no"); // Don't pause on low cache, it halts socket read
+    cmd.arg("--stream-lavf-o=reconnect=1,reconnect_at_eof=1,reconnect_streamed=1,reconnect_delay_max=5");
+    cmd.arg("--tls-verify=no");
     cmd.arg("--ytdl=no");
     cmd.arg("--msg-level=all=v");
     cmd.arg("--log-file=mpv_trace.log");

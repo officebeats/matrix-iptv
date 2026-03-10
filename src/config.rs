@@ -246,7 +246,7 @@ impl Default for AppConfig {
             playlist_mode: PlaylistMode::default(),
             processing_modes: Vec::new(),
             dns_provider: DnsProvider::default(),
-            use_default_mpv: true,
+            use_default_mpv: false, // Must be false to use our critical IPTV network optimizations
             preferred_player: PlayerEngine::Mpv,
             smooth_motion: true, // Default to smoothing ON for better UX
             auto_refresh_hours: 12,
@@ -281,6 +281,10 @@ impl AppConfig {
                     }
                 }
                 
+                // MIGRATION: V4.0.9 - Force robust MPV backend settings
+                // Previously, use_default_mpv was true by default which bypasses all IPTV stability fixes.
+                config.use_default_mpv = false;
+
                 return Ok(config);
             }
 
