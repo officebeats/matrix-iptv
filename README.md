@@ -132,6 +132,15 @@ We leverage advanced **MPV** flags to ensure professional-level video quality ev
 
 ---
 
+## ⚙️ Advanced Features
+
+Matrix IPTV CLI provides several core utilities to manage complex setups safely:
+
+- **VLC Fallback Integration**: While MPV provides the ultimate playback tier, you can configure the app to fall back to launching VLC Media Player instead, maximizing compatibility.
+- **Dynamic Background Sync**: Automatically handles large playlist parsing without hanging the UI, providing fluid progress updates and ETAs while it indexes tens of thousands of channels.
+
+---
+
 ## ⌨️ Common Controls
 
 | Key                     | Action                                        |
@@ -143,10 +152,10 @@ We leverage advanced **MPV** flags to ensure professional-level video quality ev
 | **`v`**                 | **Toggle Favorite**                           |
 | **`j` / `↓`**           | Move Down                                     |
 | **`k` / `↑`**           | Move Up                                       |
-| **`g`**                 | **Jump to Bottom** (Go to last item)          |
-| **`G`**                 | **Jump to Top** (Go to first item)            |
-| **`0`-`9`**             | **Jump to Item** (Direct access to items 0-9) |
-| **`m`**                 | **Playlist Mode** (Quick Toggle/Switch)       |
+| **`g`**                 | **Toggle Grid View / Group Menu**             |
+| **`G`**                 | **Manage Groups / Jump to Bottom (VOD)**      |
+| **`0`-`9`**             | **Jump to Item / Switch Account (Home)**      |
+| **`m`**                 | **Settings: Playlist Mode**                   |
 | **`x`**                 | **Settings**                                  |
 | **`n`**                 | **New Playlist** (Home Screen)                |
 | **`e`**                 | **Edit Playlist** (Home Screen)               |
