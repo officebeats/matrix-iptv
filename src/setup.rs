@@ -366,6 +366,30 @@ fn install_vlc_windows() -> Result<(), anyhow::Error> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
+fn is_newer_version(current: &str, tag: &str) -> bool {
+    let parse_version = |s: &str| -> Vec<u32> {
+        s.split('.')
+            .filter_map(|p| p.parse::<u32>().ok())
+            .collect()
+    };
+
+    let cur_parts = parse_version(current);
+    let tag_parts = parse_version(tag);
+
+    for i in 0..std::cmp::max(cur_parts.len(), tag_parts.len()) {
+        let cur = cur_parts.get(i).unwrap_or(&0);
+        let tgt = tag_parts.get(i).unwrap_or(&0);
+        
+        if tgt > cur {
+            return true;
+        } else if tgt < cur {
+            return false;
+        }
+    }
+    false
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub async fn check_for_updates(tx: tokio::sync::mpsc::Sender<crate::app::AsyncAction>, manual: bool) {
     let current_version = env!("CARGO_PKG_VERSION");
     let client = reqwest::Client::builder()
@@ -384,7 +408,7 @@ pub async fn check_for_updates(tx: tokio::sync::mpsc::Sender<crate::app::AsyncAc
         // URL is likely https://github.com/officebeats/matrix-iptv/releases/tag/v3.0.9
         if let Some(tag) = final_url.split("/tag/").last() {
             let tag = tag.trim_start_matches('v');
-            if tag != current_version && !tag.is_empty() {
+            if is_newer_version(current_version, tag) {
                 let _ = tx.send(crate::app::AsyncAction::UpdateAvailable(tag.to_string())).await;
             } else if manual {
                 let _ = tx.send(crate::app::AsyncAction::NoUpdateFound).await;
