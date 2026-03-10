@@ -20,9 +20,9 @@ This project is being actively optimized by **Ernesto "Beats"** with a primary f
   <img src="./assets/nba.png" width="48%" />
   <br />
   <img src="./assets/vod.png" width="48%" />
-  <img src="./assets/movie_details.png" width="48%" />
+  <img src="./assets/playback.png" width="48%" />
   <br />
-  <img src="./assets/playback.png" width="98%" />
+  <img src="./assets/movie_details.png" width="98%" />
 </p>
 
 ---
