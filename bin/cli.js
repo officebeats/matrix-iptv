@@ -124,7 +124,7 @@ async function performUpdate() {
   }
 }
 
-function launchApp() {
+function launchApp(isUpdateRelaunch = false) {
   if (!fs.existsSync(binaryPath)) {
     console.error("\n❌  Matrix IPTV binary not found.");
     console.log(
@@ -133,12 +133,27 @@ function launchApp() {
     process.exit(1);
   }
 
-  const child = spawn(binaryPath, process.argv.slice(2), {
-    stdio: "inherit",
-    windowsHide: false,
-  });
+  let child;
+  try {
+    child = spawn(binaryPath, process.argv.slice(2), {
+      stdio: "inherit",
+      windowsHide: false,
+    });
+  } catch (err) {
+    if (isUpdateRelaunch && (err.code === "EBUSY" || err.code === "EACCES")) {
+      console.log(`[*] Executable locked by OS. Retrying in 2 seconds...`);
+      setTimeout(() => launchApp(true), 2000);
+      return;
+    }
+    throw err;
+  }
 
   child.on("error", (err) => {
+    if (isUpdateRelaunch && (err.code === "EBUSY" || err.code === "EACCES")) {
+      console.log(`[*] Executable locked by OS. Retrying in 2 seconds...`);
+      setTimeout(() => launchApp(true), 2000);
+      return;
+    }
     console.error("Failed to start Matrix IPTV:", err);
     process.exit(1);
   });
@@ -147,7 +162,11 @@ function launchApp() {
     if (code === 42) {
       try {
         await performUpdate();
-        launchApp(); // Relaunch
+        // Add a small initial delay on Windows before even trying
+        if (os.platform() === 'win32') {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        launchApp(true); // Relaunch
       } catch (err) {
         console.error(`\n❌ Update failed: ${err.message}`);
         process.exit(1);
