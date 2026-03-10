@@ -128,11 +128,29 @@ impl Player {
         };
 
         let mut cmd = Command::new(&mpv_path);
+        
+        // Add Referrer validation (Common anti-scraping measure)
+        if let Some(scheme_end) = url.find("://") {
+            let rest = &url[scheme_end + 3..];
+            if let Some(path_start) = rest.find('/') {
+                let host = &rest[..path_start];
+                let base = format!("{}://{}/", &url[..scheme_end], host);
+                cmd.arg(format!("--referrer={}", base));
+            }
+        }
+        
+        let is_live = url.contains("/live/") || url.contains(".m3u8");
+
         cmd.arg(url)
            .arg("--geometry=1280x720") // Start in 720p window (user preference)
            .arg("--force-window")      // Ensure window opens even if audio-only initially
            .arg("--no-fs")             // DISABLING FULLSCREEN - Force Windowed Mode
            .arg("--osc=yes");          // Enable On Screen Controller for usability
+           
+        // If it's a live stream and the provider hits us with an EOF connection drop, instantly reopen it
+        if is_live {
+            cmd.arg("--loop-file=inf");
+        }
 
         // Apply smooth motion interpolation if enabled
         if smooth_motion {
@@ -146,17 +164,17 @@ impl Player {
         if !use_default_mpv {
             cmd.arg("--cache=yes")
                .arg("--cache-pause=yes")               // Pause when cache is starved
-               .arg("--cache-pause-wait=5")            // Wait for 5 seconds of cache before resuming (builds a buffer against live edge)
-               .arg("--cache-pause-initial=yes")       // Ensure we buffer 5 seconds initially
-               .arg("--network-timeout=10")            // Increased timeout to prevent premature EOF closures
+               .arg("--cache-pause-wait=2")            // Wait for 2 seconds of cache before resuming (was 5)
+               .arg("--cache-pause-initial=yes")       // Ensure we buffer initially
+               .arg("--network-timeout=20")            // Increased timeout to prevent premature EOF closures
                .arg("--hls-bitrate=max")               // Force highest quality HLS to prevent bitrate switching loops
                .arg("--tls-verify=no")                 // Ignore certificate errors for internal/sketchy HTTPS streams
                .arg("--hr-seek=yes")                   // Precise seeking for better buffer recovery
-               // NETWORK TURBO MODE: Aggressive Caching for Stability
-               .arg("--demuxer-max-bytes=512MiB")      // Doubled cache to 512MB
-               .arg("--demuxer-max-back-bytes=128MiB") // Increase back buffer for seeking/rewind
-               .arg("--demuxer-readahead-secs=60")     // Buffer 1 full minute ahead (Adaptive Buffering)
-               .arg("--stream-buffer-size=8MiB")       // Low-level socket buffer
+               // NETWORK MODE: Balanced Caching to prevent IPTV Anti-Scraping Connection Drops
+               .arg("--demuxer-max-bytes=128MiB")      // Safe default, 512MB triggers provider bot-bans which sever the connection ~45s in
+               .arg("--demuxer-max-back-bytes=50MiB")  // Moderate back buffer
+               .arg("--demuxer-readahead-secs=15")     // 60 secs triggers fast-rip bans dropping stream
+               .arg("--stream-buffer-size=2MiB")       // Moderate low-level socket buffer
                .arg("--load-unsafe-playlists=yes")     // Stay alive through malformed HLS fragments
                .arg("--framedrop=vo")                  // Drop frames gracefully if GPU lags
                .arg("--vd-lavc-fast")                  // Enable fast decoding optimizations
