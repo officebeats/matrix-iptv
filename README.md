@@ -49,9 +49,8 @@ If you have Node.js installed, this is the easiest way to stay updated:
 npm install -g @officebeats/matrix-iptv-cli
 ```
 
-### **One-Click Scripts**
-
-Alternatively, use these platform-specific one-liners:
+<details>
+<summary><strong>🚀 One-Click Install Scripts (Click to Expand)</strong></summary>
 
 #### **Windows**
 
@@ -64,6 +63,8 @@ powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.c
 ```bash
 curl -sSL https://raw.githubusercontent.com/officebeats/matrix-iptv/main/install.sh -o install_matrix.sh && bash install_matrix.sh && rm install_matrix.sh
 ```
+
+</details>
 
 ---
 
