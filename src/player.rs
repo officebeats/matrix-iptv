@@ -122,24 +122,21 @@ impl Player {
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn set_last_error(&self, error: Option<String>) {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            if let Ok(mut guard) = self.last_error.lock() {
-                *guard = error;
-            }
+        if let Ok(mut guard) = self.last_error.lock() {
+            *guard = error;
         }
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn get_last_error(&self) -> Option<String> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.last_error.lock().ok().and_then(|g| g.clone())
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            None
-        }
+        self.last_error.lock().ok().and_then(|g| g.clone())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn get_last_error(&self) -> Option<String> {
+        None
     }
 
     /// Start the selected player engine with automatic retry and fallback
@@ -567,7 +564,7 @@ impl Player {
 
     /// Monitor MPV IPC socket for error events
     /// This provides real-time error detection during playback
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
     pub async fn monitor_ipc_errors(&self, duration_ms: u64) -> Option<String> {
         let ipc_path = self.ipc_path.lock().ok()?.clone()?;
         let duration = Duration::from_millis(duration_ms);
@@ -591,7 +588,7 @@ impl Player {
     }
 
     /// Read from MPV IPC socket
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
     async fn read_ipc_socket(&self, path: &PathBuf) -> Result<String, std::io::Error> {
         use tokio::net::UnixStream;
         use tokio::io::AsyncReadExt;
@@ -609,16 +606,26 @@ impl Player {
         }
     }
 
+    /// Windows stub for read_ipc_socket
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
+    async fn read_ipc_socket(&self, _path: &PathBuf) -> Result<String, std::io::Error> {
+        Err(std::io::Error::new(std::io::ErrorKind::NotSupported, "Unix sockets not available on Windows"))
+    }
+
+    /// Windows stub for monitor_ipc_errors
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
+    pub async fn monitor_ipc_errors(&self, _duration_ms: u64) -> Option<String> {
+        None
+    }
+
     /// Parse IPC data for error messages
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
     fn parse_ipc_error(&self, data: &str) -> Option<String> {
-        // Look for error keywords in IPC data
         let error_patterns = ["error", "failed", "abort", "network"];
         let lower = data.to_lowercase();
         
         for pattern in error_patterns {
             if lower.contains(pattern) {
-                // Try to extract a meaningful error message
                 if let Some(line) = data.lines().find(|l| l.to_lowercase().contains(pattern)) {
                     return Some(line.to_string());
                 }
@@ -627,8 +634,13 @@ impl Player {
         None
     }
 
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
+    fn parse_ipc_error(&self, _data: &str) -> Option<String> {
+        None
+    }
+
     /// Enhanced playback check with IPC error monitoring
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
     pub async fn wait_for_playback_with_monitoring(&self, timeout_ms: u64) -> Result<bool, anyhow::Error> {
         let start = std::time::Instant::now();
         let timeout = Duration::from_millis(timeout_ms);
@@ -652,9 +664,32 @@ impl Player {
                     self.set_last_error(Some(ipc_error.clone()));
                     return Err(anyhow::anyhow!("Playback error: {}", ipc_error));
                 }
+
+                return Ok(true);
             }
 
-            // If running for 3+ seconds, consider it successful
+            sleep(Duration::from_millis(200)).await;
+        }
+
+        Ok(self.is_running())
+    }
+
+    /// Simplified playback check for Windows (no IPC monitoring)
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
+    pub async fn wait_for_playback_with_monitoring(&self, timeout_ms: u64) -> Result<bool, anyhow::Error> {
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_millis(timeout_ms);
+
+        sleep(Duration::from_millis(500)).await;
+
+        while start.elapsed() < timeout {
+            if !self.is_running() {
+                if let Some(log_error) = self.get_last_error_from_log() {
+                    return Err(anyhow::anyhow!("Playback failed: {}", log_error));
+                }
+                return Ok(false);
+            }
+
             if start.elapsed() > Duration::from_millis(3000) {
                 return Ok(true);
             }
