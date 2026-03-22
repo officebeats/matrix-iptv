@@ -121,16 +121,31 @@ async function performUpdate() {
     if (os.platform() === "win32") {
       const batchScript = `
 @echo off
-timeout /t 2 /nobreak > nul
+timeout /t 3 /nobreak > nul
 start "" "${binaryPath}" %*
 del "%~f0"
 `;
       const batchPath = path.join(os.tmpdir(), "matrix-relaunch.bat");
       fs.writeFileSync(batchPath, batchScript);
-      spawn("cmd.exe", ["/c", batchPath, ...process.argv.slice(2)], {
-        detached: true,
-        stdio: "ignore",
-      }).unref();
+
+      // Brief delay to let AV scanners release locks on newly written files
+      await new Promise((r) => setTimeout(r, 500));
+
+      let spawnAttempts = 0;
+      const maxSpawnAttempts = 5;
+      while (spawnAttempts < maxSpawnAttempts) {
+        try {
+          spawn("cmd.exe", ["/c", batchPath, ...process.argv.slice(2)], {
+            detached: true,
+            stdio: "ignore",
+          }).unref();
+          break;
+        } catch (spawnErr) {
+          spawnAttempts++;
+          if (spawnAttempts >= maxSpawnAttempts) throw spawnErr;
+          await new Promise((r) => setTimeout(r, 1000));
+        }
+      }
       process.exit(0);
     }
   } catch (err) {

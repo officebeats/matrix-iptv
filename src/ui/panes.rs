@@ -313,8 +313,9 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
 
             let mut spans = vec![];
             
-            // 0. Row number column (fixed width, right-aligned)
-            let row_num = format!("{:>4} ", idx + 1);
+            // 0. Channel number column (fixed width, right-aligned) — use unique stream_id
+            let ch_num = crate::api::get_id_str(&s.stream_id);
+            let row_num = format!("{:<6} ", ch_num);
             spans.push(ratatui::text::Span::styled(row_num, Style::default().fg(TEXT_DIM)));
             spans.push(ratatui::text::Span::styled(" ", Style::default().fg(TEXT_DIM)));
             
@@ -610,7 +611,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
     let sep_line = "─".repeat(inner_area.width as usize);
     let header_text = vec![
         Line::from(vec![
-            Span::styled("     # ", header_style),
+            Span::styled("   Ch # ", header_style),
             Span::styled("│ ", Style::default().fg(TEXT_DIM)),
             Span::styled("Name", header_style),
         ]),
@@ -772,8 +773,11 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
     let mut lines: Vec<Line> = Vec::new();
 
     // ── Summary (JiraTUI top field) ──
+    // Show stream_id in summary header for easy channel identification
+    let ch_id_str = crate::api::get_id_str(&s.stream_id);
+    let summary_label = format!("Ch {} · Summary", ch_id_str);
     lines.push(Line::from(vec![
-        Span::styled("Summary", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(summary_label, Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
     ]));
     // Truncate display name to fit panel width
     let display = if parsed.display_name.chars().count() > w.saturating_sub(1) {
@@ -838,27 +842,27 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
     lines.push(Line::from(Span::styled(cat_trunc, value_style)));
     lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
 
-    // EPG Now Playing + Stream ID row
+    // EPG Now Playing (own row)
     let s_id_for_epg = crate::api::get_id_str(&s.stream_id);
     let now_playing = app.epg_cache.get(&s_id_for_epg)
         .map(|s| s.clone())
         .unwrap_or_else(|| "—".to_string());
         
-    let epg_trunc = if now_playing.chars().count() > half.saturating_sub(1) {
-        let sc: String = now_playing.chars().take(half.saturating_sub(2)).collect();
+    let epg_trunc = if now_playing.chars().count() > w.saturating_sub(1) {
+        let sc: String = now_playing.chars().take(w.saturating_sub(2)).collect();
         format!("{}…", sc)
     } else { now_playing };
     
+    lines.push(Line::from(Span::styled("Now Playing", Style::default().fg(label_color))));
+    lines.push(Line::from(Span::styled(epg_trunc, value_style)));
+    lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+
+    // Stream ID (own row)
     let sid = s_id_for_epg;
-    
     lines.push(Line::from(vec![
-        Span::styled(format!("{:<half$}", "Now Playing"), Style::default().fg(label_color)),
         Span::styled("Stream ID", Style::default().fg(label_color)),
     ]));
-    lines.push(Line::from(vec![
-        Span::styled(format!("{:<half$}", epg_trunc), value_style),
-        Span::styled(&sid, dim_style),
-    ]));
+    lines.push(Line::from(Span::styled(&sid, dim_style)));
     lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
 
     // Favorite + Rating row
@@ -941,6 +945,9 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
 
 
 pub fn render_stream_details_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
+    let title = " match intelligence ";
+    let inner_area = crate::ui::common::render_matrix_box(f, area, title, border_color);
+
     let selected_idx = app.selected_stream_index;
     let focused_stream = if app.current_screen == CurrentScreen::GlobalSearch {
         app.global_search_results.get(selected_idx)
@@ -948,7 +955,14 @@ pub fn render_stream_details_pane(f: &mut Frame, app: &mut App, area: Rect, bord
         app.streams.get(selected_idx)
     };
 
-    let Some(s) = focused_stream else { return };
+    let Some(s) = focused_stream else {
+        let msg = Paragraph::new("No channel selected")
+            .style(Style::default().fg(TEXT_DIM))
+            .alignment(ratatui::layout::Alignment::Center);
+        f.render_widget(msg, inner_area);
+        return;
+    };
+
     let parsed = if let Some(ref cached) = s.cached_parsed {
         cached.as_ref().clone()
     } else {
@@ -956,10 +970,31 @@ pub fn render_stream_details_pane(f: &mut Frame, app: &mut App, area: Rect, bord
     };
     
     let score_data = app.get_score_for_stream(&parsed.display_name);
-    
     let event = parsed.sports_event.clone();
-    if event.is_none() && score_data.is_none() { return }
-    
+
+    // No match data — show compact channel info instead of hiding the panel
+    if event.is_none() && score_data.is_none() {
+        let user_tz_str = app.config.get_user_timezone();
+        let user_tz: Tz = user_tz_str.parse().unwrap_or(chrono_tz::UTC);
+        let mut lines = vec![
+            Line::from(Span::styled(&parsed.display_name, Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD))),
+        ];
+        if let Some(st) = parsed.start_time {
+            lines.push(Line::from(vec![
+                Span::styled("⏰ ", Style::default().fg(MATRIX_GREEN)),
+                Span::styled(format_relative_time(st, &user_tz), Style::default().fg(MATRIX_GREEN)),
+            ]));
+        } else {
+            lines.push(Line::from(Span::styled("No live match data", Style::default().fg(TEXT_DIM))));
+        }
+        lines.push(Line::from(vec![
+            Span::styled("enter", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(" to watch", Style::default().fg(TEXT_SECONDARY)),
+        ]));
+        f.render_widget(Paragraph::new(lines), inner_area);
+        return;
+    }
+
     let (team1, team2) = if let Some(ref ev) = event {
         (ev.team1.clone(), ev.team2.clone())
     } else if let Some(ref sd) = score_data {
@@ -967,9 +1002,6 @@ pub fn render_stream_details_pane(f: &mut Frame, app: &mut App, area: Rect, bord
     } else {
         return;
     };
-
-    let title = " match intelligence ";
-    let inner_area = crate::ui::common::render_matrix_box(f, area, title, border_color);
 
     let sub_chunks = Layout::default()
         .direction(Direction::Horizontal)

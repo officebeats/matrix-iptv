@@ -19,6 +19,9 @@ use ratatui::{
     Frame,
 };
 
+#[cfg(not(target_arch = "wasm32"))]
+use tachyonfx::{fx, Duration as FxDuration, EffectRenderer};
+
 use crate::app::{App, CurrentScreen};
 use crate::ui::colors::SOFT_GREEN;
 
@@ -90,6 +93,43 @@ pub fn ui(f: &mut Frame, app: &mut App) {
          crate::matrix_rain::render_matrix_rain(f, app, area);
     }
 
+    // --- Screen Transition Effect ---
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // Compute per-frame delta time (clamped to 100ms max to avoid huge jumps)
+        let now = std::time::Instant::now();
+        let delta = now.duration_since(app.frame_instant).min(std::time::Duration::from_millis(100));
+        app.frame_instant = now;
+        let last_tick = FxDuration::from_millis(delta.as_millis() as u32);
+
+        // Detect screen change → spawn a new sweep-in effect
+        let screen_changed = app.transition_last_screen.as_ref().map_or(true, |s| *s != app.current_screen);
+        if screen_changed && !app.show_matrix_rain {
+            app.transition_last_screen = Some(app.current_screen.clone());
+            let effect = fx::sweep_in(
+                tachyonfx::Motion::LeftToRight,
+                10,   // sweep width in cells
+                0,    // offset
+                ratatui::style::Color::Black,
+                tachyonfx::EffectTimer::from((
+                    FxDuration::from_millis(350),
+                    tachyonfx::Interpolation::Linear,
+                )),
+            );
+            app.transition_effect = Some(effect);
+        }
+
+        // Process and render the active transition effect
+        if let Some(ref mut effect) = app.transition_effect {
+            f.render_effect(effect, area, last_tick);
+            // Clean up completed effects
+            if effect.done() {
+                app.transition_effect = None;
+            }
+        }
+    }
+    // --- End Transition Effect ---
+
     if app.show_help {
         popups::render_help_popup(f, area);
     }
@@ -150,24 +190,18 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                         ])
                         .split(content_area);
 
-                    // Check if focused stream is a sports event (use cache to avoid per-frame parsing)
-                    let is_sports_event = app.streams.get(app.selected_stream_index)
-                        .map(|s| {
-                            if let Some(ref cached) = s.cached_parsed {
-                                cached.sports_event.is_some() || app.get_score_for_stream(&cached.display_name).is_some()
-                            } else {
-                                false // Don't parse on render — assume non-sports layout if not cached
-                            }
-                        })
+                    // Check if current CATEGORY is sports (not per-stream — avoids jarring pop in/out)
+                    let is_sports_category = app.categories.get(app.selected_category_index)
+                        .map(|c| crate::parser::is_sports_content(&c.category_name))
                         .unwrap_or(false);
 
-                    if is_sports_event {
-                        // Sports: Streams on top, Match Intelligence below in middle column
+                    if is_sports_category {
+                        // Sports category: always show match intelligence at fixed compact height
                         let mid_chunks = Layout::default()
                             .direction(Direction::Vertical)
                             .constraints([
                                 Constraint::Min(10),
-                                Constraint::Length(10),
+                                Constraint::Length(7),
                             ])
                             .split(h_chunks[0]);
                         panes::render_streams_pane(f, app, mid_chunks[0], SOFT_GREEN);
@@ -187,23 +221,16 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                         ])
                         .split(content_area);
 
-                    let is_sports_event = app.streams.get(app.selected_stream_index)
-                        .map(|s| {
-                            if let Some(ref cached) = s.cached_parsed {
-                                cached.sports_event.is_some() || app.get_score_for_stream(&cached.display_name).is_some()
-                            } else {
-                                false
-                            }
-                        })
+                    let is_sports_category = app.categories.get(app.selected_category_index)
+                        .map(|c| crate::parser::is_sports_content(&c.category_name))
                         .unwrap_or(false);
 
-                    if is_sports_event {
-                        let intel_height = 10u16;
+                    if is_sports_category {
                         let right_chunks = Layout::default()
                             .direction(Direction::Vertical)
                             .constraints([
                                 Constraint::Min(10),
-                                Constraint::Length(intel_height),
+                                Constraint::Length(7),
                             ])
                             .split(h_chunks[0]);
                         panes::render_streams_pane(f, app, right_chunks[0], SOFT_GREEN);
