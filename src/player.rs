@@ -609,7 +609,7 @@ impl Player {
     /// Windows stub for read_ipc_socket
     #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
     async fn read_ipc_socket(&self, _path: &PathBuf) -> Result<String, std::io::Error> {
-        Err(std::io::Error::new(std::io::ErrorKind::NotSupported, "Unix sockets not available on Windows"))
+        Err(std::io::Error::new(std::io::ErrorKind::Other, "Unix sockets not available on Windows"))
     }
 
     /// Windows stub for monitor_ipc_errors
