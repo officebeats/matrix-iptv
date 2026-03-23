@@ -77,6 +77,18 @@ pub enum AsyncAction {
     CastStarted(String), // Device name
     CastFailed(String),  // Error message
     Error(String),
+    /// Playlist validated successfully — now safe to save and return home.
+    ValidatePlaylistSuccess {
+        name: String,
+        url: String,
+        username: String,
+        password: String,
+        account_type: crate::config::AccountType,
+        epg_url: Option<String>,
+        editing_index: Option<usize>,
+    },
+    /// Playlist validation failed — surface error inline, keep form open.
+    ValidatePlaylistFailed(String),
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -135,6 +147,9 @@ pub struct App {
     pub input_mode: InputMode,
     pub should_quit: bool,
     pub state_loading: bool,
+    /// True while a playlist connection test is in flight from the Add/Edit form.
+    /// Distinct from `state_loading` to allow Esc to cancel without leaving the form screen.
+    pub form_validating: bool,
     pub cached_user_timezone: String,
 
     // Home / Accounts
@@ -428,6 +443,7 @@ impl App {
             input_mode: InputMode::Normal,
             should_quit: false,
             state_loading: false,
+            form_validating: false,
 
             epg_cache: std::collections::HashMap::new(),
             last_focused_stream_id: None,

@@ -177,8 +177,16 @@ pub fn render_login(f: &mut Frame, app: &App, area: Rect) {
             Span::styled(" back", label_style),
         ])
     };
-    let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
-    f.render_widget(hints_para, chunks[hints_chunk]);
+    if app.form_validating {
+        let spinner_frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        let frame = spinner_frames[(app.loading_tick / 5) as usize % spinner_frames.len()];
+        let spinner = Paragraph::new(format!("  {} Testing connection...", frame))
+            .style(Style::default().fg(MATRIX_GREEN));
+        f.render_widget(spinner, chunks[hints_chunk]);
+    } else {
+        let hints_para = Paragraph::new(hints).alignment(Alignment::Center);
+        f.render_widget(hints_para, chunks[hints_chunk]);
+    }
 
     if let Some(err) = &app.login_error {
         let error_msg = Paragraph::new(format!(" error: {}", err)).style(
