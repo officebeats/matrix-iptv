@@ -39,7 +39,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.CC_SCRUM_OAUTH_TOKEN }}
           prompt: |
             You are the Fullstack Developer for this project. The QA Tester has assigned you to fix bugs in PR #${{ github.event.issue.number }}.
 

@@ -27,7 +27,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.CC_SCRUM_OAUTH_TOKEN }}
           allowed_bots: 'claude,*'
           prompt: |
             You are the QA Tester for this project. A pull request (#${{ github.event.pull_request.number }}) has been opened or updated.
