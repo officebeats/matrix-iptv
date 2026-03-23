@@ -1,7 +1,7 @@
-use ratatui::style::Color;
-use regex::Regex;
 use chrono::{DateTime, Datelike, NaiveDate, NaiveDateTime, NaiveTime, TimeZone, Utc};
 use once_cell::sync::Lazy;
+use ratatui::style::Color;
+use regex::Regex;
 use std::collections::HashSet;
 
 // ============================================================================
@@ -14,49 +14,221 @@ use std::collections::HashSet;
 static FOREIGN_KEYWORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
         // Middle East & North Africa
-        "ARAB", "ARABIC", "SAUDI", "EMIRATES", "QATAR", "KUWAIT", "PERSIAN", "IRAN",
-        "AFGHAN", "ISRAEL", "MAROC", "MOROCCO", "TUNISIA", "ALGERIA", "EGYPT",
-        "SYRIA", "LEBANON", "JORDAN", "IRAQ", "OMANI", "YEMEN", "LIBYA", "SUDAN", 
-        "FARSI", "HEBREW", "KHALEEJI", "MAGHREB",
+        "ARAB",
+        "ARABIC",
+        "SAUDI",
+        "EMIRATES",
+        "QATAR",
+        "KUWAIT",
+        "PERSIAN",
+        "IRAN",
+        "AFGHAN",
+        "ISRAEL",
+        "MAROC",
+        "MOROCCO",
+        "TUNISIA",
+        "ALGERIA",
+        "EGYPT",
+        "SYRIA",
+        "LEBANON",
+        "JORDAN",
+        "IRAQ",
+        "OMANI",
+        "YEMEN",
+        "LIBYA",
+        "SUDAN",
+        "FARSI",
+        "HEBREW",
+        "KHALEEJI",
+        "MAGHREB",
         // South Asia
-        "INDIA", "INDIAN", "HINDI", "PUNJABI", "TAMIL", "TELUGU", "MALAYALAM",
-        "KANNADA", "MARATHI", "BENGALI", "PAKISTAN", "URDU", "BANGLA", "BANGLADESH",
-        "NEPALI", "NEPAL", "SINHALESE", "BHOJPURI",
+        "INDIA",
+        "INDIAN",
+        "HINDI",
+        "PUNJABI",
+        "TAMIL",
+        "TELUGU",
+        "MALAYALAM",
+        "KANNADA",
+        "MARATHI",
+        "BENGALI",
+        "PAKISTAN",
+        "URDU",
+        "BANGLA",
+        "BANGLADESH",
+        "NEPALI",
+        "NEPAL",
+        "SINHALESE",
+        "BHOJPURI",
         // East Asia
-        "CHINA", "CHINESE", "MANDARIN", "CANTONESE", "JAPAN", "KOREA",
-        "PHILIPPINES", "FILIPINO", "PINOY", "VIETNAM", "THAILAND", "INDONESIA", "MALAYSIA",
-        "TAIWAN", "TAIWANESE", "KHMER", "CAMBODIA", "LAO", "LAOS", "BURMESE", "MYANMAR", "ASIAN",
+        "CHINA",
+        "CHINESE",
+        "MANDARIN",
+        "CANTONESE",
+        "JAPAN",
+        "KOREA",
+        "PHILIPPINES",
+        "FILIPINO",
+        "PINOY",
+        "VIETNAM",
+        "THAILAND",
+        "INDONESIA",
+        "MALAYSIA",
+        "TAIWAN",
+        "TAIWANESE",
+        "KHMER",
+        "CAMBODIA",
+        "LAO",
+        "LAOS",
+        "BURMESE",
+        "MYANMAR",
+        "ASIAN",
         // Europe (non-English)
-        "FRANCE", "FRENCH", "GERMAN", "GERMANY", "DEUTSCH", "ITALY", "ITALIAN",
-        "SPAIN", "SPANISH", "ESPANA", "PORTUGAL", "PORTUGUESE",
-        "DUTCH", "NETHERLANDS", "POLAND", "POLISH", "ROMANIA", "ROMANIAN",
-        "CZECH", "HUNGARY", "HUNGARIAN", "GREEK", "GREECE", "ALBANIA", "ALBANIAN",
-        "SERBIA", "SERBIAN", "CROATIA", "CROATIAN", "BOSNIA", "BULGARIA", "BULGARIAN",
-        "SLOVENIA", "MACEDONIA", "MONTENEGRO", "NORDIC", "SWEDEN", "SWEDISH",
-        "NORWAY", "NORWEGIAN", "DENMARK", "DANISH", "FINLAND", "FINNISH",
-        "RUSSIA", "RUSSIAN", "UKRAINE", "UKRAINIAN", "BELARUS", "MALTA", "MALTESE",
-        "SLOVAK", "SLOVAKIA", "LITHUANIAN", "LITHUANIA", "LATVIAN", "LATVIA", 
-        "ESTONIAN", "ESTONIA", "ICELANDIC", "ICELAND", "FLEMISH", "WALLOON", "SWISS", "CYPRUS", "EUROPE",
+        "FRANCE",
+        "FRENCH",
+        "GERMAN",
+        "GERMANY",
+        "DEUTSCH",
+        "ITALY",
+        "ITALIAN",
+        "SPAIN",
+        "SPANISH",
+        "ESPANA",
+        "PORTUGAL",
+        "PORTUGUESE",
+        "DUTCH",
+        "NETHERLANDS",
+        "POLAND",
+        "POLISH",
+        "ROMANIA",
+        "ROMANIAN",
+        "CZECH",
+        "HUNGARY",
+        "HUNGARIAN",
+        "GREEK",
+        "GREECE",
+        "ALBANIA",
+        "ALBANIAN",
+        "SERBIA",
+        "SERBIAN",
+        "CROATIA",
+        "CROATIAN",
+        "BOSNIA",
+        "BULGARIA",
+        "BULGARIAN",
+        "SLOVENIA",
+        "MACEDONIA",
+        "MONTENEGRO",
+        "NORDIC",
+        "SWEDEN",
+        "SWEDISH",
+        "NORWAY",
+        "NORWEGIAN",
+        "DENMARK",
+        "DANISH",
+        "FINLAND",
+        "FINNISH",
+        "RUSSIA",
+        "RUSSIAN",
+        "UKRAINE",
+        "UKRAINIAN",
+        "BELARUS",
+        "MALTA",
+        "MALTESE",
+        "SLOVAK",
+        "SLOVAKIA",
+        "LITHUANIAN",
+        "LITHUANIA",
+        "LATVIAN",
+        "LATVIA",
+        "ESTONIAN",
+        "ESTONIA",
+        "ICELANDIC",
+        "ICELAND",
+        "FLEMISH",
+        "WALLOON",
+        "SWISS",
+        "CYPRUS",
+        "EUROPE",
         // Africa
-        "AFRICA", "AFRICAN", "NIGERIA", "KENYA", "SOMALIA", "SOMALI", "SOUTH AFRICA",
+        "AFRICA",
+        "AFRICAN",
+        "NIGERIA",
+        "KENYA",
+        "SOMALIA",
+        "SOMALI",
+        "SOUTH AFRICA",
         // Central Asia / Caucasus
-        "TURKEY", "TURK", "ARMENIA", "ARMENIAN", "KURDISH", "KURD",
-        "AZERBAIJAN", "GEORGIA", "HONG KONG",
+        "TURKEY",
+        "TURK",
+        "ARMENIA",
+        "ARMENIAN",
+        "KURDISH",
+        "KURD",
+        "AZERBAIJAN",
+        "GEORGIA",
+        "HONG KONG",
         // UK/Ireland (for 'Merica mode, these are "foreign")
-        "UNITED KINGDOM", "BRITISH", "IRELAND", "IRISH", "SCOTLAND",
+        "UNITED KINGDOM",
+        "BRITISH",
+        "IRELAND",
+        "IRISH",
+        "SCOTLAND",
         // Latin America
-        "LATAM", "LATIN", "LATINO", "HISPANIC", "ARGENTINA", "COLOMBIA", "CHILE", "PERU", "VENEZUELA",
-        "BOLIVIA", "ECUADOR", "URUGUAY", "PARAGUAY", "CARIBBEAN", "BRAZIL", "MEXICO", "MEXICAN", 
-        "CUBA", "CUBAN", "PUERTO RICO", "DOMINICAN", "SUDAMERICA", "CENTROAMERICA",
+        "LATAM",
+        "LATIN",
+        "LATINO",
+        "HISPANIC",
+        "ARGENTINA",
+        "COLOMBIA",
+        "CHILE",
+        "PERU",
+        "VENEZUELA",
+        "BOLIVIA",
+        "ECUADOR",
+        "URUGUAY",
+        "PARAGUAY",
+        "CARIBBEAN",
+        "BRAZIL",
+        "MEXICO",
+        "MEXICAN",
+        "CUBA",
+        "CUBAN",
+        "PUERTO RICO",
+        "DOMINICAN",
+        "SUDAMERICA",
+        "CENTROAMERICA",
         // French-Canadian
-        "QUEBEC", "QUEBECOISE",
+        "QUEBEC",
+        "QUEBECOISE",
         // Multi-Language / Regional / Special
-        "EXYU", "EX-YU", "EX YU", "MULTI-LANG", "MULTILANG", "MULTI AUDIO", "MULTI-AUDIO",
-        "DUAL AUDIO", "SUBBED", "DUBBED", "VOS", "VOSA",
-        "INTERNATIONAL", "GLOBAL", "WORLD", "FOREIGN", "SCANDINAVIA",
-        "BE-NL", "BE-FR", "CH-DE", "CH-FR", "CH-IT",
+        "EXYU",
+        "EX-YU",
+        "EX YU",
+        "MULTI-LANG",
+        "MULTILANG",
+        "MULTI AUDIO",
+        "MULTI-AUDIO",
+        "DUAL AUDIO",
+        "SUBBED",
+        "DUBBED",
+        "VOS",
+        "VOSA",
+        "INTERNATIONAL",
+        "GLOBAL",
+        "WORLD",
+        "FOREIGN",
+        "SCANDINAVIA",
+        "BE-NL",
+        "BE-FR",
+        "CH-DE",
+        "CH-FR",
+        "CH-IT",
         // Adult
-        "XXX", "ADULT", "18+", "PORN",
+        "XXX",
+        "ADULT",
+        "18+",
+        "PORN",
     ]
     .into_iter()
     .collect()
@@ -69,37 +241,27 @@ static FOREIGN_COUNTRY_CODES: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         // Middle East
         "AR", "SA", "AE", "QA", "KW", "IR", "AF", "IL", "OM", "YE", "SY", "LB", "JO", "IQ",
         // South Asia
-        "IN", "PK", "BD", "LK", "NP",
-        // East Asia
+        "IN", "PK", "BD", "LK", "NP", // East Asia
         "CN", "JP", "KR", "PH", "VN", "TH", "ID", "MY", "TW", "SG", "KH", "LA", "MM",
         // Europe
-        "UK", "IE", "SC", "FR", "DE", "IT", "ES", "PT", "NL", "BE", "PL",
-        "RO", "CZ", "HU", "GR", "AL", "ALB", "RS", "HR", "BA", "BG", "SI", "MK", "ME",
-        "SE", "NO", "DK", "FI", "RU", "UA", "BY", "AT", "CH", "CY", "MT",
-        "SK", "LT", "LV", "EE", "IS", "LU", "EU", "TR", "SW",
+        "UK", "IE", "SC", "FR", "DE", "IT", "ES", "PT", "NL", "BE", "PL", "RO", "CZ", "HU", "GR",
+        "AL", "ALB", "RS", "HR", "BA", "BG", "SI", "MK", "ME", "SE", "NO", "DK", "FI", "RU", "UA",
+        "BY", "AT", "CH", "CY", "MT", "SK", "LT", "LV", "EE", "IS", "LU", "EU", "TR", "SW",
         // Caucasus
-        "AM", "AZ", "GE",
-        // Africa
-        "ZA", "NG", "KE", "MA", "DZ", "TN", "EG", "LY", "SD", "SO",
-        // Americas
-        "BR", "CR", "MX", "CU", "PR", "DO", "CO", "AR", "CL", "PE", "VE",
-        // Oceania
-        "AU", "NZ",
-        // Special
-        "HK",
-        
-        // --- 3-Letter ISO Codes ---
+        "AM", "AZ", "GE", // Africa
+        "ZA", "NG", "KE", "MA", "DZ", "TN", "EG", "LY", "SD", "SO", // Americas
+        "BR", "CR", "MX", "CU", "PR", "DO", "CO", "AR", "CL", "PE", "VE", // Oceania
+        "AU", "NZ", // Special
+        "HK", // --- 3-Letter ISO Codes ---
         // Europe
-        "FRA", "DEU", "GER", "ITA", "ESP", "SPA", "NLD", "NED", "PRT", "RUS", "TUR", 
-        "GRC", "GRE", "SWE", "DNK", "DEN", "NOR", "FIN", "POL", "ROU", "ROM", "HUN", 
-        "CZE", "SVK", "SLK", "BGR", "BUL", "HRV", "CRO", "SRB", "BIH", "BOS", "MKD", 
-        "MAC", "CHE", "SUI",
+        "FRA", "DEU", "GER", "ITA", "ESP", "SPA", "NLD", "NED", "PRT", "RUS", "TUR", "GRC", "GRE",
+        "SWE", "DNK", "DEN", "NOR", "FIN", "POL", "ROU", "ROM", "HUN", "CZE", "SVK", "SLK", "BGR",
+        "BUL", "HRV", "CRO", "SRB", "BIH", "BOS", "MKD", "MAC", "CHE", "SUI",
         // Latin America
         "MEX", "COL", "ARG", "CHL", "PER", "VEN", "BRA", "CUB", "DOM",
         // Asia/Middle East
-        "IND", "PAK", "BGD", "CHN", "JPN", "KOR", "VNM", "THA", "IDN", "MYS", "PHL", 
-        "TWN", "KHM", "LKA", "IRN", "IRQ", "SAU", "ARE", "ISR", "SYR", "LBN",
-        // Africa
+        "IND", "PAK", "BGD", "CHN", "JPN", "KOR", "VNM", "THA", "IDN", "MYS", "PHL", "TWN", "KHM",
+        "LKA", "IRN", "IRQ", "SAU", "ARE", "ISR", "SYR", "LBN", // Africa
         "ZAF", "EGY", "NGA", "KEN", "MAR", "DZA",
     ]
     .into_iter()
@@ -122,7 +284,11 @@ fn matches_foreign(name_upper: &str) -> bool {
         // "XX |" or "XX|" prefix
         if name_upper.starts_with(code) {
             let rest = &name_upper[code.len()..];
-            if rest.starts_with(" |") || rest.starts_with("|") || rest.starts_with(" :") || rest.starts_with(":") {
+            if rest.starts_with(" |")
+                || rest.starts_with("|")
+                || rest.starts_with(" :")
+                || rest.starts_with(":")
+            {
                 return true;
             }
         }
@@ -151,21 +317,16 @@ fn matches_foreign(name_upper: &str) -> bool {
 static TIME_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?i)(?:(\d{1,2})[/.[:punct:]](\d{1,2})\s+)?\(?\[?(\d{1,2})[:.](\d{2})\s*(am|pm)?\]?\)?\s*([A-Z]{2,4}(?:\s*[/]\s*[A-Z]{2,4})?)?").unwrap()
 });
-static START_TIME_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)start:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").unwrap()
-});
-static STOP_TIME_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)stop:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").unwrap()
-});
-static YEAR_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"[\(\[](\d{4})[\)\]]").unwrap()
-});
-static YEAR_STRIP_REGEX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"[\(\[]\d{4}[\)\]]").unwrap()
-});
+static START_TIME_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)start:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").unwrap());
+static STOP_TIME_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)stop:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").unwrap());
+static YEAR_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"[\(\[](\d{4})[\)\]]").unwrap());
+static YEAR_STRIP_REGEX: Lazy<Regex> = Lazy::new(|| Regex::new(r"[\(\[]\d{4}[\)\]]").unwrap());
 
 // American Mode cleaning regexes - pre-compiled and combined for performance
-static CLEAN_U_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^[\W_]*u[\s\u{00A0}\u{200B}]+").unwrap());
+static CLEAN_U_PREFIX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)^[\W_]*u[\s\u{00A0}\u{200B}]+").unwrap());
 
 static CLEAN_PREFIX_COMBINED: Lazy<Regex> = Lazy::new(|| {
     // Order matters: Longest matches first to avoid partial replacements (e.g. USA vs US)
@@ -177,15 +338,18 @@ static CLEAN_BRACKETS_COMBINED: Lazy<Regex> = Lazy::new(|| {
 });
 
 static CLEAN_END_COMBINED: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)\s+(?:UNITED\s+STATES|UNITED\s+KINGDOM|ENGLISH|AMERICA|USA|US|UK|CA|EN)\s*$").unwrap()
+    Regex::new(r"(?i)\s+(?:UNITED\s+STATES|UNITED\s+KINGDOM|ENGLISH|AMERICA|USA|US|UK|CA|EN)\s*$")
+        .unwrap()
 });
 
 static CLEAN_START_COMBINED: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?i)^(?:UNITED\s+STATES|UNITED\s+KINGDOM|ENGLISH|AMERICA|USA|US|UK|CA|EN)\s+").unwrap()
+    Regex::new(r"(?i)^(?:UNITED\s+STATES|UNITED\s+KINGDOM|ENGLISH|AMERICA|USA|US|UK|CA|EN)\s+")
+        .unwrap()
 });
 
 // Standalone USA mentions (e.g. "USA Sports")
-static CLEAN_USA_STANDALONE: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)\bUSA\b\s*[-|:]*\s*").unwrap());
+static CLEAN_USA_STANDALONE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)\bUSA\b\s*[-|:]*\s*").unwrap());
 
 static CLEAN_TRAILING_PIPE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\s*\|\s*$").unwrap());
 static CLEAN_LEADING_PIPE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^\s*\|\s*").unwrap());
@@ -207,15 +371,33 @@ static CLEAN_BRACKETS_GARBAGE: Lazy<Regex> = Lazy::new(|| {
 /// Uses HashSet for O(1) lookup instead of regex.
 static FOREIGN_VOD_KEYWORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
     [
-        "FRANCE", "FRENCH", "INDIA", "INDIAN", "HINDI", "TURKISH", "TURK",
-        "ARABIC", "ARAB", "SPANISH", "LATINO", "GERMAN", "ITALIAN",
-        "PORTUGUESE", "RUSSIAN", "CHINESE", "KOREAN", "JAPANESE",
-        "POLISH", "DUTCH", "SWEDISH", "DANISH", "NORWEGIAN"
+        "FRANCE",
+        "FRENCH",
+        "INDIA",
+        "INDIAN",
+        "HINDI",
+        "TURKISH",
+        "TURK",
+        "ARABIC",
+        "ARAB",
+        "SPANISH",
+        "LATINO",
+        "GERMAN",
+        "ITALIAN",
+        "PORTUGUESE",
+        "RUSSIAN",
+        "CHINESE",
+        "KOREAN",
+        "JAPANESE",
+        "POLISH",
+        "DUTCH",
+        "SWEDISH",
+        "DANISH",
+        "NORWEGIAN",
     ]
     .into_iter()
     .collect()
 });
-
 
 /// Parsed category with extracted metadata
 #[derive(Debug, Clone)]
@@ -274,7 +456,7 @@ impl ContentType {
     pub fn icon(&self) -> &'static str {
         match self {
             ContentType::Sports => "\u{26be}", // Default sports
-            ContentType::PPV => "\u{1f3df}",    // Stadium/Event
+            ContentType::PPV => "\u{1f3df}",   // Stadium/Event
             _ => "",
         }
     }
@@ -283,7 +465,9 @@ impl ContentType {
 /// Get color for country/region code
 pub fn country_color(country: &str) -> Color {
     match country.to_uppercase().as_str() {
-        "US" | "USA" | "AM" | "NBA" | "NFL" | "MLB" | "NHL" | "UFC" | "SPORTS" | "PPV" => Color::Rgb(0, 255, 255),
+        "US" | "USA" | "AM" | "NBA" | "NFL" | "MLB" | "NHL" | "UFC" | "SPORTS" | "PPV" => {
+            Color::Rgb(0, 255, 255)
+        }
         "UK" | "GB" | "EU" => Color::Rgb(57, 255, 20),
         _ => Color::White,
     }
@@ -317,7 +501,8 @@ pub fn country_flag(country: &str) -> &'static str {
 
 /// Check if a name/category is American live content
 // Generic Country Prefix Regex (e.g. "AZ |", "BR |", "C |")
-static GENERIC_COUNTRY_PREFIX: Lazy<Regex> = Lazy::new(|| Regex::new(r"(?i)^([A-Z]{1,3})\s*[|:]").unwrap());
+static GENERIC_COUNTRY_PREFIX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)^([A-Z]{1,3})\s*[|:]").unwrap());
 
 /// Check if a name/category is American live content
 pub fn is_american_live(name: &str) -> bool {
@@ -326,7 +511,12 @@ pub fn is_american_live(name: &str) -> bool {
 
     // 0. Strict Blocker for known international junk that slips through (e.g. "AR|")
     // This handles cases where a prefix like Arabic (AR) is used without a space.
-    if (n.starts_with("AR |") || n.starts_with("AR|") || n.starts_with("AR :") || n.starts_with("AR:")) && !n.contains("USA") {
+    if (n.starts_with("AR |")
+        || n.starts_with("AR|")
+        || n.starts_with("AR :")
+        || n.starts_with("AR:"))
+        && !n.contains("USA")
+    {
         return false;
     }
 
@@ -335,34 +525,69 @@ pub fn is_american_live(name: &str) -> bool {
     // If not, we block it unless the name contains a strong US keyword (like "USA").
     if let Some(caps) = GENERIC_COUNTRY_PREFIX.captures(&n) {
         if let Some(match_str) = caps.get(1) {
-             let p = match_str.as_str();
-             // Whitelist strict US/Sports/Quality prefixes
-             let allowed_prefixes = [
-                 "US", "USA", "VIP", "4K", "3D", "XXX", "PPV", 
-                 "NBA", "NFL", "UFC", "MLB", "NHL", "F1", "UHD", "FHD", "RAW"
-             ];
-             
-             if !allowed_prefixes.contains(&p) {
-                 // It has a prefix like "UK", "CA", "FR". 
-                 // We block it UNLESS it explicitly mentions USA inside the name.
-                 if !n.contains("USA") && !n.contains("US LOCALS") && !n.contains("AMERICA") && !n.contains("UNITED STATES") {
-                    return false; 
-                 }
-             }
+            let p = match_str.as_str();
+            // Whitelist strict US/Sports/Quality prefixes
+            let allowed_prefixes = [
+                "US", "USA", "VIP", "4K", "3D", "XXX", "PPV", "NBA", "NFL", "UFC", "MLB", "NHL",
+                "F1", "UHD", "FHD", "RAW",
+            ];
+
+            if !allowed_prefixes.contains(&p) {
+                // It has a prefix like "UK", "CA", "FR".
+                // We block it UNLESS it explicitly mentions USA inside the name.
+                if !n.contains("USA")
+                    && !n.contains("US LOCALS")
+                    && !n.contains("AMERICA")
+                    && !n.contains("UNITED STATES")
+                {
+                    return false;
+                }
+            }
         }
     }
 
     // 2. Explicit Positive check
     // If it passed the prefix check (or has no prefix), we check if it's definitively American.
     let positive_keywords = [
-        "USA", "U.S.A", " US ", "[US]", "(US)", "|US|", "AMERICA", "UNITED STATES", "LOCAL", "LOCALS", 
-        "NFL", "NBA", "MLB", "NHL", "NCAA", "ESPN", "BALLY", "YES NETWORK", "MSG", "ABC", "NBC", "CBS", "FOX",
-        "4K", "UHD", "FHD", "VIP", "PPV", "UFC"
+        "USA",
+        "U.S.A",
+        " US ",
+        "[US]",
+        "(US)",
+        "|US|",
+        "AMERICA",
+        "UNITED STATES",
+        "LOCAL",
+        "LOCALS",
+        "NFL",
+        "NBA",
+        "MLB",
+        "NHL",
+        "NCAA",
+        "ESPN",
+        "BALLY",
+        "YES NETWORK",
+        "MSG",
+        "ABC",
+        "NBC",
+        "CBS",
+        "FOX",
+        "4K",
+        "UHD",
+        "FHD",
+        "VIP",
+        "PPV",
+        "UFC",
     ];
-    if positive_keywords.iter().any(|&k| n.contains(k)) || n.starts_with("US ") || n.starts_with("US|") || n.starts_with("US:") || n.starts_with("US-") {
+    if positive_keywords.iter().any(|&k| n.contains(k))
+        || n.starts_with("US ")
+        || n.starts_with("US|")
+        || n.starts_with("US:")
+        || n.starts_with("US-")
+    {
         return true;
     }
-    
+
     // Use O(1) HashSet lookup instead of mega-regex
     if matches_foreign(&n) {
         return false;
@@ -372,17 +597,17 @@ pub fn is_american_live(name: &str) -> bool {
     true
 }
 
-
 /// Clean up names in American Mode by removing redundant labels
 /// Uses pre-compiled static regexes for performance
 pub fn clean_american_name(name: &str) -> String {
     // Normalize special separators first
     let cleaned = name.replace("▎", "|");
-    
+
     // Remove all @ symbols globally, BOM, and hidden characters
-    let cleaned = cleaned.replace("@", "")
-                        .replace("\u{feff}", "")
-                        .replace("\u{200b}", "");
+    let cleaned = cleaned
+        .replace("@", "")
+        .replace("\u{feff}", "")
+        .replace("\u{200b}", "");
 
     // Chain replacements to minimize intermediate String allocations
     let cleaned = CLEAN_U_PREFIX.replace(&cleaned, "");
@@ -390,7 +615,7 @@ pub fn clean_american_name(name: &str) -> String {
     let cleaned = CLEAN_BRACKETS_COMBINED.replace_all(&cleaned, " ");
     let cleaned = CLEAN_END_COMBINED.replace_all(&cleaned, "");
     let cleaned = CLEAN_START_COMBINED.replace_all(&cleaned, "");
-    
+
     // Final cleanup: remove redundant pipes, hyphens, and double spaces
     let cleaned = CLEAN_TRAILING_PIPE.replace_all(&cleaned, "");
     let cleaned = CLEAN_LEADING_PIPE.replace_all(&cleaned, "");
@@ -398,14 +623,15 @@ pub fn clean_american_name(name: &str) -> String {
     let cleaned = CLEAN_TRAILING_HYPHEN.replace_all(&cleaned, "");
     let cleaned = CLEAN_LEADING_HYPHEN.replace_all(&cleaned, "");
     let cleaned = CLEAN_MULTI_SPACE.replace_all(&cleaned, " ");
-    
+
     // Remove any remaining standalone USA mentions
     let cleaned = CLEAN_USA_STANDALONE.replace_all(&cleaned, "");
-    
+
     // Extra cleanup for leading/trailing colons and dots
-    let cleaned_str = cleaned.trim_start_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
-                      .trim_end_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
-                      .trim();
+    let cleaned_str = cleaned
+        .trim_start_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
+        .trim_end_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
+        .trim();
 
     if cleaned_str.is_empty() {
         return name.to_string();
@@ -420,20 +646,20 @@ pub fn clean_american_name(name: &str) -> String {
 pub fn is_english_vod(name: &str) -> bool {
     let upper = name.to_uppercase();
     let trimmed = upper.trim();
-    
+
     // Whitelist: categories explicitly prefixed with English markers always pass
     // User requested to keep VIP content
     static ENGLISH_VOD_PREFIXES: &[&str] = &[
         "EN|", "EN |", "US|", "US |", "USA|", "USA |", "AM|", "AM |", "VIP|", "VIP |",
     ];
-    
+
     let is_english_prefix = ENGLISH_VOD_PREFIXES.iter().any(|p| trimmed.starts_with(p));
-    
+
     if is_english_prefix {
         // Even with EN/VIP prefix, block if it contains explicitly foreign sub-content
         // e.g. "EN| TURKISH SERIES" or "EN| KOREAN SERIES", unless it's a VIP
         let after_prefix = if let Some(pos) = trimmed.find('|') {
-            trimmed[pos+1..].trim()
+            trimmed[pos + 1..].trim()
         } else {
             trimmed
         };
@@ -449,7 +675,7 @@ pub fn is_english_vod(name: &str) -> bool {
         }
         return true;
     }
-    
+
     // Non-English prefixed categories: check the prefix itself
     // If the category starts with a known foreign country code prefix (e.g. "FR|", "TR|", "SW|"),
     // it's foreign.
@@ -467,12 +693,12 @@ pub fn is_english_vod(name: &str) -> bool {
             }
         }
     }
-    
+
     // If it explicitly matches foreign patterns (keywords or structural codes), block it
     if FOREIGN_VOD_KEYWORDS.iter().any(|&k| upper.contains(k)) || matches_foreign(&upper) {
         return false;
     }
-    
+
     // For VOD, assume English unless proven otherwise
     true
 }
@@ -480,13 +706,23 @@ pub fn is_english_vod(name: &str) -> bool {
 /// Check if a name/category is UK live content
 pub fn is_uk_live(name: &str) -> bool {
     let n = name.to_uppercase();
-    n.contains("UK |") || n.contains("|UK|") || n.contains("UNITED KINGDOM") || n.contains(" BRITISH ") || n.contains("[UK]") || n.contains("(UK)")
+    n.contains("UK |")
+        || n.contains("|UK|")
+        || n.contains("UNITED KINGDOM")
+        || n.contains(" BRITISH ")
+        || n.contains("[UK]")
+        || n.contains("(UK)")
 }
 
 /// Check if a name/category is Canadian live content
 pub fn is_ca_live(name: &str) -> bool {
     let n = name.to_uppercase();
-    n.contains("CA |") || n.contains("|CA|") || n.contains("CANADA") || n.contains("CANADIAN") || n.contains("[CA]") || n.contains("(CA)")
+    n.contains("CA |")
+        || n.contains("|CA|")
+        || n.contains("CANADA")
+        || n.contains("CANADIAN")
+        || n.contains("[CA]")
+        || n.contains("(CA)")
 }
 
 /// Check if a name/category is English (US/UK/CA) live content
@@ -497,13 +733,36 @@ pub fn is_english_live(name: &str) -> bool {
 /// Check if a name/category is Sports content
 pub fn is_sports_content(name: &str) -> bool {
     let n = name.to_uppercase();
-    n.contains("SPORT") || n.contains("FOOTBALL") || n.contains("SOCCER") || n.contains("BASKETBALL") || 
-    n.contains("NBA") || n.contains("NFL") || n.contains("MLB") || n.contains("NHL") || n.contains("UFC") || 
-    n.contains("BOXING") || n.contains("WRESTLING") || n.contains("WWE") || n.contains("AEW") || 
-    n.contains("CRICKET") || n.contains("RUGBY") || n.contains("GOLF") || n.contains("TENNIS") || 
-    n.contains("RACING") || n.contains("F1") || n.contains("MOTOGP") || n.contains("DAZN") || 
-    n.contains("BEIN") || n.contains("SKY SPORTS") || n.contains("TNT SPORTS") || n.contains("BT SPORT") ||
-    n.contains("PPV") || n.contains("PEACOCK") || n.contains("ESPN") || n.contains("BALLY") || n.contains("YES NETWORK")
+    n.contains("SPORT")
+        || n.contains("FOOTBALL")
+        || n.contains("SOCCER")
+        || n.contains("BASKETBALL")
+        || n.contains("NBA")
+        || n.contains("NFL")
+        || n.contains("MLB")
+        || n.contains("NHL")
+        || n.contains("UFC")
+        || n.contains("BOXING")
+        || n.contains("WRESTLING")
+        || n.contains("WWE")
+        || n.contains("AEW")
+        || n.contains("CRICKET")
+        || n.contains("RUGBY")
+        || n.contains("GOLF")
+        || n.contains("TENNIS")
+        || n.contains("RACING")
+        || n.contains("F1")
+        || n.contains("MOTOGP")
+        || n.contains("DAZN")
+        || n.contains("BEIN")
+        || n.contains("SKY SPORTS")
+        || n.contains("TNT SPORTS")
+        || n.contains("BT SPORT")
+        || n.contains("PPV")
+        || n.contains("PEACOCK")
+        || n.contains("ESPN")
+        || n.contains("BALLY")
+        || n.contains("YES NETWORK")
 }
 
 /// Parse a category name to extract metadata
@@ -528,38 +787,43 @@ pub fn parse_category(name: &str) -> ParsedCategory {
     let re_prefix = Regex::new(r"(?i)^([A-Z0-9]{1,5})(?:\s*[|:-]\s*|\s+)").unwrap();
     if let Some(caps) = re_prefix.captures(&display_name.to_uppercase()) {
         let code = caps.get(1).unwrap().as_str();
-        let allowed = ["S", "US", "USA", "AM", "UK", "GB", "CA", "EU", "FR", "DE", "ES", "IT", "VIP", "NBA", "NFL", "MLB", "NHL", "UFC", "PPV", "EN", "4K", "UHD", "FHD", "HD", "SD"];
+        let allowed = [
+            "S", "US", "USA", "AM", "UK", "GB", "CA", "EU", "FR", "DE", "ES", "IT", "VIP", "NBA",
+            "NFL", "MLB", "NHL", "UFC", "PPV", "EN", "4K", "UHD", "FHD", "HD", "SD",
+        ];
         if allowed.contains(&code) {
-             // If it's just a single char category marker like 'S |', we just strip it and don't set country
-             // For quality codes (4K, UHD, FHD, HD, SD), we set quality instead of country
-             if code == "4K" || code == "UHD" {
-                 quality = Some(Quality::UHD4K);
-                 country = Some(code.to_string()); // For test compatibility
-             } else if code == "FHD" {
-                 quality = Some(Quality::FHD);
-                 country = Some(code.to_string()); // For test compatibility
-             } else if code == "HD" {
-                 quality = Some(Quality::HD);
-                 country = Some(code.to_string()); // For test compatibility
-             } else if code == "SD" {
-                 quality = Some(Quality::SD);
-                 country = Some(code.to_string()); // For test compatibility
-             } else if code != "S" {
-                 country = Some(code.to_string());
-             }
-             
-             if let Some(pos) = display_name.find(|c| c == '|' || c == ':' || c == '-') {
-                 display_name = display_name[pos + 1..].trim().to_string();
-             } else if let Some(pos) = display_name.find(' ') {
-                 display_name = display_name[pos + 1..].trim().to_string();
-             }
-             
-             // Handle case where we still have a ▎ separator after prefix handling
-             if let Some(pos) = display_name.find('▎') {
-                 display_name = display_name[pos + "▎".len()..].trim().to_string();
-             }
-             
-             if code == "VIP" { is_vip = true; }
+            // If it's just a single char category marker like 'S |', we just strip it and don't set country
+            // For quality codes (4K, UHD, FHD, HD, SD), we set quality instead of country
+            if code == "4K" || code == "UHD" {
+                quality = Some(Quality::UHD4K);
+                country = Some(code.to_string()); // For test compatibility
+            } else if code == "FHD" {
+                quality = Some(Quality::FHD);
+                country = Some(code.to_string()); // For test compatibility
+            } else if code == "HD" {
+                quality = Some(Quality::HD);
+                country = Some(code.to_string()); // For test compatibility
+            } else if code == "SD" {
+                quality = Some(Quality::SD);
+                country = Some(code.to_string()); // For test compatibility
+            } else if code != "S" {
+                country = Some(code.to_string());
+            }
+
+            if let Some(pos) = display_name.find(|c| c == '|' || c == ':' || c == '-') {
+                display_name = display_name[pos + 1..].trim().to_string();
+            } else if let Some(pos) = display_name.find(' ') {
+                display_name = display_name[pos + 1..].trim().to_string();
+            }
+
+            // Handle case where we still have a ▎ separator after prefix handling
+            if let Some(pos) = display_name.find('▎') {
+                display_name = display_name[pos + "▎".len()..].trim().to_string();
+            }
+
+            if code == "VIP" {
+                is_vip = true;
+            }
         }
     }
 
@@ -567,18 +831,27 @@ pub fn parse_category(name: &str) -> ParsedCategory {
     if country.is_none() {
         if let Some(pos) = display_name.find('▎') {
             let prefix = display_name[..pos].trim().to_uppercase();
-            if ["UK", "US", "EU", "FR", "CA", "VIP", "SPORTS", "PPV", "MULTI"].contains(&prefix.as_str())
+            if [
+                "UK", "US", "EU", "FR", "CA", "VIP", "SPORTS", "PPV", "MULTI",
+            ]
+            .contains(&prefix.as_str())
             {
                 country = Some(prefix.clone());
                 display_name = display_name[pos + "▎".len()..].trim().to_string();
-                if prefix == "VIP" { is_vip = true; }
+                if prefix == "VIP" {
+                    is_vip = true;
+                }
             }
         }
     }
 
     // Detect quality
     let upper = display_name.to_uppercase();
-    if upper.contains("4K") || upper.contains("ᵁᴴᴰ") || upper.contains("³⁸⁴⁰") || upper.contains("UHD") {
+    if upper.contains("4K")
+        || upper.contains("ᵁᴴᴰ")
+        || upper.contains("³⁸⁴⁰")
+        || upper.contains("UHD")
+    {
         quality = Some(Quality::UHD4K);
     } else if upper.contains("FHD") || upper.contains("1080") {
         quality = Some(Quality::FHD);
@@ -589,7 +862,11 @@ pub fn parse_category(name: &str) -> ParsedCategory {
     }
 
     // Detect content type
-    if upper.contains("SPORT") || ["NBA", "NFL", "MLB", "NHL", "UFC", "F1"].iter().any(|s| upper.contains(s)) {
+    if upper.contains("SPORT")
+        || ["NBA", "NFL", "MLB", "NHL", "UFC", "F1"]
+            .iter()
+            .any(|s| upper.contains(s))
+    {
         content_type = Some(ContentType::Sports);
     } else if upper.contains("NEWS") {
         content_type = Some(ContentType::News);
@@ -599,7 +876,10 @@ pub fn parse_category(name: &str) -> ParsedCategory {
         content_type = Some(ContentType::Kids);
     } else if upper.contains("MUSIC") {
         content_type = Some(ContentType::Music);
-    } else if upper.contains("DOCUMENTARY") || upper.contains("DOCUMENTAIRE") || upper.contains("DOC") {
+    } else if upper.contains("DOCUMENTARY")
+        || upper.contains("DOCUMENTAIRE")
+        || upper.contains("DOC")
+    {
         content_type = Some(ContentType::Documentary);
     } else if upper.contains("GENERAL") {
         content_type = Some(ContentType::General);
@@ -608,9 +888,8 @@ pub fn parse_category(name: &str) -> ParsedCategory {
     // Aggressive cleaning for display_name
     let mut cleaned = display_name;
     let suffixes = [
-        "(PPV)", "[PPV]", "PPV", "(USA)", "[USA]", "USA", "(UK)", "[UK]", "UK",
-        "(CA)", "[CA]", "CA", "(VIP)", "[VIP]", "VIP", "(4K)", "[4K]", "4K",
-        " - ", " | ", " : ",
+        "(PPV)", "[PPV]", "PPV", "(USA)", "[USA]", "USA", "(UK)", "[UK]", "UK", "(CA)", "[CA]",
+        "CA", "(VIP)", "[VIP]", "VIP", "(4K)", "[4K]", "4K", " - ", " | ", " : ",
     ];
     for s in suffixes {
         let upper_c = cleaned.to_uppercase();
@@ -620,15 +899,18 @@ pub fn parse_category(name: &str) -> ParsedCategory {
             cleaned = cleaned[s.len()..].trim().to_string();
         }
     }
-    
+
     // Final cleanup: strip leading/trailing pipes, colons, dashes
-    cleaned = cleaned.trim_start_matches(|c: char| c == '|' || c == ':' || c == '-' || c.is_whitespace())
-                     .trim_end_matches(|c: char| c == '|' || c == ':' || c == '-' || c.is_whitespace())
-                     .to_string();
-    
+    cleaned = cleaned
+        .trim_start_matches(|c: char| c == '|' || c == ':' || c == '-' || c.is_whitespace())
+        .trim_end_matches(|c: char| c == '|' || c == ':' || c == '-' || c.is_whitespace())
+        .to_string();
+
     display_name = cleaned;
 
-    if upper.contains("VIP") { is_vip = true; }
+    if upper.contains("VIP") {
+        is_vip = true;
+    }
 
     ParsedCategory {
         original_name: original,
@@ -639,7 +921,6 @@ pub fn parse_category(name: &str) -> ParsedCategory {
         is_vip,
     }
 }
-
 
 /// Parsed stream/channel with extracted metadata
 #[derive(Debug, Clone)]
@@ -676,17 +957,33 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     // Check if it's a separator line
     let trimmed = name.trim();
     // Detect provider-injected separators: ####, ═══, ❖❖❖, ***, ===, ---, |||, ●●●, ◆◆◆, ■■■
-    let sep_chars: &[char] = &['#', '═', '❖', '*', '=', '-', '|', '●', '◆', '■', '▬', '━', '─', '☆', '★'];
+    let sep_chars: &[char] = &[
+        '#', '═', '❖', '*', '=', '-', '|', '●', '◆', '■', '▬', '━', '─', '☆', '★',
+    ];
     let starts_sep = trimmed.starts_with(|c: char| sep_chars.contains(&c))
-        && trimmed.chars().take(3).filter(|c| sep_chars.contains(c)).count() >= 2;
+        && trimmed
+            .chars()
+            .take(3)
+            .filter(|c| sep_chars.contains(c))
+            .count()
+            >= 2;
     let ends_sep = trimmed.ends_with(|c: char| sep_chars.contains(&c))
-        && trimmed.chars().rev().take(3).filter(|c| sep_chars.contains(c)).count() >= 2;
+        && trimmed
+            .chars()
+            .rev()
+            .take(3)
+            .filter(|c| sep_chars.contains(c))
+            .count()
+            >= 2;
     // Also catch lines that are ONLY separator chars (e.g. "❖❖❖" with no text)
     let all_sep = !trimmed.is_empty()
-        && trimmed.chars().all(|c| sep_chars.contains(&c) || c.is_whitespace());
+        && trimmed
+            .chars()
+            .all(|c| sep_chars.contains(&c) || c.is_whitespace());
     if (starts_sep && ends_sep) || all_sep {
         is_separator = true;
-        display_name = trimmed.chars()
+        display_name = trimmed
+            .chars()
             .filter(|c| !sep_chars.contains(c))
             .collect::<String>()
             .trim()
@@ -707,22 +1004,23 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     while clean_loop {
         clean_loop = false;
         let start_len = display_name.len();
-        
+
         // Remove "u " prefix and hidden characters
         display_name = CLEAN_U_PREFIX.replace(&display_name, "").to_string();
-        
+
         // Remove "MNF", "TNF", "SNF" game day labels AND league prefixes ONLY when followed by separator or number
         // We want to keep "NBA TV" intact but strip "NBA | Game" or "NBA 01: Something"
         let re_mnf = Regex::new(r"(?i)^(MNF|TNF|SNF|SLING|S)(?:\s*[:|-]\s*|\s+)").unwrap();
         if re_mnf.is_match(&display_name) {
-             display_name = re_mnf.replace(&display_name, "").to_string();
-             clean_loop = true;
+            display_name = re_mnf.replace(&display_name, "").to_string();
+            clean_loop = true;
         }
         // Strip league prefix ONLY if followed by separator (:|) or number, NOT regular words like "TV"
-        let re_league_prefix = Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[:|-]\s*|\s+\d)").unwrap();
+        let re_league_prefix =
+            Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[:|-]\s*|\s+\d)").unwrap();
         if re_league_prefix.is_match(&display_name) {
-             display_name = re_league_prefix.replace(&display_name, "").to_string();
-             clean_loop = true;
+            display_name = re_league_prefix.replace(&display_name, "").to_string();
+            clean_loop = true;
         }
 
         if display_name.len() < start_len {
@@ -733,8 +1031,8 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     // Second pass: Check for channel numbers again after prefix cleaning (e.g. "UFC | 05")
     if channel_prefix.is_none() {
         if let Some(caps) = re_chan.captures(&display_name) {
-             channel_prefix = Some(caps.get(1).unwrap().as_str().trim().to_string());
-             display_name = re_chan.replace(&display_name, "").to_string();
+            channel_prefix = Some(caps.get(1).unwrap().as_str().trim().to_string());
+            display_name = re_chan.replace(&display_name, "").to_string();
         }
     }
 
@@ -743,26 +1041,32 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         let suffix = display_name[idx + 1..].trim();
         // If the suffix is significant (more than just quality), and the prefix looks like a category/channel label, take suffix
         if suffix.len() > 5 && !suffix.chars().all(|c| c.is_numeric() || c == ' ') {
-             // Heuristic: If suffix starts with a digit and "x" or "vs", it's likely the event part "01 x Team"
-             // And the prefix is just channel spam.
-             let re_event_start = Regex::new(r"(?i)^\d+\s*(x|vs|at|-)\s+").unwrap();
-             if re_event_start.is_match(suffix) {
-                 display_name = suffix.to_string();
-             } 
-             // Heuristic 2: If the part after contains " x " or " vs "
-             else if (suffix.to_uppercase().contains(" VS ") || suffix.to_uppercase().contains(" X ") || suffix.to_uppercase().contains(" AT ")) && suffix.len() > 5 {
-                  display_name = suffix.to_string();
-             } else {
-                  display_name = suffix.to_string();
-             }
+            // Heuristic: If suffix starts with a digit and "x" or "vs", it's likely the event part "01 x Team"
+            // And the prefix is just channel spam.
+            let re_event_start = Regex::new(r"(?i)^\d+\s*(x|vs|at|-)\s+").unwrap();
+            if re_event_start.is_match(suffix) {
+                display_name = suffix.to_string();
+            }
+            // Heuristic 2: If the part after contains " x " or " vs "
+            else if (suffix.to_uppercase().contains(" VS ")
+                || suffix.to_uppercase().contains(" X ")
+                || suffix.to_uppercase().contains(" AT "))
+                && suffix.len() > 5
+            {
+                display_name = suffix.to_string();
+            } else {
+                display_name = suffix.to_string();
+            }
         }
     }
 
     // -- POST-EXTRACTION CLEANUP --
-    
+
     // 1. Remove common clutter suffixes: " - ET / UK", " (HD)", etc.
     display_name = CLEAN_SUFFIXES.replace_all(&display_name, "").to_string();
-    display_name = CLEAN_BRACKETS_GARBAGE.replace_all(&display_name, "").to_string();
+    display_name = CLEAN_BRACKETS_GARBAGE
+        .replace_all(&display_name, "")
+        .to_string();
 
     display_name = display_name.trim().to_string();
 
@@ -775,27 +1079,36 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         if let Some(caps) = re_prefix.captures(&display_name) {
             let code = caps.get(1).unwrap().as_str().to_uppercase();
             // Country codes that should always be stripped
-            let country_codes = ["S", "US", "USA", "AM", "UK", "GB", "CA", "EN", "EN/CAM", "EU", "FR", "DE", "ES", "IT", "VIP", "PPV"];
+            let country_codes = [
+                "S", "US", "USA", "AM", "UK", "GB", "CA", "EN", "EN/CAM", "EU", "FR", "DE", "ES",
+                "IT", "VIP", "PPV",
+            ];
             let league_codes = ["NBA", "NFL", "MLB", "NHL", "UFC", "MLS"];
-            
+
             // Normalize special characters like dashes into standard ones before prefix check
-            let check_name = display_name.replace(" - ", " ").replace("-", " ").to_uppercase();
-            
+            let check_name = display_name
+                .replace(" - ", " ")
+                .replace("-", " ")
+                .to_uppercase();
+
             if country_codes.iter().any(|&c| check_name.starts_with(c)) {
-                 display_name = re_prefix.replace(&display_name, "").to_string();
-                 // Extra trim to remove following dashes if any
-                 display_name = display_name.trim_start_matches(|c: char| c == '-' || c == '|' || c == ':' || c == ' ').to_string();
-                 clean_loop = true;
+                display_name = re_prefix.replace(&display_name, "").to_string();
+                // Extra trim to remove following dashes if any
+                display_name = display_name
+                    .trim_start_matches(|c: char| c == '-' || c == '|' || c == ':' || c == ' ')
+                    .to_string();
+                clean_loop = true;
             } else if league_codes.contains(&code.as_str()) {
-                 // For leagues, only strip if followed by separator (: | -) or number, NOT regular words
-                 let re_league = Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[|:-]\s*|\s+\d)").unwrap();
-                 if re_league.is_match(&display_name) {
-                      if country.is_none() {
-                         country = Some(code);
-                      }
-                      display_name = re_league.replace(&display_name, "").to_string();
-                      clean_loop = true;
-                 }
+                // For leagues, only strip if followed by separator (: | -) or number, NOT regular words
+                let re_league =
+                    Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[|:-]\s*|\s+\d)").unwrap();
+                if re_league.is_match(&display_name) {
+                    if country.is_none() {
+                        country = Some(code);
+                    }
+                    display_name = re_league.replace(&display_name, "").to_string();
+                    clean_loop = true;
+                }
             }
         }
     }
@@ -816,11 +1129,13 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     }
 
     // --- TIME PARSING ---
-    
+
     // 0. Explicit 'start:' tag parsing (Priority 1)
     // This allows us to capture full timestamps before cleanup nukes them
     if let Some(caps) = START_TIME_REGEX.captures(&display_name) {
-        if let Ok(naive_dt) = NaiveDateTime::parse_from_str(caps.get(1).unwrap().as_str(), "%Y-%m-%d %H:%M:%S") {
+        if let Ok(naive_dt) =
+            NaiveDateTime::parse_from_str(caps.get(1).unwrap().as_str(), "%Y-%m-%d %H:%M:%S")
+        {
             let source_tz = provider_tz
                 .and_then(|ptz| ptz.parse::<chrono_tz::Tz>().ok())
                 .unwrap_or(chrono_tz::UTC);
@@ -832,7 +1147,10 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                     .with_timezone(&Utc),
             );
             // Remove the start tag from name
-            display_name = display_name.replace(caps.get(0).unwrap().as_str(), "").trim().to_string();
+            display_name = display_name
+                .replace(caps.get(0).unwrap().as_str(), "")
+                .trim()
+                .to_string();
         }
     }
 
@@ -853,7 +1171,10 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                     .with_timezone(&Utc),
             );
             // Remove the stop tag from name
-            display_name = display_name.replace(caps.get(0).unwrap().as_str(), "").trim().to_string();
+            display_name = display_name
+                .replace(caps.get(0).unwrap().as_str(), "")
+                .trim()
+                .to_string();
         }
     }
 
@@ -873,8 +1194,12 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         if let Some(caps) = TIME_REGEX.captures(&display_name) {
             let tz_str_full = caps.get(6).map(|m| m.as_str()).unwrap_or("");
             // Handle split timezones like "ET/UK" -> take "ET"
-            let tz_str = tz_str_full.split(&['/', ' '][..]).next().unwrap_or("").trim();
-            
+            let tz_str = tz_str_full
+                .split(&['/', ' '][..])
+                .next()
+                .unwrap_or("")
+                .trim();
+
             // Determine Source Timezone FIRST to get correct "today" context
             let source_tz: chrono_tz::Tz = match tz_str.to_uppercase().as_str() {
                 "CET" | "MEZ" => chrono_tz::Europe::Paris,
@@ -891,7 +1216,9 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                             // Fallback to country logic
                             if let Some(c) = &country {
                                 match c.as_str() {
-                                    "US" | "USA" | "NFL" | "NBA" | "MLB" | "NHL" | "UFC" => chrono_tz::America::Chicago,
+                                    "US" | "USA" | "NFL" | "NBA" | "MLB" | "NHL" | "UFC" => {
+                                        chrono_tz::America::Chicago
+                                    }
                                     "CA" => chrono_tz::America::Toronto,
                                     "FR" => chrono_tz::Europe::Paris,
                                     "DE" => chrono_tz::Europe::Berlin,
@@ -903,19 +1230,26 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                         }
                     } else if let Some(c) = &country {
                         match c.as_str() {
-                            "US" | "USA" | "NFL" | "NBA" | "MLB" | "NHL" | "UFC" => chrono_tz::America::Chicago,
+                            "US" | "USA" | "NFL" | "NBA" | "MLB" | "NHL" | "UFC" => {
+                                chrono_tz::America::Chicago
+                            }
                             "CA" => chrono_tz::America::Toronto,
                             "FR" => chrono_tz::Europe::Paris,
                             "DE" => chrono_tz::Europe::Berlin,
                             _ => chrono_tz::Europe::London,
                         }
                     } else {
-                         // Heuristic: If it looks like a US League but no country prefix, default to Central
-                         if upper.contains("NFL") || upper.contains("NBA") || upper.contains("MLB") || upper.contains("NHL") || upper.contains("UFC") {
-                             chrono_tz::America::Chicago
-                         } else {
-                             chrono_tz::America::Chicago
-                         }
+                        // Heuristic: If it looks like a US League but no country prefix, default to Central
+                        if upper.contains("NFL")
+                            || upper.contains("NBA")
+                            || upper.contains("MLB")
+                            || upper.contains("NHL")
+                            || upper.contains("UFC")
+                        {
+                            chrono_tz::America::Chicago
+                        } else {
+                            chrono_tz::America::Chicago
+                        }
                     }
                 }
             };
@@ -925,12 +1259,12 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
             let now_in_tz = chrono::Local::now().with_timezone(&source_tz);
             let current_year = now_in_tz.year();
 
-            let day = caps
-                .get(1)
-                .map_or(now_in_tz.day(), |m| m.as_str().parse().unwrap_or(now_in_tz.day()));
-            let month = caps
-                .get(2)
-                .map_or(now_in_tz.month(), |m| m.as_str().parse().unwrap_or(now_in_tz.month()));
+            let day = caps.get(1).map_or(now_in_tz.day(), |m| {
+                m.as_str().parse().unwrap_or(now_in_tz.day())
+            });
+            let month = caps.get(2).map_or(now_in_tz.month(), |m| {
+                m.as_str().parse().unwrap_or(now_in_tz.month())
+            });
             let mut hour: u32 = caps.get(3).unwrap().as_str().parse().unwrap_or(0);
             let minute: u32 = caps.get(4).unwrap().as_str().parse().unwrap_or(0);
             let am_pm = caps.get(5).map(|m| m.as_str().to_lowercase());
@@ -952,7 +1286,7 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                     if let Some(dt) = source_tz.from_local_datetime(&naive_dt).single() {
                         // Priority Check: Only set start_time if NOT already set by START_TIME_REGEX
                         if start_time.is_none() {
-                             start_time = Some(dt.with_timezone(&Utc));
+                            start_time = Some(dt.with_timezone(&Utc));
                         }
 
                         // Clean the name: Remove the time string
@@ -975,7 +1309,8 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     // Fallback: LOOSE TIME PARSING (e.g. "8PM", "12/27 8PM") - When colon is missing
     // We try this if strict TIME_REGEX failed
     if start_time.is_none() && (is_live_event || upper.contains("SPORT") || upper.contains("VS")) {
-        let re_loose = Regex::new(r"(?i)(?:(\d{1,2})[/.[:punct:]](\d{1,2})\s+)?(\d{1,2})\s*(am|pm)").unwrap();
+        let re_loose =
+            Regex::new(r"(?i)(?:(\d{1,2})[/.[:punct:]](\d{1,2})\s+)?(\d{1,2})\s*(am|pm)").unwrap();
         if let Some(caps) = re_loose.captures(&display_name) {
             let now = Utc::now();
             let current_year = now.year();
@@ -983,11 +1318,11 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
             // Date capture
             let d1 = caps.get(1).map(|m| m.as_str().parse::<u32>().unwrap_or(0));
             let d2 = caps.get(2).map(|m| m.as_str().parse::<u32>().unwrap_or(0));
-            
+
             // Hour/AMPM
             let mut hour: u32 = caps.get(3).unwrap().as_str().parse().unwrap_or(0);
             let am_pm = caps.get(4).unwrap().as_str().to_lowercase();
-            
+
             if am_pm == "pm" && hour < 12 {
                 hour += 12;
             } else if am_pm == "am" && hour == 12 {
@@ -996,53 +1331,86 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
 
             // Try to resolve date: US (MM/DD) priority for Trex/English, then DD/MM
             let mut naive_date = NaiveDate::from_ymd_opt(current_year, now.month(), now.day());
-            
+
             if let (Some(v1), Some(v2)) = (d1, d2) {
                 if v1 > 0 && v2 > 0 {
                     // Try MM/DD first (v1=Month, v2=Day)
                     if let Some(nd) = NaiveDate::from_ymd_opt(current_year, v1, v2) {
                         naive_date = Some(nd);
                     } else if let Some(nd) = NaiveDate::from_ymd_opt(current_year, v2, v1) {
-                         // Fallback DD/MM
+                        // Fallback DD/MM
                         naive_date = Some(nd);
                     }
                 }
             }
 
             if let Some(nd) = naive_date {
-                 if let Some(naive_time) = NaiveTime::from_hms_opt(hour, 0, 0) {
-                     let naive_dt = NaiveDateTime::new(nd, naive_time);
-                     
-                     // Use Provider TZ (default generic USA/Europe logic)
-                     let source_tz: chrono_tz::Tz = if let Some(ptz) = provider_tz {
-                         ptz.parse().unwrap_or(chrono_tz::America::Chicago) // Default to Cental if fail
-                     } else {
-                         chrono_tz::Europe::London
-                     };
+                if let Some(naive_time) = NaiveTime::from_hms_opt(hour, 0, 0) {
+                    let naive_dt = NaiveDateTime::new(nd, naive_time);
 
-                     if let Some(dt) = source_tz.from_local_datetime(&naive_dt).single() {
-                         start_time = Some(dt.with_timezone(&Utc));
-                         // Clean match
-                         display_name = display_name.replace(caps.get(0).unwrap().as_str(), "").trim().to_string();
-                     }
-                 }
+                    // Use Provider TZ (default generic USA/Europe logic)
+                    let source_tz: chrono_tz::Tz = if let Some(ptz) = provider_tz {
+                        ptz.parse().unwrap_or(chrono_tz::America::Chicago) // Default to Cental if fail
+                    } else {
+                        chrono_tz::Europe::London
+                    };
+
+                    if let Some(dt) = source_tz.from_local_datetime(&naive_dt).single() {
+                        start_time = Some(dt.with_timezone(&Utc));
+                        // Clean match
+                        display_name = display_name
+                            .replace(caps.get(0).unwrap().as_str(), "")
+                            .trim()
+                            .to_string();
+                    }
+                }
+            }
+        }
+    }
+
+    // --- SPORTS EVENT PARSING (must happen before location extraction to preserve team abbreviations) ---
+    if let Some(event) = crate::sports::parse_sports_event(&display_name) {
+        sports_event = Some(event.clone());
+        is_live_event = true;
+
+        // If we have a sports event, we can try to get a better start_time if not already set
+        if start_time.is_none() && !event.start_time_raw.is_empty() {
+            let parsed_dt = if let Ok(dt) =
+                NaiveDateTime::parse_from_str(&event.start_time_raw, "%Y-%m-%d %H:%M:%S")
+            {
+                Some(dt)
+            } else {
+                None
+            };
+            if let Some(naive_dt) = parsed_dt {
+                let source_tz = provider_tz
+                    .and_then(|ptz| ptz.parse::<chrono_tz::Tz>().ok())
+                    .unwrap_or(chrono_tz::UTC);
+                start_time = source_tz
+                    .from_local_datetime(&naive_dt)
+                    .single()
+                    .map(|dt| dt.with_timezone(&Utc));
             }
         }
     }
 
     // Try to extract location (keep existing logic)
-    if let Some(start) = display_name.find('(') {
-        if let Some(end) = display_name.find(')') {
-            if end > start {
-                let loc = display_name[start + 1..end].to_string();
-                if loc.len() < 20 && !loc.contains("LIVE") && !loc.contains(':') {
-                    // Exclude timestamps
-                    location = Some(loc);
-                    // Strip the parenthetical from display_name to avoid duplicate display
-                    display_name = format!("{}{}",
-                        &display_name[..start],
-                        &display_name[end + 1..]
-                    ).trim().to_string();
+    // Skip this if a sports event was already parsed — team abbreviations like (ATL), (MIA)
+    // are already captured by parse_sports_event and must not be stripped as locations.
+    if sports_event.is_none() {
+        if let Some(start) = display_name.find('(') {
+            if let Some(end) = display_name.find(')') {
+                if end > start {
+                    let loc = display_name[start + 1..end].to_string();
+                    if loc.len() < 20 && !loc.contains("LIVE") && !loc.contains(':') {
+                        // Exclude timestamps
+                        location = Some(loc);
+                        // Strip the parenthetical from display_name to avoid duplicate display
+                        display_name =
+                            format!("{}{}", &display_name[..start], &display_name[end + 1..])
+                                .trim()
+                                .to_string();
+                    }
                 }
             }
         }
@@ -1085,53 +1453,61 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
 
     // Cleanup whitespace left gaps
     let re_spaces = Regex::new(r"\s+").unwrap();
-    clean_display = re_spaces.replace_all(&clean_display, " ").trim().to_string();
+    clean_display = re_spaces
+        .replace_all(&clean_display, " ")
+        .trim()
+        .to_string();
 
     if !clean_display.is_empty() {
         display_name = clean_display;
     }
 
-    // --- SPORTS EVENT PARSING ---
-    if let Some(event) = crate::sports::parse_sports_event(&display_name) {
-        sports_event = Some(event.clone());
-        is_live_event = true;
+    // --- SPORTS EVENT PARSING (fallback pass after display_name cleanup) ---
+    // Only run if sports event was not already parsed before location extraction.
+    // This second pass handles streams whose sports pattern only becomes apparent
+    // after the initial cleanup (e.g., after pipe/prefix stripping).
+    if sports_event.is_none() {
+        if let Some(event) = crate::sports::parse_sports_event(&display_name) {
+            sports_event = Some(event.clone());
+            is_live_event = true;
 
-        // If we have a sports event, we can try to get a better start_time if not already set
-        if start_time.is_none() && !event.start_time_raw.is_empty() {
-            let parsed_dt = if let Ok(dt) =
-                NaiveDateTime::parse_from_str(&event.start_time_raw, "%Y-%m-%d %H:%M:%S")
-            {
-                Some(dt)
-            } else if let Ok(t) = NaiveTime::parse_from_str(
-                &event.start_time_raw.to_lowercase().replace(" ", ""),
-                "%I:%M%p",
-            ) {
-                let now_local = if let Some(ptz) = provider_tz {
-                    let tz: chrono_tz::Tz = ptz.parse().unwrap_or(chrono_tz::UTC);
-                    Utc::now().with_timezone(&tz)
+            // If we have a sports event, we can try to get a better start_time if not already set
+            if start_time.is_none() && !event.start_time_raw.is_empty() {
+                let parsed_dt = if let Ok(dt) =
+                    NaiveDateTime::parse_from_str(&event.start_time_raw, "%Y-%m-%d %H:%M:%S")
+                {
+                    Some(dt)
+                } else if let Ok(t) = NaiveTime::parse_from_str(
+                    &event.start_time_raw.to_lowercase().replace(" ", ""),
+                    "%I:%M%p",
+                ) {
+                    let now_local = if let Some(ptz) = provider_tz {
+                        let tz: chrono_tz::Tz = ptz.parse().unwrap_or(chrono_tz::UTC);
+                        Utc::now().with_timezone(&tz)
+                    } else {
+                        Utc::now().with_timezone(&chrono_tz::UTC)
+                    };
+                    Some(NaiveDateTime::new(now_local.date_naive(), t))
                 } else {
-                    Utc::now().with_timezone(&chrono_tz::UTC)
-                };
-                Some(NaiveDateTime::new(now_local.date_naive(), t))
-            } else {
-                None
-            };
-
-            if let Some(naive_dt) = parsed_dt {
-                // Triangulate timezone for sports strings
-                let source_tz: chrono_tz::Tz = if let Some(ptz) = provider_tz {
-                    ptz.parse::<chrono_tz::Tz>().unwrap_or(chrono_tz::UTC)
-                } else {
-                    chrono_tz::UTC
+                    None
                 };
 
-                start_time = Some(
-                    source_tz
-                        .from_local_datetime(&naive_dt)
-                        .single()
-                        .unwrap_or_else(|| Utc::now().with_timezone(&source_tz))
-                        .with_timezone(&Utc),
-                );
+                if let Some(naive_dt) = parsed_dt {
+                    // Triangulate timezone for sports strings
+                    let source_tz: chrono_tz::Tz = if let Some(ptz) = provider_tz {
+                        ptz.parse::<chrono_tz::Tz>().unwrap_or(chrono_tz::UTC)
+                    } else {
+                        chrono_tz::UTC
+                    };
+
+                    start_time = Some(
+                        source_tz
+                            .from_local_datetime(&naive_dt)
+                            .single()
+                            .unwrap_or_else(|| Utc::now().with_timezone(&source_tz))
+                            .with_timezone(&Utc),
+                    );
+                }
             }
         }
     }
@@ -1152,7 +1528,10 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                     .with_timezone(&Utc),
             );
             // Clean the name
-            display_name = display_name.replace(caps.get(0).unwrap().as_str(), "").trim().to_string();
+            display_name = display_name
+                .replace(caps.get(0).unwrap().as_str(), "")
+                .trim()
+                .to_string();
         }
     }
 
@@ -1449,8 +1828,6 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-
-
     #[test]
     fn test_parse_us_category() {
         let parsed = parse_category("US| SPORTS NETWORK");
@@ -1485,7 +1862,10 @@ mod tests {
         assert_eq!(event.team2, "Bulls");
         assert_eq!(event.team2_abbr, Some("CHI".to_string()));
         // The start_time is now captured by parse_stream directly, not SportsEvent
-        assert!(parsed.start_time.is_some(), "start_time should be parsed from start: tag");
+        assert!(
+            parsed.start_time.is_some(),
+            "start_time should be parsed from start: tag"
+        );
     }
 
     #[test]
@@ -1564,16 +1944,29 @@ mod tests {
         // UNITED STATES prefix cleaning now strips to "NITED STATES - Movie" due to regex order
         // This is acceptable behavior; the key is USA/US/EN are cleaned
         let result = clean_american_name("UNITED STATES - Movie");
-        assert!(result.contains("Movie"), "Expected 'Movie' in result: {}", result);
+        assert!(
+            result.contains("Movie"),
+            "Expected 'Movie' in result: {}",
+            result
+        );
     }
 
     #[test]
     fn test_redundancy_stripping_exact() {
-        let input = "NFL 01 - 12/25 1PM Cowboys at Commanders: NFL | 01 x 12/25 1PM Cowboys at Commanders";
+        let input =
+            "NFL 01 - 12/25 1PM Cowboys at Commanders: NFL | 01 x 12/25 1PM Cowboys at Commanders";
         let parsed = parse_stream(input, None);
         // Parser now strips time references; verify core content is preserved
-        assert!(parsed.display_name.contains("Cowboys"), "Expected 'Cowboys' in: {}", parsed.display_name);
-        assert!(parsed.display_name.contains("Commanders"), "Expected 'Commanders' in: {}", parsed.display_name);
+        assert!(
+            parsed.display_name.contains("Cowboys"),
+            "Expected 'Cowboys' in: {}",
+            parsed.display_name
+        );
+        assert!(
+            parsed.display_name.contains("Commanders"),
+            "Expected 'Commanders' in: {}",
+            parsed.display_name
+        );
     }
 
     #[test]
@@ -1583,12 +1976,15 @@ mod tests {
         assert_eq!(parsed.year, Some("1999".to_string()));
     }
 
-
     #[test]
     fn test_redundancy_stripping_u_prefix() {
         let input = "u NFL 02 - 12/25 4: NFL | 02 x 12/25 [Today 10:30 AM]";
         let parsed = parse_stream(input, None);
         // "u " should be stripped, then pipe logic applies; time may be parsed and removed
-        assert!(parsed.display_name.contains("02"), "Expected '02' in: {}", parsed.display_name);
+        assert!(
+            parsed.display_name.contains("02"),
+            "Expected '02' in: {}",
+            parsed.display_name
+        );
     }
 }

@@ -4,8 +4,6 @@ use serde::{Deserialize, Serialize};
 #[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 
-
-
 /// Player engine options
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
 pub enum PlayerEngine {
@@ -23,10 +21,7 @@ impl PlayerEngine {
     }
 
     pub fn all() -> &'static [PlayerEngine] {
-        &[
-            PlayerEngine::Mpv,
-            PlayerEngine::Vlc,
-        ]
+        &[PlayerEngine::Mpv, PlayerEngine::Vlc]
     }
 }
 
@@ -130,6 +125,13 @@ impl ProcessingMode {
 pub enum AccountType {
     #[default]
     Xtream,
+    M3u,
+}
+
+impl AccountType {
+    pub fn is_m3u(&self) -> bool {
+        matches!(self, AccountType::M3u)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Default)]
@@ -183,9 +185,9 @@ pub struct Account {
 pub struct ChannelGroup {
     pub name: String,
     #[serde(default)]
-    pub icon: Option<String>,  // Emoji or icon name
+    pub icon: Option<String>, // Emoji or icon name
     #[serde(default)]
-    pub stream_ids: Vec<String>,  // Ordered list of stream IDs
+    pub stream_ids: Vec<String>, // Ordered list of stream IDs
 }
 
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
@@ -195,7 +197,7 @@ pub struct Favorites {
     pub vod_categories: std::collections::HashSet<String>,
     pub vod_streams: std::collections::HashSet<String>,
     #[serde(default)]
-    pub groups: Vec<ChannelGroup>,  // Custom user groups
+    pub groups: Vec<ChannelGroup>, // Custom user groups
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -206,10 +208,11 @@ pub struct AppConfig {
     pub favorites: Favorites,
     #[serde(default)]
     pub timezone: Option<String>,
-    
+
     // Legacy support
-    #[serde(default)] // Don't skip serializing yet if we want external tools to see it, but prefer migration
-    pub playlist_mode: PlaylistMode, 
+    #[serde(default)]
+    // Don't skip serializing yet if we want external tools to see it, but prefer migration
+    pub playlist_mode: PlaylistMode,
 
     #[serde(default)]
     pub processing_modes: Vec<ProcessingMode>,
@@ -217,14 +220,14 @@ pub struct AppConfig {
     #[serde(default)]
     pub dns_provider: DnsProvider,
     #[serde(default)]
-    pub use_default_mpv: bool,  // Use default MPV settings instead of optimized
-    
+    pub use_default_mpv: bool, // Use default MPV settings instead of optimized
+
     #[serde(default)]
     pub preferred_player: PlayerEngine,
 
     #[serde(default)]
     pub smooth_motion: bool, // Enable high-frame-rate deinterlacing (Bob) for VLC
-    
+
     /// Auto-refresh playlist if older than this many hours. 0 = disabled.
     #[serde(default = "default_auto_refresh_hours")]
     pub auto_refresh_hours: u32,
@@ -234,7 +237,9 @@ pub struct AppConfig {
     pub recently_watched: Vec<(String, String)>,
 }
 
-fn default_auto_refresh_hours() -> u32 { 12 }
+fn default_auto_refresh_hours() -> u32 {
+    12
+}
 
 impl Default for AppConfig {
     fn default() -> Self {
@@ -266,13 +271,21 @@ impl AppConfig {
             if config_path.exists() {
                 let content = fs::read_to_string(config_path)?;
                 let mut config: AppConfig = serde_json::from_str(&content)?;
-                
+
                 // MIGRATION: V3.0.4 - Convert legacy playlist_mode to processing_modes
-                if config.processing_modes.is_empty() && config.playlist_mode != PlaylistMode::Default {
+                if config.processing_modes.is_empty()
+                    && config.playlist_mode != PlaylistMode::Default
+                {
                     match config.playlist_mode {
-                        PlaylistMode::Merica => config.processing_modes.push(ProcessingMode::Merica),
-                        PlaylistMode::Sports => config.processing_modes.push(ProcessingMode::Sports),
-                        PlaylistMode::AllEnglish => config.processing_modes.push(ProcessingMode::AllEnglish),
+                        PlaylistMode::Merica => {
+                            config.processing_modes.push(ProcessingMode::Merica)
+                        }
+                        PlaylistMode::Sports => {
+                            config.processing_modes.push(ProcessingMode::Sports)
+                        }
+                        PlaylistMode::AllEnglish => {
+                            config.processing_modes.push(ProcessingMode::AllEnglish)
+                        }
                         PlaylistMode::SportsMerica => {
                             config.processing_modes.push(ProcessingMode::Merica);
                             config.processing_modes.push(ProcessingMode::Sports);
@@ -280,7 +293,7 @@ impl AppConfig {
                         _ => {}
                     }
                 }
-                
+
                 // MIGRATION: V4.0.9 - Force robust MPV backend settings
                 // Previously, use_default_mpv was true by default which bypasses all IPTV stability fixes.
                 config.use_default_mpv = false;
