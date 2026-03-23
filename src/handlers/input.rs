@@ -749,6 +749,13 @@ pub async fn handle_key_event(
                     }
                     _ => {}
                 }
+            } else if app.form_validating {
+                // While a connection test is in flight, only allow Esc to cancel
+                if key.code == KeyCode::Esc {
+                    app.form_validating = false;
+                    app.login_error = Some("Connection test cancelled".to_string());
+                }
+                // Trap all other input while validating
             } else {
                 match app.input_mode {
                     InputMode::Normal => {
@@ -905,44 +912,185 @@ pub async fn handle_key_event(
                                         } else {
                                             crate::config::AccountType::Xtream
                                         };
-                                        let acc = Account {
-                                            name,
-                                            base_url: url,
-                                            username: user,
-                                            password: pass,
-                                            account_type: detected_type,
-                                            epg_url: epg_opt,
-                                            last_refreshed: None,
-                                            total_channels: None,
-                                            total_movies: None,
-                                            total_series: None,
-                                            server_timezone: None,
-                                            hidden_categories: std::collections::HashSet::new(),
-                                            category_sort_order:
-                                                crate::config::CategorySortOrder::Default,
-                                        };
-                                        if let Some(idx) = app.editing_account_index {
-                                            // Invalidate cache for the old account name if name changed
-                                            if let Some(old_account) = app.config.accounts.get(idx)
-                                            {
-                                                if old_account.name != acc.name {
-                                                    CachedCatalog::invalidate(&old_account.name);
-                                                }
-                                            }
-                                            app.config.update_account(idx, acc);
-                                        } else {
-                                            app.config.add_account(acc);
-                                        }
 
-                                        app.current_screen = CurrentScreen::Home;
-                                        app.input_name = tui_input::Input::default();
-                                        app.input_url = tui_input::Input::default();
-                                        app.input_username = tui_input::Input::default();
-                                        app.input_password = tui_input::Input::default();
-                                        app.input_epg_url = tui_input::Input::default();
-                                        app.login_error = None;
-                                        app.editing_account_index = None;
-                                        app.input_mode = InputMode::Normal;
+                                        let editing_index = app.editing_account_index;
+
+                                        // For edits where only non-connection fields changed
+                                        // (name or EPG URL only), skip network validation.
+                                        let skip_validation = if let Some(idx) = editing_index {
+                                            if let Some(saved) = app.config.accounts.get(idx) {
+                                                let url_normalized = {
+                                                    let mut u = url.trim().to_string();
+                                                    if !u.starts_with("http://")
+                                                        && !u.starts_with("https://")
+                                                    {
+                                                        u = format!("http://{}", u);
+                                                    }
+                                                    if u.ends_with('/') {
+                                                        u.pop();
+                                                    }
+                                                    u
+                                                };
+                                                saved.base_url == url_normalized
+                                                    && saved.username == user
+                                                    && saved.password == pass
+                                            } else {
+                                                false
+                                            }
+                                        } else {
+                                            false
+                                        };
+
+                                        if skip_validation {
+                                            // Credentials unchanged — save directly without
+                                            // hitting the network.
+                                            let mut final_url = url.trim().to_string();
+                                            if !final_url.starts_with("http://")
+                                                && !final_url.starts_with("https://")
+                                            {
+                                                final_url = format!("http://{}", final_url);
+                                            }
+                                            if final_url.ends_with('/') {
+                                                final_url.pop();
+                                            }
+                                            let acc = Account {
+                                                name,
+                                                base_url: final_url,
+                                                username: user,
+                                                password: pass,
+                                                account_type: detected_type,
+                                                epg_url: epg_opt,
+                                                last_refreshed: None,
+                                                total_channels: None,
+                                                total_movies: None,
+                                                total_series: None,
+                                                server_timezone: None,
+                                                hidden_categories: std::collections::HashSet::new(),
+                                                category_sort_order:
+                                                    crate::config::CategorySortOrder::Default,
+                                            };
+                                            if let Some(idx) = editing_index {
+                                                if let Some(old_account) =
+                                                    app.config.accounts.get(idx)
+                                                {
+                                                    if old_account.name != acc.name {
+                                                        CachedCatalog::invalidate(
+                                                            &old_account.name,
+                                                        );
+                                                    }
+                                                }
+                                                app.config.update_account(idx, acc);
+                                            } else {
+                                                app.config.add_account(acc);
+                                            }
+                                            app.current_screen = CurrentScreen::Home;
+                                            app.input_name = tui_input::Input::default();
+                                            app.input_url = tui_input::Input::default();
+                                            app.input_username = tui_input::Input::default();
+                                            app.input_password = tui_input::Input::default();
+                                            app.input_epg_url = tui_input::Input::default();
+                                            app.login_error = None;
+                                            app.editing_account_index = None;
+                                            app.input_mode = InputMode::Normal;
+                                        } else {
+                                            // Validate connection before saving
+                                            app.form_validating = true;
+                                            app.login_error = None;
+
+                                            let tx = tx.clone();
+                                            let dns_provider = app.config.dns_provider;
+                                            let url_clone = url.clone();
+                                            let user_clone = user.clone();
+                                            let pass_clone = pass.clone();
+                                            let name_clone = name.clone();
+                                            let epg_clone = epg_opt.clone();
+
+                                            tokio::spawn(async move {
+                                                if detected_type == crate::config::AccountType::M3u
+                                                {
+                                                    let client = crate::api::M3uClient::new(
+                                                        url_clone.clone(),
+                                                    );
+                                                    match client.authenticate().await {
+                                                        Ok((true, _, _)) => {
+                                                            let _ = tx
+                                                                .send(AsyncAction::ValidatePlaylistSuccess {
+                                                                    name: name_clone,
+                                                                    url: url_clone,
+                                                                    username: user_clone,
+                                                                    password: pass_clone,
+                                                                    account_type: detected_type,
+                                                                    epg_url: epg_clone,
+                                                                    editing_index,
+                                                                })
+                                                                .await;
+                                                        }
+                                                        Ok((false, _, _)) => {
+                                                            let _ = tx
+                                                                .send(AsyncAction::ValidatePlaylistFailed(
+                                                                    "Could not fetch M3U playlist — check URL".to_string(),
+                                                                ))
+                                                                .await;
+                                                        }
+                                                        Err(e) => {
+                                                            let _ = tx
+                                                                .send(AsyncAction::ValidatePlaylistFailed(
+                                                                    format!("Could not reach server: {}", e),
+                                                                ))
+                                                                .await;
+                                                        }
+                                                    }
+                                                } else {
+                                                    match crate::api::XtreamClient::new_with_doh(
+                                                        url_clone.clone(),
+                                                        user_clone.clone(),
+                                                        pass_clone.clone(),
+                                                        dns_provider,
+                                                    )
+                                                    .await
+                                                    {
+                                                        Ok(client) => {
+                                                            match client.authenticate().await {
+                                                                Ok((true, _, _)) => {
+                                                                    let _ = tx
+                                                                        .send(AsyncAction::ValidatePlaylistSuccess {
+                                                                            name: name_clone,
+                                                                            url: url_clone,
+                                                                            username: user_clone,
+                                                                            password: pass_clone,
+                                                                            account_type: detected_type,
+                                                                            epg_url: epg_clone,
+                                                                            editing_index,
+                                                                        })
+                                                                        .await;
+                                                                }
+                                                                Ok((false, _, _)) => {
+                                                                    let _ = tx
+                                                                        .send(AsyncAction::ValidatePlaylistFailed(
+                                                                            "Invalid credentials — check username and password".to_string(),
+                                                                        ))
+                                                                        .await;
+                                                                }
+                                                                Err(e) => {
+                                                                    let _ = tx
+                                                                        .send(AsyncAction::ValidatePlaylistFailed(
+                                                                            format!("Connection error: {}", e),
+                                                                        ))
+                                                                        .await;
+                                                                }
+                                                            }
+                                                        }
+                                                        Err(e) => {
+                                                            let _ = tx
+                                                                .send(AsyncAction::ValidatePlaylistFailed(
+                                                                    format!("Could not reach server: {}", e),
+                                                                ))
+                                                                .await;
+                                                        }
+                                                    }
+                                                }
+                                            });
+                                        }
                                     } else {
                                         app.login_error = Some("Name and URL required".to_string());
                                     }
