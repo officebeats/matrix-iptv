@@ -205,6 +205,12 @@ async fn run_app<B: ratatui::backend::Backend>(
             needs_redraw = true;
         }
 
+        // Keep animating while a screen transition effect is running
+        #[cfg(not(target_arch = "wasm32"))]
+        if app.transition_effect.is_some() {
+            needs_redraw = true;
+        }
+
         // 1.5 Debounced EPG Fetching
         if app.current_screen == CurrentScreen::Streams && app.active_pane == Pane::Streams && !app.streams.is_empty() {
             let focused_id = get_id_str(&app.streams[app.selected_stream_index].stream_id);

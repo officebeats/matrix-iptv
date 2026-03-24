@@ -1,5 +1,32 @@
 # IPTV App Changes Summary
 
+## Date: 2026-03-22 (v4.0.19)
+
+### Changes Implemented
+
+#### ✅ 1. Fixed MPV Crash on macOS (Critical Fix)
+
+- Removed `--geometry` option that caused MPV crashes when combined with other options
+- Removed `--demuxer-lavf-o=analyzeduration,probesize,fflags` that caused aggressive probing crashes
+- Removed `--gpu-api=opengl` on macOS (not supported in all Homebrew builds)
+- Changed `--force-window` to `--force-window=immediate` for safer audio stream handling
+- MPV now stable on both macOS and Windows
+
+#### ✅ 2. Self-Healing Playback System
+
+- Added automatic format fallback (ts → m3u8 → mp4)
+- Added VLC auto-fallback when MPV fails
+- Added error diagnostics with user-friendly hints
+- Added IPC-based error monitoring for real-time playback detection
+
+#### ✅ 3. New Testing Infrastructure
+
+- Added `test-matrix-iptv` command for easy testing from anywhere
+- Added playback diagnostic tool (`cargo run --bin test_playback`)
+- Added `test-playback` binary for CI/CD testing
+
+---
+
 ## Date: 2026-01-18 (v3.3.1)
 
 ### Changes Implemented

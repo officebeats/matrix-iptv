@@ -1076,16 +1076,38 @@ pub async fn handle_key_event(
                                                     let _ = tx.send(AsyncAction::LoadingMessage("Handshaking with player...".to_string())).await;
                                                     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                                                     let _ = tx.send(AsyncAction::LoadingMessage("Buffering video stream...".to_string())).await;
-                                                    match player.wait_for_playback(10000).await {
+                                                    // Use enhanced monitoring
+                                                    match player.wait_for_playback_with_monitoring(10000).await {
                                                         Ok(true) => { let _ = tx.send(AsyncAction::PlayerStarted).await; }
                                                         Ok(false) => { 
-                                                            let log_err = player.get_last_error_from_log().unwrap_or_else(|| "MPV exited unexpectedly".to_string());
-                                                            let _ = tx.send(AsyncAction::PlayerFailed(format!("Player failed: {}", log_err))).await; 
+                                                            let log_err = player.get_last_error_from_log().unwrap_or_else(|| "Player exited unexpectedly".to_string());
+                                                            // Use diagnostic to get hint
+                                                            let diagnosis = player.diagnose_playback_failure(&log_err);
+                                                            let hint_msg = match diagnosis.hint {
+                                                                Some(hint) => format!("{}\n\nHint: {}", log_err, hint),
+                                                                None => log_err,
+                                                            };
+                                                            let _ = tx.send(AsyncAction::PlayerFailed(hint_msg)).await; 
                                                         }
-                                                        Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(format!("Playback error: {}", e))).await; }
+                                                        Err(e) => {
+                                                            // Use diagnostic for error message
+                                                            let diagnosis = player.diagnose_playback_failure(&e.to_string());
+                                                            let hint_msg = match diagnosis.hint {
+                                                                Some(hint) => format!("{}\n\nHint: {}", e, hint),
+                                                                None => e.to_string(),
+                                                            };
+                                                            let _ = tx.send(AsyncAction::PlayerFailed(hint_msg)).await;
+                                                        }
                                                     }
                                                 }
-                                                Err(e) => { let _ = tx.send(AsyncAction::PlayerFailed(e.to_string())).await; }
+                                                Err(e) => { 
+                                                    let diagnosis = player.diagnose_playback_failure(&e.to_string());
+                                                    let hint_msg = match diagnosis.hint {
+                                                        Some(hint) => format!("{}\n\nHint: {}", e, hint),
+                                                        None => e.to_string(),
+                                                    };
+                                                    let _ = tx.send(AsyncAction::PlayerFailed(hint_msg)).await; 
+                                                }
                                             }
                                         });
                                     }

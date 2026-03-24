@@ -96,3 +96,36 @@ Integration tests in `tests/`: `frontend_screens_test.rs` (Ratatui `TestBackend`
 ## Deployment
 
 CI/CD via `.github/workflows/release.yml`: manual `workflow_dispatch` with tag name input → builds release binaries on Windows/Linux/macOS → creates GitHub Release → publishes to NPM. The NPM package (`bin/cli.js`) handles binary selection per platform and auto-update checks.
+
+## Multi-Agent Development Process
+
+This project uses AI agents for automated development via GitHub Actions:
+
+- **Scrum Master** (`.claude/agents/scrum_master.md`): Manages the Kanban board, creates tickets, assigns work, tracks status
+- **Planner / Product Manager** (`.claude/agents/product_manager.md`): Analyzes feature requests, creates implementation plans
+- **Fullstack Developer** (`.claude/agents/fullstack_dev.md`): Implements features, writes tests, creates PRs
+- **QA Tester** (`.claude/agents/tester.md`): Reviews code, runs `cargo` test suite, approves or flags bugs
+
+### Kanban Board Workflow
+1. Work items tracked on a GitHub issue labeled `kanban`
+2. Stages: Backlog → Planning → Developing → Testing → Human Review → Done
+3. Scrum Master coordinates movement between stages
+
+### Git Branch Strategy (for agents)
+- `main` — production (stable, deployed)
+- `develop` — integration branch (all features merge here)
+- `feature/<name>` — feature branches, always created from `develop`
+- `fix/<name>` — bug fix branches, always created from `develop`
+
+**Agents MUST**: create branches from `develop`, open PRs targeting `develop`. Only humans merge `develop` → `main`.
+
+### Agent Communication
+See `COMMUNICATION_PROTOCOL.md` for the full protocol. See `WORKFLOW_SETUP.md` for setup instructions.
+
+## Notes for AI Agents
+
+- **ALWAYS** read the "Build & Development Commands" section before running any commands
+- **ALWAYS** use `cargo` commands — do not assume npm/python/etc.
+- **NEVER** commit real credentials, provider URLs, or account data (see Security Rules above)
+- **ALWAYS** create feature branches from `develop`, not `main`
+- **ALWAYS** target `develop` as the PR base branch

@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# scrum - AI Scrum Master CLI
+# Usage: ./scrum
+
+REPO="officebeats/matrix-iptv"
+KANBAN_ISSUE=2
+
+# Colors
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+header() {
+  echo ""
+  echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo -e "${BOLD}${CYAN}  AI Scrum Master — matrix-iptv${RESET}"
+  echo -e "${BOLD}${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${RESET}"
+  echo ""
+}
+
+prompt_user() {
+  echo -e "${YELLOW}$1${RESET}"
+  echo -n "> "
+  read -r REPLY
+  echo "$REPLY"
+}
+
+confirm() {
+  echo -e "${YELLOW}$1 [y/n]${RESET}"
+  echo -n "> "
+  read -r answer
+  [[ "$answer" =~ ^[Yy] ]]
+}
+
+run_agent() {
+  local agent="$1"
+  local prompt="$2"
+  echo -e "${GREEN}Running $agent agent...${RESET}"
+  echo ""
+  claude --agent "$agent" "$prompt"
+}
+
+show_board() {
+  echo -e "${BOLD}Current Kanban Board:${RESET}"
+  gh issue view $KANBAN_ISSUE --repo $REPO --json body -q '.body' 2>/dev/null
+  echo ""
+}
+
+show_feature_issues() {
+  echo -e "${BOLD}Open feature issues:${RESET}"
+  gh issue list --repo $REPO --label "feature-request" --json number,title,labels \
+    --jq '.[] | "#\(.number) \(.title) [\(.labels[].name // "" | select(. != ""))]"' 2>/dev/null
+  echo ""
+}
+
+show_open_prs() {
+  gh pr list --repo $REPO --json number,title,labels \
+    --jq '.[] | "#\(.number) \(.title)"' 2>/dev/null
+}
+
+# ─── MAIN LOOP ───────────────────────────────────────────────────────────────
+
+header
+show_board
+
+# Check for PRs awaiting human review
+READY_PRS=$(gh pr list --repo $REPO --label "ready-for-merge" --json number,title -q '.[].number' 2>/dev/null)
+if [ -n "$READY_PRS" ]; then
+  echo -e "${BOLD}PRs ready to merge:${RESET}"
+  gh pr list --repo $REPO --label "ready-for-merge" --json number,title \
+    --jq '.[] | "  PR #\(.number): \(.title)"'
+  echo ""
+  if confirm "Would you like to review a PR for merging?"; then
+    PR_NUM=$(prompt_user "Enter PR number:")
+    gh pr view "$PR_NUM" --repo $REPO --web
+    echo "Merge it at: https://github.com/$REPO/pull/$PR_NUM"
+    exit 0
+  fi
+fi
+
+# Check for plans awaiting human approval
+AWAITING=$(gh issue list --repo $REPO --label "awaiting-human-review" --json number,title -q '.[].number' 2>/dev/null)
+if [ -n "$AWAITING" ]; then
+  echo -e "${BOLD}Plans awaiting your approval:${RESET}"
+  gh issue list --repo $REPO --label "awaiting-human-review" --json number,title \
+    --jq '.[] | "  Issue #\(.number): \(.title)"'
+  echo ""
+  if confirm "Would you like to review a plan?"; then
+    ISSUE_NUM=$(prompt_user "Enter issue number:")
+    gh issue view "$ISSUE_NUM" --repo $REPO --web
+    echo ""
+    if confirm "Approve this plan and start implementation?"; then
+      gh issue edit "$ISSUE_NUM" --repo $REPO --add-label "approved-plan" --remove-label "awaiting-human-review"
+      run_agent "fullstack_dev" "Implement the approved plan in issue #$ISSUE_NUM on repo $REPO. Read CLAUDE.md first. Create a feature branch from develop, implement, write tests, open a PR targeting develop."
+    else
+      FEEDBACK=$(prompt_user "Enter your feedback for the planner:")
+      gh issue edit "$ISSUE_NUM" --repo $REPO --add-label "needs-revision" --remove-label "awaiting-human-review"
+      gh issue comment "$ISSUE_NUM" --repo $REPO --body "**Human feedback**: $FEEDBACK"
+      run_agent "product_manager" "Revise the implementation plan on issue #$ISSUE_NUM on repo $REPO based on this feedback: $FEEDBACK"
+    fi
+    exit 0
+  fi
+fi
+
+# ─── MAIN MENU ───────────────────────────────────────────────────────────────
+echo "What would you like to do?"
+echo "  1) Add new work to the backlog"
+echo "  2) Approve a backlog ticket (start planning)"
+echo "  3) Review open feature issues"
+echo "  4) Run QA on an open PR"
+echo "  5) Open Kanban board in browser"
+echo "  6) Exit"
+echo ""
+echo -n "> "
+read -r choice
+
+case $choice in
+  1)
+    REQUEST=$(prompt_user "Describe what you want to build:")
+    run_agent "scrum_master" "You are managing the Kanban board at GitHub issue #$KANBAN_ISSUE on repo $REPO. The human has a new request: '$REQUEST'. Break it into backlog tickets, update the Kanban board issue body, and post a summary comment."
+    ;;
+  2)
+    show_board
+    TICKET=$(prompt_user "Enter the exact ticket title to approve:")
+    run_agent "scrum_master" "The human has approved the backlog ticket '$TICKET' on Kanban board issue #$KANBAN_ISSUE in repo $REPO. Create a new GitHub feature issue for it with the 'feature-request' label, move it from Backlog to Planning on the board, and post a status comment."
+    echo ""
+    echo -e "${GREEN}Planner agent will now analyze the feature...${RESET}"
+    FEATURE_ISSUE=$(gh issue list --repo $REPO --label "feature-request" --json number -q '.[0].number' 2>/dev/null)
+    if [ -n "$FEATURE_ISSUE" ]; then
+      run_agent "product_manager" "Analyze the feature request in issue #$FEATURE_ISSUE on repo $REPO. Read CLAUDE.md first. Create a detailed implementation plan as a comment, add the 'awaiting-human-review' label, and tag the human for approval."
+    fi
+    ;;
+  3)
+    show_feature_issues
+    ;;
+  4)
+    echo -e "${BOLD}Open PRs:${RESET}"
+    show_open_prs
+    echo ""
+    PR_NUM=$(prompt_user "Enter PR number to test:")
+    ISSUE_NUM=$(prompt_user "Enter the linked feature issue number:")
+    run_agent "tester" "Review PR #$PR_NUM on repo $REPO. Read CLAUDE.md for the correct cargo commands. Run cargo fmt --check, cargo check, cargo test, and cargo build --release. Post results to both PR #$PR_NUM and issue #$ISSUE_NUM. Add 'bugs-found' or 'tests-passed' label."
+    ;;
+  5)
+    gh issue view $KANBAN_ISSUE --repo $REPO --web
+    ;;
+  6)
+    exit 0
+    ;;
+  *)
+    echo "Invalid choice."
+    exit 1
+    ;;
+esac

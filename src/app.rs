@@ -288,6 +288,13 @@ pub struct App {
     pub matrix_rain_columns: Vec<MatrixColumn>,
     pub matrix_rain_logo_hits: Vec<bool>, // Tracks which logo pixels have been "activated"
 
+    // Screen Transition Effects (tachyonfx)
+    #[cfg(not(target_arch = "wasm32"))]
+    pub transition_effect: Option<tachyonfx::Effect>,
+    pub transition_last_screen: Option<CurrentScreen>,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub frame_instant: std::time::Instant,
+
     // EPG Enrichment
     pub epg_cache: std::collections::HashMap<String, String>,
     pub last_focused_stream_id: Option<String>,
@@ -553,6 +560,14 @@ impl App {
             show_welcome_popup: false,
             matrix_rain_columns: vec![],
             matrix_rain_logo_hits: vec![false; 101 * 6], // 101 wide x 6 high logo
+
+            // Screen Transition Effects
+            #[cfg(not(target_arch = "wasm32"))]
+            transition_effect: None,
+            transition_last_screen: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            frame_instant: std::time::Instant::now(),
+
             playlist_mode_list_state: ListState::default(),
             
             // Group Management

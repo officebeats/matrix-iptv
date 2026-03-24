@@ -60,5 +60,13 @@ reqwest = { version = "0.12.9", default-features = false, features = ["json"] }
 getrandom = { version = "0.2", features = ["js"] }
 # tokio for wasm
 tokio = { version = "1.42.0", features = ["rt", "macros", "sync", "time"] }
+[[bin]]
+name = "test_playback"
+path = "src/bin/test_playback.rs"
+
+[[bin]]
+name = "matrix-test"
+path = "src/bin/test_playback.rs"
+
 [dev-dependencies]
 tokio = { version = "1.42.0", features = ["full"] }

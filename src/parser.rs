@@ -1038,6 +1038,11 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                 if loc.len() < 20 && !loc.contains("LIVE") && !loc.contains(':') {
                     // Exclude timestamps
                     location = Some(loc);
+                    // Strip the parenthetical from display_name to avoid duplicate display
+                    display_name = format!("{}{}",
+                        &display_name[..start],
+                        &display_name[end + 1..]
+                    ).trim().to_string();
                 }
             }
         }

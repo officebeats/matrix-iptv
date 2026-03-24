@@ -1036,6 +1036,23 @@ impl XtreamClient {
             self.base_url, self.username, self.password, stream_id, extension
         )
     }
+
+    /// Get stream URL with fallback extensions if the primary fails
+    pub fn get_stream_url_with_fallback(&self, stream_id: &str, primary_ext: &str) -> Vec<String> {
+        let formats = match primary_ext {
+            "ts" => vec!["ts", "m3u8", "mp4"],
+            "m3u8" => vec!["m3u8", "ts", "mp4"],
+            "mp4" => vec!["mp4", "m3u8", "ts"],
+            _ => vec![primary_ext, "ts", "m3u8", "mp4"],
+        };
+        
+        formats.iter().map(|ext| {
+            format!(
+                "{}/live/{}/{}/{}.{}",
+                self.base_url, self.username, self.password, stream_id, ext
+            )
+        }).collect()
+    }
  
     pub fn get_vod_url(&self, stream_id: &str, extension: &str) -> String {
         format!(

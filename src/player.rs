@@ -2,9 +2,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 use crate::config::PlayerEngine;
+use serde::{Deserialize, Serialize};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::process::{Child, Command, Stdio};
+
+#[cfg(not(target_arch = "wasm32"))]
+use tokio::time::{sleep, Duration};
 
 #[cfg(not(target_arch = "wasm32"))]
 
@@ -15,12 +19,91 @@ use std::process::{Child, Command, Stdio};
 #[cfg(target_arch = "wasm32")]
 use web_sys::window;
 
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum StreamFormat {
+    Ts,
+    M3u8,
+    Mp4,
+    Json,
+}
+
+impl StreamFormat {
+    pub fn extension(&self) -> &str {
+        match self {
+            Self::Ts => "ts",
+            Self::M3u8 => "m3u8",
+            Self::Mp4 => "mp4",
+            Self::Json => "json",
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Player {
     #[cfg(not(target_arch = "wasm32"))]
     process: Arc<Mutex<Option<Child>>>,
     #[cfg(not(target_arch = "wasm32"))]
     ipc_path: Arc<Mutex<Option<PathBuf>>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    last_error: Arc<Mutex<Option<String>>>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PlaybackError {
+    pub error_type: PlaybackErrorType,
+    pub message: String,
+    pub hint: Option<String>,
+    pub recoverable: bool,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum PlaybackErrorType {
+    MpvNotFound,
+    StreamUnreachable,
+    InvalidFormat,
+    NetworkTimeout,
+    AuthExpired,
+    ProviderBlocked,
+    Unknown,
+}
+
+impl PlaybackError {
+    pub fn new(error_type: PlaybackErrorType, message: String) -> Self {
+        let (hint, recoverable) = match &error_type {
+            PlaybackErrorType::MpvNotFound => (
+                Some("Please install MPV: winget install mpv (Windows), brew install mpv (Mac), or sudo apt install mpv (Linux)".to_string()),
+                false
+            ),
+            PlaybackErrorType::StreamUnreachable => (
+                Some("Try a different stream format or check your internet connection. The stream may be offline.".to_string()),
+                true
+            ),
+            PlaybackErrorType::InvalidFormat => (
+                Some("Trying different stream format (m3u8/ts/mp4)...".to_string()),
+                true
+            ),
+            PlaybackErrorType::NetworkTimeout => (
+                Some("Network timeout. Trying with increased buffer settings...".to_string()),
+                true
+            ),
+            PlaybackErrorType::AuthExpired => (
+                Some("Your IPTV subscription may have expired. Please check your account.".to_string()),
+                false
+            ),
+            PlaybackErrorType::ProviderBlocked => (
+                Some("Provider may be blocking the connection. Try enabling VPN or contact your provider.".to_string()),
+                true
+            ),
+            PlaybackErrorType::Unknown => (None, true),
+        };
+        
+        Self {
+            error_type,
+            message,
+            hint,
+            recoverable,
+        }
+    }
 }
 
 impl Player {
@@ -30,6 +113,7 @@ impl Player {
             Self {
                 process: Arc::new(Mutex::new(None)),
                 ipc_path: Arc::new(Mutex::new(None)),
+                last_error: Arc::new(Mutex::new(None)),
             }
         }
         #[cfg(target_arch = "wasm32")]
@@ -38,21 +122,135 @@ impl Player {
         }
     }
 
-    /// Start the selected player engine and return the IPC pipe path for monitoring
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn set_last_error(&self, error: Option<String>) {
+        if let Ok(mut guard) = self.last_error.lock() {
+            *guard = error;
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn get_last_error(&self) -> Option<String> {
+        self.last_error.lock().ok().and_then(|g| g.clone())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    pub fn get_last_error(&self) -> Option<String> {
+        None
+    }
+
+    /// Start the selected player engine with automatic retry and fallback
     #[cfg(not(target_arch = "wasm32"))]
     pub async fn play(&self, url: &str, engine: PlayerEngine, use_default_mpv: bool, smooth_motion: bool) -> Result<(), anyhow::Error> {
-        // We SKIP the pre-flight `check_stream_health(url)` here because doing a GET request
-        // immediately before launching the player can trigger the IPTV provider's
-        // "Max 1 Connection" rule (the health check leaves a ghost connection open
-        // for 30-60 seconds on their backend). This would cause the provider
-        // to gracefully kill the stream ~45 seconds in!
-        
         self.stop();
 
         match engine {
-            PlayerEngine::Mpv => self.play_mpv(url, use_default_mpv, smooth_motion),
+            PlayerEngine::Mpv => {
+                match self.play_mpv_with_retry(url, use_default_mpv, smooth_motion, 0).await {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        if crate::setup::get_vlc_path().is_some() {
+                            #[cfg(debug_assertions)]
+                            println!("DEBUG: MPV failed, trying VLC fallback: {}", e);
+                            self.play_vlc(url, smooth_motion)
+                        } else {
+                            Err(e)
+                        }
+                    }
+                }
+            },
             PlayerEngine::Vlc => self.play_vlc(url, smooth_motion),
         }
+    }
+
+    /// Try playing with different stream formats as fallback
+    #[cfg(not(target_arch = "wasm32"))]
+    async fn play_mpv_with_retry(&self, url: &str, use_default_mpv: bool, smooth_motion: bool, attempt: u32) -> Result<(), anyhow::Error> {
+        let result = self.play_mpv(url, use_default_mpv, smooth_motion);
+        
+        if result.is_err() && attempt < 3 {
+            if let Some(base_url) = self.extract_stream_base_url(url) {
+                let formats: Vec<&str> = if url.contains(".m3u8") {
+                    vec!["ts", "mp4"]
+                } else {
+                    vec!["m3u8", "ts", "mp4"]
+                };
+                
+                if let Some(format) = formats.get(attempt as usize) {
+                    let new_url = format!("{}.{}", base_url, format);
+                    #[cfg(debug_assertions)]
+                    println!("DEBUG: Trying format fallback: {} -> {}", url, new_url);
+                    return Box::pin(self.play_mpv_with_retry(&new_url, use_default_mpv, smooth_motion, attempt + 1)).await;
+                }
+            }
+        }
+        
+        result
+    }
+
+    /// Extract base URL without extension for format fallback
+    #[cfg(not(target_arch = "wasm32"))]
+    fn extract_stream_base_url(&self, url: &str) -> Option<String> {
+        let base = url.rsplit('.').last()?;
+        let formats = ["ts", "m3u8", "mp4", "json"];
+        if formats.contains(&base) {
+            let pos = url.len() - base.len() - 1;
+            Some(url[..pos].to_string())
+        } else {
+            None
+        }
+    }
+
+    /// Diagnose playback failure and return helpful error message
+    pub fn diagnose_playback_failure(&self, error: &str) -> PlaybackError {
+        let error_lower = error.to_lowercase();
+        
+        if error_lower.contains("mpv not found") || error_lower.contains("cannot find") {
+            return PlaybackError::new(
+                PlaybackErrorType::MpvNotFound,
+                error.to_string()
+            );
+        }
+        
+        if error_lower.contains("connection") || error_lower.contains("refused") || error_lower.contains("unreachable") {
+            return PlaybackError::new(
+                PlaybackErrorType::StreamUnreachable,
+                error.to_string()
+            );
+        }
+        
+        if error_lower.contains("timeout") || error_lower.contains("timed out") {
+            return PlaybackError::new(
+                PlaybackErrorType::NetworkTimeout,
+                error.to_string()
+            );
+        }
+        
+        if error_lower.contains("403") || error_lower.contains("forbidden") || error_lower.contains("blocked") {
+            return PlaybackError::new(
+                PlaybackErrorType::ProviderBlocked,
+                error.to_string()
+            );
+        }
+        
+        if error_lower.contains("401") || error_lower.contains("unauthorized") || error_lower.contains("expired") {
+            return PlaybackError::new(
+                PlaybackErrorType::AuthExpired,
+                error.to_string()
+            );
+        }
+        
+        if error_lower.contains("format") || error_lower.contains("invalid") || error_lower.contains("unsupported") {
+            return PlaybackError::new(
+                PlaybackErrorType::InvalidFormat,
+                error.to_string()
+            );
+        }
+        
+        PlaybackError::new(
+            PlaybackErrorType::Unknown,
+            error.to_string()
+        )
     }
 
     async fn check_stream_health(&self, url: &str) -> Result<(), anyhow::Error> {
@@ -144,28 +342,23 @@ impl Player {
         let _is_live = url.contains("/live/") || url.contains(".m3u8");
 
         cmd.arg(url)
-           .arg("--geometry=1280x720") // Start in 720p window (user preference)
-           .arg("--force-window")      // Ensure window opens even if audio-only initially
-           .arg("--no-fs")             // DISABLING FULLSCREEN - Force Windowed Mode
-           .arg("--osc=yes")           // Enable On Screen Controller for usability
-           .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"); // Mimic Chrome to bypass scraping blocks
+           .arg("--force-window=immediate")
+           .arg("--no-fs")
+           .arg("--osc=yes")
+           .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
 
         // Apply smooth motion interpolation if enabled
         if smooth_motion {
             cmd.arg("--video-sync=display-resample") // Smooth motion sync (required for interpolation)
-               .arg("--interpolation=yes") // Frame generation / motion smoothing
-               .arg("--tscale=linear")     // Soap opera effect - smooth motion blending (GPU friendly)
-               .arg("--tscale-clamp=0.0"); // Allow full blending for maximum smoothness
+               .arg("--interpolation=yes")           // Frame generation / motion smoothing
+               .arg("--tscale=linear")               // Soap opera effect - smooth motion blending
+               .arg("--tscale-clamp=0.0");           // Allow full blending for maximum smoothness
         }
 
         // Only apply optimizations if not using default MPV settings
-        // Since V4.0.9 we force this execution path for everyone by default to solve the `stream ends prematurely` bug.
+        // Safe defaults that work across platforms (macOS, Windows, Linux)
         if !use_default_mpv {
             cmd.arg("--cache=yes")
-               // v4.0.17: 'Anti-Loop' / Pro-Stealth Profile
-               // - demuxer-max-back-bytes=0: Kills the '1-second loop' by disabling seek-back memory.
-               // - demuxer-thread=yes: Runs network I/O on a separate thread to prevent UI lag stutters.
-               // - stream-buffer-size=512KiB: Keeps a constant flow to prevent AT&T idle-resets.
                .arg("--demuxer-max-bytes=64MiB")
                .arg("--demuxer-max-back-bytes=0") 
                .arg("--demuxer-readahead-secs=15") 
@@ -175,31 +368,27 @@ impl Player {
                .arg("--network-timeout=60")
                .arg("--keep-open=yes")
                .arg("--video-sync=audio")
-               .arg("--stream-lavf-o=reconnect=1,reconnect_at_eof=1,reconnect_streamed=1,reconnect_delay_max=5,multiple_requests=1")
-               .arg("--demuxer-lavf-o=analyzeduration=3000000,probesize=3000000,fflags=+genpts+igndts")
+               .arg("--stream-lavf-o=reconnect=1,reconnect_at_eof=1,reconnect_streamed=1,reconnect_delay_max=5")
                .arg("--ytdl=no")
                .arg("--tls-verify=no");
 
             if cfg!(target_os = "windows") {
-                cmd.arg("--d3d11-flip=yes")            // Modern Windows presentation (faster)
-                   .arg("--gpu-api=d3d11");             // Force D3D11 (faster than OpenGL on Windows)
+                cmd.arg("--d3d11-flip=yes")
+                   .arg("--gpu-api=d3d11");
             } else if cfg!(target_os = "macos") {
-                cmd.arg("--gpu-api=opengl");            // Generally safe default for macOS mpv
+                // Don't force gpu-api on macOS - let mpv auto-detect
+                // Some mpv builds don't support explicit opengl
             }
         }
 
         // Common settings for both modes
         cmd.arg("--msg-level=all=no")
            .arg("--term-status-msg=no")
-           .arg("--input-terminal=no") // Ignore terminal for input
-           .arg("--terminal=no")       // Completely disable terminal interactions
-           // USER AGENT MASQUERADE: Modern Chrome to avoid throttling
+           .arg("--input-terminal=no")
+           .arg("--terminal=no")
            .arg("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-           // Keep window open if playback fails to see error (optional, maybe off for prod)
            .arg("--keep-open=no")
-           // Logging for troubleshooting
            .arg("--log-file=mpv_playback.log")
-           // IPC for status monitoring
            .arg(format!("--input-ipc-server={}", pipe_name));
 
         // Disconnect from terminal input/output to prevent hotkey conflicts
@@ -373,6 +562,144 @@ impl Player {
         Ok(self.is_running())
     }
 
+    /// Monitor MPV IPC socket for error events
+    /// This provides real-time error detection during playback
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+    pub async fn monitor_ipc_errors(&self, duration_ms: u64) -> Option<String> {
+        let ipc_path = self.ipc_path.lock().ok()?.clone()?;
+        let duration = Duration::from_millis(duration_ms);
+        let start = std::time::Instant::now();
+
+        while start.elapsed() < duration {
+            if !self.is_running() {
+                return self.get_last_error_from_log();
+            }
+
+            // Try to read from IPC socket
+            if let Ok(ipc_data) = self.read_ipc_socket(&ipc_path).await {
+                if let Some(error) = self.parse_ipc_error(&ipc_data) {
+                    return Some(error);
+                }
+            }
+
+            sleep(Duration::from_millis(500)).await;
+        }
+        None
+    }
+
+    /// Read from MPV IPC socket
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+    async fn read_ipc_socket(&self, path: &PathBuf) -> Result<String, std::io::Error> {
+        use tokio::net::UnixStream;
+        use tokio::io::AsyncReadExt;
+
+        let mut stream = match UnixStream::connect(path).await {
+            Ok(s) => s,
+            Err(_) => return Err(std::io::Error::new(std::io::ErrorKind::NotConnected, "IPC not ready")),
+        };
+
+        let mut buf = [0u8; 4096];
+        match stream.read(&mut buf).await {
+            Ok(0) => Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "IPC closed")),
+            Ok(n) => Ok(String::from_utf8_lossy(&buf[..n]).to_string()),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Windows stub for read_ipc_socket
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
+    async fn read_ipc_socket(&self, _path: &PathBuf) -> Result<String, std::io::Error> {
+        Err(std::io::Error::new(std::io::ErrorKind::Other, "Unix sockets not available on Windows"))
+    }
+
+    /// Windows stub for monitor_ipc_errors
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
+    pub async fn monitor_ipc_errors(&self, _duration_ms: u64) -> Option<String> {
+        None
+    }
+
+    /// Parse IPC data for error messages
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+    fn parse_ipc_error(&self, data: &str) -> Option<String> {
+        let error_patterns = ["error", "failed", "abort", "network"];
+        let lower = data.to_lowercase();
+        
+        for pattern in error_patterns {
+            if lower.contains(pattern) {
+                if let Some(line) = data.lines().find(|l| l.to_lowercase().contains(pattern)) {
+                    return Some(line.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
+    fn parse_ipc_error(&self, _data: &str) -> Option<String> {
+        None
+    }
+
+    /// Enhanced playback check with IPC error monitoring
+    #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
+    pub async fn wait_for_playback_with_monitoring(&self, timeout_ms: u64) -> Result<bool, anyhow::Error> {
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_millis(timeout_ms);
+
+        sleep(Duration::from_millis(500)).await;
+
+        while start.elapsed() < timeout {
+            // Check if process died
+            if !self.is_running() {
+                // Try to get error from logs
+                if let Some(log_error) = self.get_last_error_from_log() {
+                    self.set_last_error(Some(log_error.clone()));
+                    return Err(anyhow::anyhow!("Playback failed: {}", log_error));
+                }
+                return Ok(false);
+            }
+
+            // Check for IPC errors after initial startup
+            if start.elapsed() > Duration::from_millis(3000) {
+                if let Some(ipc_error) = self.monitor_ipc_errors(2000).await {
+                    self.set_last_error(Some(ipc_error.clone()));
+                    return Err(anyhow::anyhow!("Playback error: {}", ipc_error));
+                }
+
+                return Ok(true);
+            }
+
+            sleep(Duration::from_millis(200)).await;
+        }
+
+        Ok(self.is_running())
+    }
+
+    /// Simplified playback check for Windows (no IPC monitoring)
+    #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
+    pub async fn wait_for_playback_with_monitoring(&self, timeout_ms: u64) -> Result<bool, anyhow::Error> {
+        let start = std::time::Instant::now();
+        let timeout = Duration::from_millis(timeout_ms);
+
+        sleep(Duration::from_millis(500)).await;
+
+        while start.elapsed() < timeout {
+            if !self.is_running() {
+                if let Some(log_error) = self.get_last_error_from_log() {
+                    return Err(anyhow::anyhow!("Playback failed: {}", log_error));
+                }
+                return Ok(false);
+            }
+
+            if start.elapsed() > Duration::from_millis(3000) {
+                return Ok(true);
+            }
+
+            sleep(Duration::from_millis(200)).await;
+        }
+
+        Ok(self.is_running())
+    }
+
     #[cfg(target_arch = "wasm32")]
     pub fn play(&self, url: &str, _engine: PlayerEngine, _use_default_mpv: bool, _smooth_motion: bool) -> Result<(), anyhow::Error> {
         self.stop();
@@ -401,6 +728,55 @@ impl Player {
         if let Some(_win) = window() {
             web_sys::console::log_1(&"Stopping stream".into());
         }
+    }
+
+    /// Check for common playback issues and return self-healing suggestions
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn check_and_suggest_fixes(&self) -> Vec<String> {
+        let mut suggestions = Vec::new();
+
+        // Check if mpv is installed
+        if crate::setup::get_mpv_path().is_none() {
+            suggestions.push("MPV not found. Install with: winget install mpv (Windows), brew install mpv (Mac), or sudo apt install mpv (Linux)".to_string());
+        }
+
+        // Check if old log files exist and are large (might indicate recurring issues)
+        if let Ok(meta) = std::fs::metadata("mpv_playback.log") {
+            if meta.len() > 1_000_000 {
+                suggestions.push("Large log file detected. Consider deleting mpv_playback.log to free space".to_string());
+            }
+        }
+
+        // Check player config
+        if let Ok(config) = crate::config::AppConfig::load() {
+            if config.preferred_player == PlayerEngine::Mpv && config.use_default_mpv {
+                suggestions.push("Using default MPV settings. Try enabling custom settings for better stream compatibility".to_string());
+            }
+        }
+
+        suggestions
+    }
+
+    /// Auto-detect stream URL issues and suggest fixes
+    pub fn analyze_stream_url(url: &str) -> Vec<String> {
+        let mut issues = Vec::new();
+        
+        // Check for http vs https
+        if url.starts_with("http://") {
+            issues.push("Stream URL uses HTTP (insecure). Trying HTTPS may help".to_string());
+        }
+
+        // Check for missing referrer
+        if !url.contains("/live/") && !url.contains(".m3u8") {
+            issues.push("Non-standard URL format detected. Stream may require special player settings".to_string());
+        }
+
+        // Check for query parameters that might indicate auth issues
+        if url.contains("&token=") || url.contains("?token=") {
+            issues.push("URL contains token - ensure it hasn't expired".to_string());
+        }
+
+        issues
     }
 }
 

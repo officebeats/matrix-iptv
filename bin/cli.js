@@ -124,12 +124,15 @@ async function performUpdate() {
 
       const batchScript = `
 @echo off
-timeout /t 2 /nobreak > nul
+timeout /t 3 /nobreak > nul
 start "" "${binaryPath}" %*
 del "%~f0"
 `;
       const batchPath = path.join(os.tmpdir(), "matrix-relaunch.bat");
       fs.writeFileSync(batchPath, batchScript);
+
+      // Brief delay to let AV scanners release locks on newly written files
+      await new Promise((r) => setTimeout(r, 500));
 
       let spawnAttempts = 0;
       const maxSpawnAttempts = 5;
