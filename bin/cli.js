@@ -119,6 +119,9 @@ async function performUpdate() {
     console.log(`[+] Update complete. Rebooting system...\n`);
 
     if (os.platform() === "win32") {
+      // Give Windows time to release filesystem locks on the new binary
+      await new Promise((r) => setTimeout(r, 1500));
+
       const batchScript = `
 @echo off
 timeout /t 2 /nobreak > nul
@@ -127,11 +130,24 @@ del "%~f0"
 `;
       const batchPath = path.join(os.tmpdir(), "matrix-relaunch.bat");
       fs.writeFileSync(batchPath, batchScript);
-      spawn("cmd.exe", ["/c", batchPath, ...process.argv.slice(2)], {
-        detached: true,
-        stdio: "ignore",
-      }).unref();
-      process.exit(0);
+
+      let spawnAttempts = 0;
+      const maxSpawnAttempts = 5;
+      while (spawnAttempts < maxSpawnAttempts) {
+        try {
+          spawn("cmd.exe", ["/c", batchPath, ...process.argv.slice(2)], {
+            detached: true,
+            stdio: "ignore",
+            windowsHide: true,
+          }).unref();
+          process.exit(0);
+        } catch (spawnErr) {
+          spawnAttempts++;
+          if (spawnAttempts === maxSpawnAttempts) throw spawnErr;
+          console.log(`[*] Relaunch blocked by OS. Retrying (${spawnAttempts}/${maxSpawnAttempts})...`);
+          await new Promise((r) => setTimeout(r, 1000 + spawnAttempts * 500));
+        }
+      }
     }
   } catch (err) {
     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);

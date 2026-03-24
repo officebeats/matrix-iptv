@@ -418,3 +418,85 @@ pub async fn check_for_updates(tx: tokio::sync::mpsc::Sender<crate::app::AsyncAc
         let _ = tx.send(crate::app::AsyncAction::Error("Failed to check for updates. Please check your connection.".to_string())).await;
     }
 }
+
+/// On Windows, perform the self-update directly from the Rust binary.
+/// This bypasses cli.js entirely (which may be an older version with the EBUSY bug).
+/// Writes a PowerShell script that downloads the new binary, replaces the old one, and relaunches.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn perform_windows_self_update() -> Result<(), anyhow::Error> {
+    let current_exe = std::env::current_exe()?;
+    let exe_path = current_exe.to_string_lossy().replace('\\', "\\\\");
+    let download_url = "https://github.com/officebeats/matrix-iptv/releases/latest/download/matrix-iptv-windows.exe";
+    
+    let ps_script = format!(r#"
+# Matrix IPTV Self-Update Script
+$ErrorActionPreference = 'Stop'
+Start-Sleep -Seconds 2
+
+$exePath = "{exe_path}"
+$tempPath = "$exePath.update.tmp"
+$backupPath = "$exePath.old.$([DateTimeOffset]::Now.ToUnixTimeMilliseconds())"
+
+try {{
+    # Download new binary
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    $webClient = New-Object System.Net.WebClient
+    $webClient.Headers.Add('User-Agent', 'matrix-iptv-cli-updater')
+    $webClient.DownloadFile("{download_url}", $tempPath)
+    
+    # Replace binary with retries
+    $maxAttempts = 15
+    for ($i = 0; $i -lt $maxAttempts; $i++) {{
+        try {{
+            if (Test-Path $exePath) {{
+                Move-Item -Path $exePath -Destination $backupPath -Force
+                try {{ Remove-Item $backupPath -Force -ErrorAction SilentlyContinue }} catch {{}}
+            }}
+            Move-Item -Path $tempPath -Destination $exePath -Force
+            break
+        }} catch {{
+            if ($i -eq ($maxAttempts - 1)) {{ throw }}
+            Start-Sleep -Seconds (1 + $i * 0.5)
+        }}
+    }}
+    
+    # Relaunch with retries
+    Start-Sleep -Seconds 1
+    $maxSpawn = 5
+    for ($j = 0; $j -lt $maxSpawn; $j++) {{
+        try {{
+            Start-Process -FilePath $exePath -WindowStyle Normal
+            break
+        }} catch {{
+            if ($j -eq ($maxSpawn - 1)) {{ throw }}
+            Start-Sleep -Seconds (1 + $j * 0.5)
+        }}
+    }}
+}} catch {{
+    Write-Host "`n[!] Update failed: $_" -ForegroundColor Red
+    if (Test-Path $tempPath) {{ Remove-Item $tempPath -Force -ErrorAction SilentlyContinue }}
+    Write-Host "Press any key to exit..."
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+}}
+
+# Clean up this script
+Remove-Item -Path $MyInvocation.MyCommand.Source -Force -ErrorAction SilentlyContinue
+"#);
+
+    let temp_dir = std::env::temp_dir();
+    let script_path = temp_dir.join("matrix-iptv-update.ps1");
+    std::fs::write(&script_path, ps_script)?;
+
+    Command::new("powershell.exe")
+        .args([
+            "-ExecutionPolicy", "Bypass",
+            "-WindowStyle", "Hidden",
+            "-File", &script_path.to_string_lossy(),
+        ])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()?;
+
+    Ok(())
+}

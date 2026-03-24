@@ -313,8 +313,12 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
 
             let mut spans = vec![];
             
-            // 0. Row number column (fixed width, right-aligned)
-            let row_num = format!("{:>4} ", idx + 1);
+            // 0. Channel number column (fixed width, right-aligned) — use provider's num field
+            let ch_num = s.num.as_ref()
+                .and_then(|n| n.to_string_value())
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or((idx + 1) as u64);
+            let row_num = format!("{:>4} ", ch_num);
             spans.push(ratatui::text::Span::styled(row_num, Style::default().fg(TEXT_DIM)));
             spans.push(ratatui::text::Span::styled(" ", Style::default().fg(TEXT_DIM)));
             
@@ -772,8 +776,15 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
     let mut lines: Vec<Line> = Vec::new();
 
     // ── Summary (JiraTUI top field) ──
+    // Show channel number + condensed name to avoid duplicating the stream list
+    let ch_num_str = s.num.as_ref()
+        .and_then(|n| n.to_string_value())
+        .and_then(|v| v.parse::<u64>().ok())
+        .map(|n| format!("Ch {} · ", n))
+        .unwrap_or_default();
+    let summary_label = format!("{}Summary", ch_num_str);
     lines.push(Line::from(vec![
-        Span::styled("Summary", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(summary_label, Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
     ]));
     // Truncate display name to fit panel width
     let display = if parsed.display_name.chars().count() > w.saturating_sub(1) {
@@ -784,6 +795,122 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
     };
     lines.push(Line::from(Span::styled(display, value_style.add_modifier(Modifier::BOLD))));
     lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+
+    // ── Status Row (LIVE NOW / Starts at / Ended) ──
+    {
+        let user_tz_str = app.config.get_user_timezone();
+        let user_tz: Tz = user_tz_str.parse().unwrap_or(chrono_tz::UTC);
+        let now = Utc::now();
+        let is_blink_on = app.loading_tick / 4 % 2 == 0;
+
+        // Check live score data first (most authoritative for sports)
+        let score_data = app.get_score_for_stream(&parsed.display_name);
+        let (status_label, status_spans) = if let Some(score) = score_data {
+            if score.status_state == "in" {
+                let clock = if !score.display_clock.is_empty() && score.display_clock != "00:00" {
+                    format!(" — {}", score.display_clock)
+                } else {
+                    String::new()
+                };
+                let live_color = if is_blink_on { Color::Rgb(255, 100, 100) } else { TEXT_DIM };
+                ("Status", vec![
+                    Span::styled(if is_blink_on { "● " } else { "  " }, Style::default().fg(live_color)),
+                    Span::styled("LIVE NOW", Style::default().fg(live_color).add_modifier(Modifier::BOLD)),
+                    Span::styled(clock, Style::default().fg(TEXT_SECONDARY)),
+                ])
+            } else if score.status_state == "post" {
+                ("Status", vec![
+                    Span::styled("✓ Ended", Style::default().fg(TEXT_DIM)),
+                ])
+            } else {
+                // Pre-game — show start time if available
+                if let Some(st) = parsed.start_time {
+                    let time_str = format_relative_time(st, &user_tz);
+                    ("Status", vec![
+                        Span::styled(format!("Starts {}", time_str), Style::default().fg(Color::Rgb(255, 200, 80))),
+                    ])
+                } else {
+                    ("Status", vec![
+                        Span::styled(&score.status_detail, Style::default().fg(TEXT_SECONDARY)),
+                    ])
+                }
+            }
+        } else {
+            // No score data — use parsed timing
+            let has_start = parsed.start_time.is_some();
+            let is_ended = parsed.stop_time.map(|t| now > t).unwrap_or(false);
+            let is_live = parsed.start_time.map(|st| now >= st).unwrap_or(false) && !is_ended;
+
+            if is_live {
+                let live_color = if is_blink_on { Color::Rgb(255, 100, 100) } else { TEXT_DIM };
+                ("Status", vec![
+                    Span::styled(if is_blink_on { "● " } else { "  " }, Style::default().fg(live_color)),
+                    Span::styled("LIVE NOW", Style::default().fg(live_color).add_modifier(Modifier::BOLD)),
+                ])
+            } else if is_ended {
+                ("Status", vec![
+                    Span::styled("✓ Ended", Style::default().fg(TEXT_DIM)),
+                ])
+            } else if has_start {
+                let st = parsed.start_time.unwrap();
+                let time_str = format_relative_time(st, &user_tz);
+                ("Status", vec![
+                    Span::styled(format!("Starts {}", time_str), Style::default().fg(Color::Rgb(255, 200, 80))),
+                ])
+            } else {
+                ("Status", vec![
+                    Span::styled("—", dim_style),
+                ])
+            }
+        };
+
+        lines.push(Line::from(Span::styled(status_label, Style::default().fg(label_color))));
+        lines.push(Line::from(status_spans));
+
+        // ── Schedule Row (start → end time + duration) ──
+        let schedule_data: Option<(String, String, String, String)> = if parsed.start_time.is_some() || parsed.stop_time.is_some() {
+            let start_str = parsed.start_time.map(|st| {
+                let local = st.with_timezone(&user_tz);
+                local.format("%I:%M %p").to_string()
+            }).unwrap_or_else(|| "—".to_string());
+
+            let end_str = parsed.stop_time.map(|et| {
+                let local = et.with_timezone(&user_tz);
+                local.format("%I:%M %p").to_string()
+            }).unwrap_or_else(|| "—".to_string());
+
+            let duration_str = if let (Some(st), Some(et)) = (parsed.start_time, parsed.stop_time) {
+                let dur = et.signed_duration_since(st);
+                let hours = dur.num_hours();
+                let mins = dur.num_minutes() % 60;
+                if hours > 0 {
+                    format!(" ({}h {}m)", hours, mins)
+                } else {
+                    format!(" ({}m)", mins)
+                }
+            } else {
+                String::new()
+            };
+
+            let tz_abbr = now.with_timezone(&user_tz).format("%Z").to_string();
+            Some((start_str, end_str, duration_str, tz_abbr))
+        } else {
+            None
+        };
+
+        if let Some((start_str, end_str, duration_str, tz_abbr)) = schedule_data {
+            lines.push(Line::from(Span::styled("Schedule", Style::default().fg(label_color))));
+            lines.push(Line::from(vec![
+                Span::styled(start_str, value_style),
+                Span::styled(" → ", Style::default().fg(TEXT_DIM)),
+                Span::styled(end_str, value_style),
+                Span::styled(format!(" {}", tz_abbr), Style::default().fg(TEXT_SECONDARY)),
+                Span::styled(duration_str, Style::default().fg(TEXT_SECONDARY)),
+            ]));
+        }
+
+        lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+    }
 
     // ── Field Grid (JiraTUI 2-column fields) ──
     // Quality | Region on same row

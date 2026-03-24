@@ -149,6 +149,18 @@ async fn main() -> Result<(), anyhow::Error> {
     };
 
     if exit_code == 42 {
+        // On Windows, handle the update directly from the binary to avoid
+        // the EBUSY bug in older versions of cli.js
+        #[cfg(target_os = "windows")]
+        {
+            if let Err(e) = setup::perform_windows_self_update() {
+                eprintln!("\n[!] Self-update failed: {}. Falling back to CLI updater.", e);
+                std::process::exit(42);
+            }
+            std::process::exit(0);
+        }
+
+        #[cfg(not(target_os = "windows"))]
         std::process::exit(42);
     }
 
