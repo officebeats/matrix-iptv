@@ -1,6 +1,6 @@
 {
   "name": "matrix-iptv",
-  "version": "4.0.19",
+  "version": "4.0.20",
   "description": "The premium terminal IPTV decoder",
   "bin": {
     "matrix-iptv": "bin/cli.js"
