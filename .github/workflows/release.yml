@@ -15,7 +15,55 @@ permissions:
   contents: write
 
 jobs:
+  preflight-npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+      - name: Verify release tag matches package versions
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
+          VERSION="${TAG#v}"
+          ROOT_VERSION="$(node -p "require('./package.json').version")"
+          SHIM_VERSION="$(node -p "require('./packages/officebeats-matrix-iptv-cli/package.json').version")"
+
+          if [ "$ROOT_VERSION" != "$VERSION" ]; then
+            echo "Root package version $ROOT_VERSION does not match release tag $TAG"
+            exit 1
+          fi
+
+          if [ "$SHIM_VERSION" != "$VERSION" ]; then
+            echo "Shim package version $SHIM_VERSION does not match release tag $TAG"
+            exit 1
+          fi
+
+      - name: Verify npm token can access registry
+        run: npm whoami
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Verify root package publish permission
+        shell: bash
+        run: |
+          set +e
+          OUTPUT="$(npm publish --access public --dry-run 2>&1)"
+          STATUS=$?
+          set -e
+          echo "$OUTPUT"
+
+          if [ $STATUS -ne 0 ]; then
+            echo "Dry-run publish failed before build started."
+            exit $STATUS
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
   build:
+    needs: preflight-npm
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -86,24 +134,6 @@ jobs:
         with:
           node-version: "20"
           registry-url: "https://registry.npmjs.org"
-      - name: Verify release tag matches package versions
-        shell: bash
-        run: |
-          TAG="${{ github.event.inputs.tag_name || github.ref_name }}"
-          VERSION="${TAG#v}"
-          ROOT_VERSION="$(node -p "require('./package.json').version")"
-          SHIM_VERSION="$(node -p "require('./packages/officebeats-matrix-iptv-cli/package.json').version")"
-
-          if [ "$ROOT_VERSION" != "$VERSION" ]; then
-            echo "Root package version $ROOT_VERSION does not match release tag $TAG"
-            exit 1
-          fi
-
-          if [ "$SHIM_VERSION" != "$VERSION" ]; then
-            echo "Shim package version $SHIM_VERSION does not match release tag $TAG"
-            exit 1
-          fi
-
       - name: Publish root package
         run: npm publish --access public
         env:
