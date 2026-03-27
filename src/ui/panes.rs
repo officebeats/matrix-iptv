@@ -313,18 +313,12 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
 
             let mut spans = vec![];
             
-<<<<<<< HEAD
             // 0. Channel number column (fixed width, right-aligned) — use provider's num field
             let ch_num = s.num.as_ref()
                 .and_then(|n| n.to_string_value())
                 .and_then(|v| v.parse::<u64>().ok())
                 .unwrap_or((idx + 1) as u64);
             let row_num = format!("{:>4} ", ch_num);
-=======
-            // 0. Channel number column (fixed width, right-aligned) — use unique stream_id
-            let ch_num = crate::api::get_id_str(&s.stream_id);
-            let row_num = format!("{:<6} ", ch_num);
->>>>>>> 82b0057a49709ff82abd90e9c53eb10d050b7fd9
             spans.push(ratatui::text::Span::styled(row_num, Style::default().fg(TEXT_DIM)));
             spans.push(ratatui::text::Span::styled(" ", Style::default().fg(TEXT_DIM)));
             
