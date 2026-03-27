@@ -43,9 +43,23 @@ This project is being actively optimized by **Ernesto "Beats"** with a primary f
 - **Mac:** `brew install node`
 - **Linux:** `sudo apt install nodejs npm`
 
-### **Global NPM Install (Recommended)**
+### **Instant NPX Run (Recommended)**
+
+If you have Node.js installed, the fastest install-and-run command is:
+
+```bash
+npx matrix-iptv
+```
+
+### **Global NPM Install**
 
 If you have Node.js installed, this is the easiest way to stay updated:
+
+```bash
+npm install -g matrix-iptv
+```
+
+Legacy package name still works:
 
 ```bash
 npm install -g @officebeats/matrix-iptv-cli

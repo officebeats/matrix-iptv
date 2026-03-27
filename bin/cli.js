@@ -28,7 +28,7 @@ async function download(url, dest) {
       responseType: 'stream',
       headers: {
         'Cache-Control': 'no-cache',
-        'User-Agent': 'matrix-iptv-cli-updater'
+        'User-Agent': 'matrix-iptv-updater'
       }
     });
 
@@ -162,7 +162,7 @@ function launchApp(isUpdateRelaunch = false) {
   if (!fs.existsSync(binaryPath)) {
     console.error("\n❌  Matrix IPTV binary not found.");
     console.log(
-      "Please try reinstalling the package: npm install -g @officebeats/matrix-iptv-cli\n"
+      "Try one of these:\n  npx matrix-iptv\n  npm install -g matrix-iptv\n"
     );
     process.exit(1);
   }

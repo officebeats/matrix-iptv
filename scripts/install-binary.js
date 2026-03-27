@@ -29,7 +29,7 @@ if (!platform) {
 // https://github.com/officebeats/matrix-iptv/releases/latest/download/matrix-iptv-windows.exe
 const releaseUrl = `https://github.com/officebeats/matrix-iptv/releases/latest/download/matrix-iptv-${platform}`;
 
-console.log(`[*] Matrix IPTV CLI // One-Click Install`);
+console.log(`[*] Matrix IPTV // Binary Bootstrap`);
 console.log(`[*] Platform: ${os.platform()} (${os.arch()})`);
 console.log(`[*] Downloading: ${releaseUrl}`);
 
@@ -109,20 +109,8 @@ download(releaseUrl, tempPath)
       console.log(`[+] Executable permissions set.`);
     }
 
-    console.log(`\n✅  Matrix IPTV CLI installed successfully.`);
-
-    // Auto-launch if running in an interactive terminal
-    if (process.stdout.isTTY) {
-      console.log(`🚀 Launching Matrix IPTV...`);
-      const { spawn } = require("child_process");
-      const child = spawn(binaryPath, [], { stdio: "inherit" });
-
-      child.on("close", (code) => {
-        process.exit(code);
-      });
-    } else {
-      console.log(`Type 'matrix-iptv' to start.`);
-    }
+    console.log(`\n✅  Matrix IPTV binary ready.`);
+    console.log(`Type 'matrix-iptv' to start.`);
   })
   .catch((err) => {
     console.error(`\n❌ Installation failed: ${err.message}`);
