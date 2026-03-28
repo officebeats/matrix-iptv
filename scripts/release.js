@@ -87,19 +87,24 @@ function ensureVersion(version) {
 function bumpVersion(version) {
   const rootPackage = loadJson(rootPackagePath);
   const shimPackage = loadJson(shimPackagePath);
-  const lockfile = loadJson(lockfilePath);
+  const hasLockfile = fs.existsSync(lockfilePath);
+  const lockfile = hasLockfile ? loadJson(lockfilePath) : null;
 
   rootPackage.version = version;
   shimPackage.version = version;
   shimPackage.dependencies["matrix-iptv"] = version;
-  lockfile.version = version;
-  if (lockfile.packages && lockfile.packages[""]) {
+  if (lockfile) {
+    lockfile.version = version;
+  }
+  if (lockfile && lockfile.packages && lockfile.packages[""]) {
     lockfile.packages[""].version = version;
   }
 
   saveJson(rootPackagePath, rootPackage);
   saveJson(shimPackagePath, shimPackage);
-  saveJson(lockfilePath, lockfile);
+  if (lockfile) {
+    saveJson(lockfilePath, lockfile);
+  }
 }
 
 function printUsage() {
