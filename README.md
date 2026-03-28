@@ -65,6 +65,24 @@ Legacy package name still works:
 npm install -g @officebeats/matrix-iptv-cli
 ```
 
+### **Maintainer Release Command**
+
+For repo releases, use the built-in release automation:
+
+```bash
+npm run release:update -- 4.0.21
+```
+
+That updates the package versions only.
+
+When the version diff looks right, execute the full release flow:
+
+```bash
+npm run release:update -- 4.0.21 --execute
+```
+
+That will sync both npm package versions, commit, push `main`, create tag `v4.0.21`, and let GitHub Actions build binaries, create the GitHub release, and publish both npm packages.
+
 <details>
 <summary><strong>🚀 One-Click Install Scripts (Click to Expand)</strong></summary>
 

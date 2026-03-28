@@ -14,7 +14,8 @@
     "scripts/install-binary.js"
   ],
   "scripts": {
-    "postinstall": "node scripts/install-binary.js"
+    "postinstall": "node scripts/install-binary.js",
+    "release:update": "node scripts/release.js"
   },
   "keywords": [
     "iptv",
