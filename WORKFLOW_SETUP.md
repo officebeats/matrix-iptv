@@ -1,5 +1,8 @@
 # Multi-Agent GitHub Actions Workflow Setup
 
+> Note: This document describes the older GitHub Actions multi-agent automation path.
+> The default in-repo development process is now GSD, documented in `PROJECT_RULES.md`, `GSD-STYLE.md`, and `.gsd/`.
+
 This document explains the automated multi-agent development workflow for this project.
 
 ## Overview
@@ -191,6 +194,29 @@ When a PR has the `ready-for-merge` label:
 2. Review the QA report
 3. Merge the PR to `develop` (NOT `main`)
 4. Only merge `develop` → `main` for production releases
+
+### Release Automation
+
+This repo now includes a single release helper:
+
+```bash
+npm run release:update -- <version>
+```
+
+Use that to sync `package.json`, `package-lock.json`, and `packages/officebeats-matrix-iptv-cli/package.json`.
+
+To perform the full release:
+
+```bash
+npm run release:update -- <version> --execute
+```
+
+That command:
+- updates both npm package versions
+- commits the version bump
+- pushes `main`
+- creates and pushes tag `v<version>`
+- relies on `.github/workflows/release.yml` to handle build, GitHub release, and npm publish
 
 ## Labels Reference
 
