@@ -161,7 +161,7 @@ const managedPaths = [
 ];
 
 ensureVersion(version);
-ensureClean(managedPaths);
+ensureClean(managedPaths.filter((p) => fs.existsSync(path.join(repoRoot, p))));
 
 console.log(`[release] Updating package versions to ${version}`);
 bumpVersion(version);
@@ -194,7 +194,8 @@ if ((remoteTag.stdout || "").trim()) {
   fail(`Tag ${tag} already exists on origin.`);
 }
 
-run("git", ["add", ...managedPaths]);
+const existingPaths = managedPaths.filter((p) => fs.existsSync(path.join(repoRoot, p)));
+run("git", ["add", ...existingPaths]);
 run("git", ["commit", "-m", `chore(release): bump npm packages to ${version}`]);
 run("git", ["push", "origin", "main"]);
 run("git", ["tag", tag]);
