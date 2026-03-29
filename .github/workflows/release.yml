@@ -30,6 +30,7 @@ jobs:
           VERSION="${TAG#v}"
           ROOT_VERSION="$(node -p "require('./package.json').version")"
           SHIM_VERSION="$(node -p "require('./packages/officebeats-matrix-iptv-cli/package.json').version")"
+          CARGO_VERSION="$(grep -m1 '^version' Cargo.toml | sed 's/version *= *\"\(.*\)\"/\1/')"
 
           if [ "$ROOT_VERSION" != "$VERSION" ]; then
             echo "Root package version $ROOT_VERSION does not match release tag $TAG"
@@ -38,6 +39,12 @@ jobs:
 
           if [ "$SHIM_VERSION" != "$VERSION" ]; then
             echo "Shim package version $SHIM_VERSION does not match release tag $TAG"
+            exit 1
+          fi
+
+          if [ "$CARGO_VERSION" != "$VERSION" ]; then
+            echo "Cargo.toml version $CARGO_VERSION does not match release tag $TAG"
+            echo "Run: npm run release:update -- $VERSION"
             exit 1
           fi
 
