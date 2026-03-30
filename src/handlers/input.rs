@@ -946,7 +946,7 @@ pub async fn handle_key_event(
                                             app.session.state_loading = true;
                                             app.session.loading_message = Some("Loading all channels...".to_string());
                                             tokio::spawn(async move {
-                                                let _ = tx.send(AsyncAction::LoadingMessage("Fetching categories...".to_string())).await;
+                                                let _ = tx.send(AsyncAction::LoadingMessage("Loading categories...".to_string())).await;
                                                 let mut cats = match client.get_live_categories().await {
                                                     Ok(cats) => cats,
                                                     Err(e) => {
@@ -1037,7 +1037,7 @@ pub async fn handle_key_event(
                                         app.session.state_loading = true;
                                         app.session.loading_message = Some("Initializing Request...".to_string());
                                         tokio::spawn(async move {
-                                            let _ = tx.send(AsyncAction::LoadingMessage("Fetching Live Streams...".to_string())).await;
+                                            let _ = tx.send(AsyncAction::LoadingMessage("Loading Live Streams...".to_string())).await;
                                             match client.get_live_streams(&cat_id, Some(tx.clone())).await {
                                                 Ok(mut streams) => {
                                                     preprocessing::preprocess_streams(&mut streams, &favs, &pms, true, &account_name, None);

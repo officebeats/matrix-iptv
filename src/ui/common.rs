@@ -18,6 +18,7 @@ pub fn stylize_channel_name(
     content_type: Option<ContentType>,
     sports_event: Option<&SportsEvent>,
     base_style: Style,
+    show_quality: bool,
 ) -> (Vec<Span<'static>>, Option<&'static str>) {
     let clean_name = scrub_emojis(name);
     let mut spans = Vec::new();
@@ -32,7 +33,7 @@ pub fn stylize_channel_name(
             Color::Rgb(255, 200, 80),          // VIP: gold
             MATRIX_GREEN,                       // RAW: green
             Color::Rgb(0, 255, 255),            // HD: cyan  (matches Quality::HD)
-            Color::Rgb(57, 255, 20),            // FHD: neon green (matches Quality::FHD)
+            Color::Rgb(255, 215, 0),            // FHD: gold (Gold - distinct from Cyan)
             Color::Rgb(255, 0, 255),            // 4K/UHD: magenta (matches Quality::UHD4K)
             Color::Rgb(255, 200, 80),           // FPS: gold
         )
@@ -109,15 +110,21 @@ pub fn stylize_channel_name(
                     }
                     "HD" | "HQ" => {
                         found_hd = true;
-                        spans.push(Span::styled("HD", base_style.fg(hd_color)));
+                        if show_quality {
+                            spans.push(Span::styled(" [HD]", base_style.fg(hd_color).add_modifier(Modifier::BOLD)));
+                        }
                     }
                     "FHD" | "1080" | "1080P" => {
                         found_fhd = true;
-                        spans.push(Span::styled("FHD", base_style.fg(fhd_color)));
+                        if show_quality {
+                            spans.push(Span::styled(" [FHD]", base_style.fg(fhd_color).add_modifier(Modifier::BOLD)));
+                        }
                     }
                     val if ["4K", "UHD", "HEVC"].contains(&val) => {
                         found_4k = true;
-                        spans.push(Span::styled(format!("{}", val), base_style.fg(uhd_color).add_modifier(Modifier::BOLD)));
+                        if show_quality {
+                            spans.push(Span::styled(format!(" [{}]", val), base_style.fg(uhd_color).add_modifier(Modifier::BOLD)));
+                        }
                     }
                     val if val.ends_with("FPS") && val.len() > 3 => {
                         spans.push(Span::styled(format!("{}", val.to_lowercase()), base_style.fg(fps_color)));

@@ -112,6 +112,7 @@ fn render_categories_grid(f: &mut Frame, app: &mut App, area: Rect, border_color
             } else {
                 parse_category(&category.category_name)
             };
+            let upper_cat = &category.upper_clean_name;
 
             let card_block = Block::default()
                 .borders(Borders::ALL)
@@ -125,7 +126,7 @@ fn render_categories_grid(f: &mut Frame, app: &mut App, area: Rect, border_color
             };
 
             // Apply cyan color to NEW RELEASES if not selected
-            if parsed.display_name.to_uppercase().contains("NEW RELEASES") && !is_selected {
+            if upper_cat.contains("NEW RELEASES") && !is_selected {
                 name_style = name_style.fg(Color::Cyan);
             }
 
@@ -168,9 +169,20 @@ fn render_categories_list(f: &mut Frame, app: &mut App, area: Rect, border_color
     let rows = (total + cols - 1) / cols;
     let full_cols = if total % cols == 0 { cols } else { total % cols };
     
+    // Virtualization: only render visible rows
+    let mut selected_row = selected;
+    for col in 0..cols {
+        let col_size = if col < full_cols { rows } else { rows - 1 };
+        if selected_row < col_size {
+            break;
+        }
+        selected_row -= col_size;
+    }
+    let (start_row, end_row) = crate::ui::utils::visible_window(selected_row, rows, inner_area.height as usize);
+
     let mut list_items = Vec::new();
 
-    for r in 0..rows {
+    for r in start_row..end_row {
         let mut cells = Vec::new();
         
         for c in 0..cols {
@@ -186,11 +198,7 @@ fn render_categories_list(f: &mut Frame, app: &mut App, area: Rect, border_color
 
                 let is_selected = abs_idx == selected;
                 
-                let upper_cat = if let Some(ref parsed) = cat.cached_parsed {
-                    parsed.display_name.to_uppercase()
-                } else {
-                    crate::parser::parse_category(&cat.category_name).display_name.to_uppercase()
-                };
+                let upper_cat = &cat.upper_clean_name;
                 
                 let fav_marker = if app.config.favorites.categories.contains(&cat.category_id) { "*" } else { " " };
                 let pre_pad = if is_selected && is_active { "█ " } else { "  " };
@@ -226,19 +234,9 @@ fn render_categories_list(f: &mut Frame, app: &mut App, area: Rect, border_color
 
     let list_widget = Table::new(list_items, constraints).column_spacing(0);
 
-    let mut r = selected;
-    for col in 0..cols {
-        let col_size = if col < full_cols { rows } else { rows - 1 };
-        if r < col_size {
-            break;
-        }
-        r -= col_size;
-    }
-
-    // We can't update app.category_list_state directly if it's not the right one.
-    // We'll update the state based on screen.
+    // Convert selected row index to a relative selection for TableState
     let mut state = list_state_ref.clone();
-    state.select(Some(r));
+    state.select(Some(selected_row - start_row));
     
     // Update the app's state for the specific screen
     match app.current_screen {
@@ -275,11 +273,13 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             let _s_id = crate::api::get_id_str(&s.stream_id);
             let display_name = &s.name;
             
+            // Use cached parsed metadata (pre-computed). Fallback computes on the fly.
             let parsed = if let Some(ref cached) = s.cached_parsed {
                  cached.as_ref().clone()
             } else {
                 crate::parser::parse_stream(display_name, app.session.provider_timezone.as_deref())
             };
+
             if parsed.is_separator {
                 let label = if parsed.display_name.is_empty() {
                     "───".to_string()
@@ -289,24 +289,33 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 return Row::new(vec![
                     Cell::from(""),
                     Cell::from(""),
+                    Cell::from(""), // Quality
                     Cell::from(Line::from(vec![
                         ratatui::text::Span::styled("     ", Style::default()),
                         ratatui::text::Span::styled("│", Style::default().fg(TEXT_DIM)),
                         ratatui::text::Span::styled(label, Style::default().fg(TEXT_DIM).add_modifier(Modifier::DIM)),
                     ])),
-                    Cell::from(""),
+                    Cell::from(""), // NOW PLAYING
+                    Cell::from(""), // HEALTH
                 ]);
             }
 
-            let _is_blink_on = app.session.loading_tick / 4 % 2 == 0;
-
             let mut spans = vec![];
             
-            // 0. Channel number column (fixed width, right-aligned) — use relative row number
-            let ch_num_str = format!("{}", idx + 1);
-            let ch_display = ch_num_str.clone();
+            // 0. Quality badge (Structured Column)
+            let (quality_text, quality_color) = match parsed.quality {
+                Some(crate::parser::Quality::UHD4K) => ("[4K] ", Color::Rgb(255, 0, 255)),
+                Some(crate::parser::Quality::FHD) => ("[FHD]", Color::Rgb(255, 215, 0)),
+                Some(crate::parser::Quality::HD) => ("[HD] ", Color::Rgb(0, 255, 255)),
+                Some(crate::parser::Quality::SD) => ("[SD] ", Color::White),
+                None => ("     ", Color::White),
+            };
+            let quality_span = Span::styled(quality_text, Style::default().fg(quality_color).add_modifier(Modifier::BOLD));
 
-            // 1. Live Status / Icon
+            // 1. Channel number column
+            let ch_num_str = format!("{}", idx + 1);
+
+            // 2. Live Status / Icon
             let now = Utc::now();
             let is_ended = parsed.stop_time.map(|t| now > t).unwrap_or(false);
             let is_live = parsed.start_time.map(|st| now >= st).unwrap_or(false) && !is_ended;
@@ -319,57 +328,26 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 ratatui::text::Span::styled("   ", Style::default())
             };
 
-            // 2. Icon Logic (Sports Only)
-            let mut league_icon_span: Option<ratatui::text::Span> = None;
-            let upper_name = parsed.display_name.to_uppercase();
-            if upper_name.contains("NBA") || upper_name.contains("NCAAB") {
-                league_icon_span = Some(ratatui::text::Span::styled("NBA ", Style::default().fg(Color::Rgb(255, 140, 0))));
-            } else if upper_name.contains("NFL") || upper_name.contains("NCAAF") {
-                league_icon_span = Some(ratatui::text::Span::styled("NFL ", Style::default().fg(Color::Rgb(210, 180, 140))));
-            } else if upper_name.contains("MLB") || upper_name.contains("MILB") {
-                league_icon_span = Some(ratatui::text::Span::raw("MLB "));
-            } else if upper_name.contains("NHL") {
-                league_icon_span = Some(ratatui::text::Span::raw("NHL "));
-            } else if upper_name.contains("UFC") || upper_name.contains("FIGHT") || upper_name.contains("BOXING") {
-                league_icon_span = Some(ratatui::text::Span::raw("COMBAT "));
-            } else if upper_name.contains("TENNIS") || upper_name.contains("ATP") || upper_name.contains("WTA") {
-                league_icon_span = Some(ratatui::text::Span::styled("TENNIS ", Style::default().fg(Color::Rgb(144, 238, 144))));
-            } else if upper_name.contains("GOLF") || upper_name.contains("PGA") || upper_name.contains("MASTERS") {
-                league_icon_span = Some(ratatui::text::Span::raw("GOLF "));
-            } else if upper_name.contains("SUPERCROSS") || upper_name.contains("MOTOCROSS") || upper_name.contains("F1") || upper_name.contains("NASCAR") || upper_name.contains("RACING") {
-                league_icon_span = Some(ratatui::text::Span::styled("RACE ", Style::default().fg(Color::Rgb(255, 100, 100))));
-            } else if upper_name.contains("SOCCER") || upper_name.contains("MLS") || upper_name.contains("PREMIER") || upper_name.contains("LALIGA") || upper_name.contains("FIFA") || upper_name.contains("UEFA") {
-                league_icon_span = Some(ratatui::text::Span::styled("SOCCER ", Style::default().fg(Color::Rgb(255, 182, 193))));
-            } else if upper_name.contains("RUGBY") {
-                league_icon_span = Some(ratatui::text::Span::raw("RUGBY "));
-            } else if upper_name.contains("EVENT") || upper_name.contains("PPV") {
-                league_icon_span = Some(ratatui::text::Span::raw("EVENT "));
-            } else if upper_name.contains("ESPN") || upper_name.contains("DAZN") || upper_name.contains("B/R") || upper_name.contains("BALLY") {
-                league_icon_span = Some(ratatui::text::Span::raw("TV "));
+            // 3. Icon Logic (Pre-calculated)
+            if let Some(ref icon) = parsed.league_icon {
+                let style = match icon.trim() {
+                    "NBA" => Style::default().fg(Color::Rgb(255, 140, 0)),
+                    "NFL" => Style::default().fg(Color::Rgb(210, 180, 140)),
+                    "TENNIS" => Style::default().fg(Color::Rgb(144, 238, 144)),
+                    "RACE" => Style::default().fg(Color::Rgb(255, 100, 100)),
+                    _ => Style::default(),
+                };
+                spans.push(ratatui::text::Span::styled(icon.clone(), style));
             }
 
-            if let Some(icon) = league_icon_span {
-                 spans.push(icon);
-            } else {
-                let name = parsed.display_name.to_uppercase();
-                if name.contains("FOOTBALL") || name.contains("LIGUE") || name.contains("BUNDESLIGA") || name.contains("SERIE A") {
-                    spans.push(ratatui::text::Span::styled("SOCCER ", Style::default().fg(Color::Rgb(200, 255, 200))));
-                } else if name.contains("BASKETBALL") || name.contains("EUROLEAGUE") {
-                    spans.push(ratatui::text::Span::styled("BASKET ", Style::default().fg(Color::Rgb(255, 140, 0))));
-                } else if name.contains("AUTO") || name.contains("MOTOR") {
-                    spans.push(ratatui::text::Span::raw("RACE "));
-                } else if name.contains("CRICKET") || name.contains("IPL") {
-                    spans.push(ratatui::text::Span::raw("CRICKET "));
-                }
-            }
 
-            // 3. Favorite indicator
+            // 4. Favorite indicator
             let s_id = crate::api::get_id_str(&s.stream_id);
             if app.config.favorites.streams.contains(&s_id) {
                 spans.push(ratatui::text::Span::styled("* ", Style::default().fg(MATRIX_GREEN)));
             }
 
-            // 4. Country Flag
+            // 5. Country Flag
             if let Some(ref country) = parsed.country {
                 let is_us_en = country == "US" || country == "USA" || country == "AM" || country == "EN";
                 if !(app.config.playlist_mode.is_merica_variant() && is_us_en) {
@@ -380,7 +358,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 }
             }
 
-            // 5. Name / Matchup
+            // 6. Name / Matchup
             let is_league = parsed.country.as_ref().map(|cc| ["NBA", "NFL", "MLB", "NHL", "UFC", "SPORTS", "PPV"].contains(&cc.as_str())).unwrap_or(false);
             
             let score_data_for_color = app.get_score_for_stream(&parsed.display_name);
@@ -428,13 +406,6 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 spans.push(ratatui::text::Span::styled(" vs ", Style::default().fg(TEXT_DIM)));
                 spans.push(ratatui::text::Span::styled(a_display, Style::default().fg(a_color).add_modifier(Modifier::BOLD)));
                 
-                 if let Some(q) = &parsed.quality {
-                     spans.push(ratatui::text::Span::styled(
-                         format!(" {} ", q.badge()),
-                         Style::default().fg(q.color()).add_modifier(Modifier::BOLD),
-                     ));
-                 }
-                 
                  spans.push(ratatui::text::Span::raw("   "));
             } else {
                 // Standard rendering
@@ -475,6 +446,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                     None,
                     parsed.sports_event.as_ref(),
                     Style::default().fg(name_color),
+                    false, // show_quality: Disable in Live Streams with QUAL column
                 );
                 
                 if !year_suffix.is_empty() {
@@ -483,18 +455,10 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 
                 spans.extend(styled_name);
                 
-                // UX Fix: Inline the currently playing EPG program title directly into the row if available!
-                let s_id_str = crate::api::get_id_str(&s.stream_id);
-                if let Some(epg_title) = app.epg_cache.get(&s_id_str) {
-                    if !epg_title.is_empty() {
-                        spans.push(ratatui::text::Span::styled("   [", Style::default().fg(TEXT_DIM)));
-                        spans.push(ratatui::text::Span::styled(epg_title.clone(), Style::default().fg(Color::Rgb(150, 150, 150))));
-                        spans.push(ratatui::text::Span::styled("]", Style::default().fg(TEXT_DIM)));
-                    }
-                }
+                // EPG "Now Playing" — rendered in its own column below
             }
 
-            // 6. Score/Clock Logic
+            // 7. Score/Clock Logic
             let score_data = app.get_score_for_stream(&parsed.display_name);
             
             let (_final_is_live, final_is_ended, status_text, score_text) = if let Some(score) = score_data {
@@ -544,16 +508,28 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 spans.push(ratatui::text::Span::styled(" ended", Style::default().fg(TEXT_DIM)));
             }
 
-            // 7. Location
+            // 8. Location
             if parsed.sports_event.is_none() {
                 if let Some(loc) = &parsed.location {
                     spans.push(ratatui::text::Span::styled(format!(" ({})", loc), Style::default().fg(TEXT_SECONDARY)));
                 }
             }
 
-            // 8. Network Health
+            // 9. Network Health
             let health = app.sports.stream_health_cache.get(&s_id).copied().or(s.latency_ms);
             let health_span = latency_to_bars(health);
+
+            // 10. EPG "Now Playing" column
+            let s_id_str = crate::api::get_id_str(&s.stream_id);
+            let epg_cell = if let Some(epg_title) = app.epg_cache.get(&s_id_str) {
+                if !epg_title.is_empty() {
+                    Cell::from(Span::styled(epg_title.clone(), Style::default().fg(Color::Rgb(140, 140, 180))))
+                } else {
+                    Cell::from("")
+                }
+            } else {
+                Cell::from("")
+            };
 
             // Construct Table Row
             let is_selected = idx == selected;
@@ -564,9 +540,11 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             };
 
             Row::new(vec![
-                Cell::from(format!("{:>5}", ch_display)).style(Style::default().fg(TEXT_DIM)),
+                Cell::from(format!("{:>5}", ch_num_str)).style(Style::default().fg(TEXT_DIM)),
                 Cell::from(status_span),
+                Cell::from(quality_span),
                 Cell::from(Line::from(spans)),
+                epg_cell,
                 Cell::from(health_span),
             ]).style(row_style)
         })
@@ -602,15 +580,19 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
     let constraints = [
         Constraint::Length(6),  // Ch #
         Constraint::Length(3),  // Status dot
-        Constraint::Fill(1),    // Name / Info
-        Constraint::Length(6),  // Health bars (Expanded to fit "HEALTH" text)
+        Constraint::Length(7),  // Quality [FHD]
+        Constraint::Fill(3),    // Name / Info (primary)
+        Constraint::Fill(1),    // NOW PLAYING (EPG)
+        Constraint::Length(6),  // Health bars
     ];
 
     let header_style = Style::default().fg(TEXT_SECONDARY).add_modifier(Modifier::BOLD);
     let header = Row::new(vec![
         Cell::from("  CH#").style(header_style),
         Cell::from("").style(header_style),
-        Cell::from(" CHANNEL / STREAM").style(header_style),
+        Cell::from(" QUAL").style(header_style),
+        Cell::from(" CHANNEL").style(header_style),
+        Cell::from(" NOW PLAYING").style(header_style),
         Cell::from("HEALTH").style(header_style),
     ]).height(1).style(Style::default().bg(Color::Rgb(10, 25, 10))); // Subtle dark green header bg
 
@@ -709,6 +691,7 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
                 None,
                 parsed.sports_event.as_ref(),
                 Style::default().fg(name_color),
+                false, // show_quality: Disable in Live Streams with QUAL column
             );
             
             if let Some(y) = &parsed.year {

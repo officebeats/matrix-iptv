@@ -108,6 +108,7 @@ pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
             let (mut styled_name, _) = stylize_channel_name(
                 &display_name, false, false, parsed.quality, None, None,
                 Style::default().fg(TEXT_PRIMARY),
+                true, // show_quality: true because VOD doesn't have a QUAL column
             );
             
             // Colorize the checkmark if it's there

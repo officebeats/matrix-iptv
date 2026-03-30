@@ -101,9 +101,11 @@ pub fn preprocess_categories(
         c.search_name = c.clean_name.to_lowercase();
         
         // Cache parsed metadata to enable O(1) TUI rendering
-        if c.cached_parsed.is_none() {
-            c.cached_parsed = Some(Box::new(crate::parser::parse_category(&c.category_name)));
-        }
+        let parsed = crate::parser::parse_category(&c.category_name);
+        c.upper_clean_name = parsed.display_name.to_uppercase();
+        c.is_sports = crate::parser::is_sports_content(&c.category_name);
+        c.is_american = crate::parser::is_american_live(&c.category_name);
+        c.cached_parsed = Some(Box::new(parsed));
     });
 
     // 3. Sort - Parallelized
@@ -163,7 +165,7 @@ pub fn preprocess_streams(
 
     if let Some(ref tx) = tx {
         let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
-            format!("Phase 2/3: Cleaning metadata for {} streams...", streams.len())
+            format!("Refining metadata for {} streams...", streams.len())
         ));
     }
 
@@ -201,7 +203,7 @@ pub fn preprocess_streams(
     
     if let Some(ref tx) = tx {
         let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
-            format!("Phase 2/3: Cleaning metadata for {} streams (Multi-Core)...", streams.len())
+            format!("Refining metadata for {} streams (Multi-Core)...", streams.len())
         ));
     }
 

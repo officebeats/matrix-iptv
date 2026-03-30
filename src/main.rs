@@ -78,8 +78,8 @@ async fn main() -> Result<(), anyhow::Error> {
     if app.config.accounts.is_empty() {
         if let Ok(Some(new_account)) = matrix_iptv_lib::onboarding::run_onboarding(&mut terminal) {
             app.config.accounts.push(new_account);
-            if let Err(e) = app.config.save() {
-                println!("Failed to save config: {}", e);
+            if let Err(_) = app.config.save() {
+                // Ignore save error here, it will be handled when main loop starts
             }
             // re-init app state now that we have an account
             // State will be updated by normal app loop
@@ -217,25 +217,51 @@ async fn run_app<B: ratatui::backend::Backend>(
             needs_redraw = true;
         }
 
-        // 1.5 Debounced EPG Fetching
+        // 1.5 Batch EPG Fetching — prefetch for all visible streams, not just the focused one
         if app.current_screen == CurrentScreen::Streams && app.active_pane == Pane::Streams && !app.streams.is_empty() {
             let focused_id = get_id_str(&app.streams[app.selected_stream_index].stream_id);
             if app.last_focused_stream_id.as_ref() != Some(&focused_id) {
                 app.last_focused_stream_id = Some(focused_id.clone());
                 app.focus_timestamp = Some(std::time::Instant::now());
             } else if let Some(ts) = app.focus_timestamp {
-                if ts.elapsed().as_millis() >= 300 {
-                    app.focus_timestamp = None; // Reset so we don't spam
-                    if !app.epg_cache.contains_key(&focused_id) {
+                if ts.elapsed().as_millis() >= 200 {
+                    app.focus_timestamp = None;
+                    
+                    // Collect all visible stream IDs that aren't already cached
+                    let mut uncached_ids: Vec<String> = Vec::new();
+                    let visible_count = 40.min(app.streams.len()); // Fetch up to 40 visible
+                    let start = app.selected_stream_index.saturating_sub(20);
+                    let end = (start + visible_count).min(app.streams.len());
+                    
+                    for i in start..end {
+                        let sid = get_id_str(&app.streams[i].stream_id);
+                        if !app.epg_cache.contains_key(&sid) {
+                            uncached_ids.push(sid);
+                        }
+                    }
+                    
+                    // Also ensure the focused stream is included
+                    if !app.epg_cache.contains_key(&focused_id) && !uncached_ids.contains(&focused_id) {
+                        uncached_ids.insert(0, focused_id.clone());
+                    }
+                    
+                    if !uncached_ids.is_empty() {
                         if let Some(client) = &app.session.current_client {
                             let client = client.clone();
                             let tx = tx.clone();
-                            let fid = focused_id.clone();
                             tokio::spawn(async move {
-                                if let Ok(epg) = client.get_short_epg(&fid).await {
-                                    if let Some(now_playing) = epg.epg_listings.get(0) {
-                                        let _ = tx.send(AsyncAction::EpgLoaded(fid, now_playing.title.clone())).await;
+                                let mut results = Vec::new();
+                                // Fetch EPG sequentially (avoids server hammering)
+                                for sid in uncached_ids {
+                                    if let Ok(epg) = client.get_short_epg(&sid).await {
+                                        if let Some(now_playing) = epg.epg_listings.get(0) {
+                                            results.push((sid, now_playing.title.clone()));
+                                        }
                                     }
+                                }
+                                
+                                if !results.is_empty() {
+                                    let _ = tx.send(AsyncAction::EpgBatchLoaded(results)).await;
                                 }
                             });
                         }

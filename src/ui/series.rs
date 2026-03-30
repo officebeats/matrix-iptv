@@ -75,6 +75,7 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
             let (mut styled_name, _) = stylize_channel_name(
                 &prefixed_name, false, false, quality, None, None,
                 Style::default().fg(TEXT_PRIMARY),
+                true, // show_quality: true because Series doesn't have a QUAL column
             );
             
             // Colorize the checkmark if it's there

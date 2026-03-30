@@ -150,8 +150,6 @@ impl Player {
                     Ok(_) => Ok(()),
                     Err(e) => {
                         if crate::setup::get_vlc_path().is_some() {
-                            #[cfg(debug_assertions)]
-                            println!("DEBUG: MPV failed, trying VLC fallback: {}", e);
                             self.play_vlc(url, smooth_motion)
                         } else {
                             Err(e)
@@ -178,8 +176,6 @@ impl Player {
                 
                 if let Some(format) = formats.get(attempt as usize) {
                     let new_url = format!("{}.{}", base_url, format);
-                    #[cfg(debug_assertions)]
-                    println!("DEBUG: Trying format fallback: {} -> {}", url, new_url);
                     return Box::pin(self.play_mpv_with_retry(&new_url, use_default_mpv, smooth_motion, attempt + 1)).await;
                 }
             }
@@ -269,9 +265,6 @@ impl Player {
         // Resilience: Fallback to DoH if DNS fails for the stream health check
         if let Err(ref e) = result {
             if crate::doh::is_dns_error(e) {
-                #[cfg(debug_assertions)]
-                println!("DEBUG: Health check DNS error detected for {}. Trying DoH fallback...", url);
-
                 if let Some(resp) = crate::doh::try_doh_fallback(&client, url).await {
                     result = Ok(resp);
                 }

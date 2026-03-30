@@ -755,6 +755,11 @@ pub async fn handle_async_action(
         AsyncAction::EpgLoaded(stream_id, program_title) => {
             app.epg_cache.insert(stream_id, program_title);
         }
+        AsyncAction::EpgBatchLoaded(entries) => {
+            for (stream_id, program_title) in entries {
+                app.epg_cache.insert(stream_id, program_title);
+            }
+        }
         AsyncAction::StreamHealthLoaded(stream_id, latency) => {
             app.sports.stream_health_cache.insert(stream_id, latency);
         }

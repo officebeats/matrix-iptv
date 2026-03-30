@@ -371,7 +371,6 @@ pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
     let re = RE_EVENT.get_or_init(|| {
         regex::Regex::new(r"(?i)(?:^|[:])\s*([^:(|]+?)\s*(?:\(([^)]+?)\))?\s*(?:(?:\s+(?:x|vs|at)\s+)|@|\s-\s)\s*([^:(\[|/]+?)\s*(?:\(([^)]+?)\))?(?:\s+(?:start:|\[|\(|\d{1,2}:\d{2}|\s+-\s+|/|\|)|$)").unwrap()
     });
-    println!("display_name entering parse_sports_event: {:?}", display_name);
 
     if let Some(caps) = re.captures(display_name) {
         let team1 = caps.get(1)?.as_str().trim().to_string();
@@ -379,10 +378,6 @@ pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
         let team2 = caps.get(3)?.as_str().trim().to_string();
         let team2_abbr = caps.get(4).map(|m| m.as_str().trim().to_string());
 
-        // Debug prints
-        if display_name.contains("start:2025-12-21") {
-            println!("DEBUG: display_name: {:?}", display_name);
-        }
 
         // Scrub prefixes from team1
         let mut team1 = team1;

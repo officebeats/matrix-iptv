@@ -25,6 +25,10 @@ pub struct Category {
     #[serde(skip)]
     pub clean_name: String,
     #[serde(skip)]
+    pub upper_clean_name: String,
+    #[serde(skip)]
+    pub is_sports: bool,
+    #[serde(skip)]
     pub cached_parsed: Option<Box<crate::parser::ParsedCategory>>,
 }
 
@@ -442,9 +446,6 @@ impl XtreamClient {
             Err(e) => {
                 // Use shared DNS error detection
                 if crate::doh::is_dns_error(&e) {
-                    #[cfg(debug_assertions)]
-                    println!("DEBUG: DNS error detected, trying DoH fallbacks...");
-
                     // Try DoH fallback (skips HTTPS due to SNI mismatch)
                     if let Some(resp) = crate::doh::try_doh_fallback(&self.client, url).await {
                         return Ok(resp);
@@ -734,7 +735,7 @@ impl XtreamClient {
                     .map_err(|e| anyhow::anyhow!("Failed to parse live streams JSON (category {}): {}", cat_id, e))?;
                 
                 if let Some(ref sender) = tx_clone {
-                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!("Phase 3/3: Deduplicating {} structured streams...", streams.len())));
+                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!("Optimizing {} streams...", streams.len())));
                 }
                 
                 // Deduplicate streams based on ID AND name

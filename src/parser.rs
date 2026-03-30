@@ -249,7 +249,7 @@ impl Quality {
     pub fn color(&self) -> Color {
         match self {
             Quality::UHD4K => Color::Rgb(255, 0, 255), // Neon Magenta
-            Quality::FHD => Color::Rgb(57, 255, 20),   // Neon Green
+            Quality::FHD => Color::Rgb(255, 215, 0),   // Gold
             Quality::HD => Color::Rgb(0, 255, 255),    // Bright Cyan
             Quality::SD => Color::White,               // Safe White
         }
@@ -519,11 +519,6 @@ pub fn parse_category(name: &str) -> ParsedCategory {
     let re_u = Regex::new(r"(?i)^[\W_]*u\s+").unwrap();
     display_name = re_u.replace(&display_name, "").trim().to_string();
 
-    // Debug prints for test case
-    if display_name == "UK ▎GENERAL" {
-        println!("Initial display_name: {:?}", display_name);
-    }
-
     // Generic Country/Sports Prefix Detection (e.g. "US |", "NBA:", "UK-", "NBA PASS", "S |", "4K|")
     let re_prefix = Regex::new(r"(?i)^([A-Z0-9]{1,5})(?:\s*[|:-]\s*|\s+)").unwrap();
     if let Some(caps) = re_prefix.captures(&display_name.to_uppercase()) {
@@ -656,6 +651,7 @@ pub struct ParsedStream {
     pub sports_event: Option<crate::sports::SportsEvent>,
     pub channel_prefix: Option<String>,
     pub year: Option<String>,
+    pub league_icon: Option<String>,
 }
 
 /// Parse a stream/channel name to extract metadata
@@ -1181,6 +1177,19 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         // display_name = YEAR_STRIP_REGEX.replace(&display_name, "").trim().to_string();
     }
 
+    // Pre-calculate sports league icon
+    let upper = display_name.to_uppercase();
+    let league_icon = if upper.contains("NBA") || upper.contains("NCAAB") { Some("NBA ".to_string()) }
+        else if upper.contains("NFL") || upper.contains("NCAAF") { Some("NFL ".to_string()) }
+        else if upper.contains("MLB") || upper.contains("MILB") { Some("MLB ".to_string()) }
+        else if upper.contains("NHL") { Some("NHL ".to_string()) }
+        else if upper.contains("UFC") || upper.contains("FIGHT") || upper.contains("BOXING") { Some("COMBAT ".to_string()) }
+        else if upper.contains("TENNIS") || upper.contains("ATP") || upper.contains("WTA") { Some("TENNIS ".to_string()) }
+        else if upper.contains("GOLF") || upper.contains("PGA") || upper.contains("MASTERS") { Some("GOLF ".to_string()) }
+        else if upper.contains("SUPERCROSS") || upper.contains("MOTOCROSS") || upper.contains("F1") || upper.contains("NASCAR") || upper.contains("RACING") { Some("RACE ".to_string()) }
+        else if upper.contains("SOCCER") || upper.contains("MLS") || upper.contains("PREMIER") || upper.contains("LALIGA") || upper.contains("FIFA") || upper.contains("UEFA") { Some("SOCCER ".to_string()) }
+        else { None };
+
     ParsedStream {
         original_name: original,
         display_name,
@@ -1194,6 +1203,7 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         sports_event,
         channel_prefix,
         year,
+        league_icon,
     }
 }
 

@@ -16,8 +16,6 @@ pub async fn try_doh_fallback(
     // HTTPS requires TLS SNI to match the hostname — substituting an IP will
     // cause a certificate mismatch and the handshake will always fail.
     if !url.starts_with("http://") {
-        #[cfg(debug_assertions)]
-        println!("DEBUG: DoH skipped for HTTPS URL (SNI mismatch would occur)");
         return None;
     }
 
@@ -35,8 +33,6 @@ pub async fn try_doh_fallback(
 
     for doh_base in providers {
         let doh_url = format!("{}?name={}", doh_base, hostname);
-        #[cfg(debug_assertions)]
-        println!("DEBUG: Attempting DoH via {}", doh_base);
 
         if let Ok(doh_resp) = client
             .get(&doh_url)
@@ -55,9 +51,6 @@ pub async fn try_doh_fallback(
                     .and_then(|a| a.get("data"))
                     .and_then(|d| d.as_str())
                 {
-                    #[cfg(debug_assertions)]
-                    println!("DEBUG: DoH Resolved {} to {}", hostname, ip);
-
                     let resolved_url = url.replace(hostname, ip);
                     if let Ok(resp) = client
                         .get(&resolved_url)

@@ -60,6 +60,7 @@ pub enum AsyncAction {
     },
     PlaylistRefreshed(IptvClient, Option<UserInfo>, Option<ServerInfo>),
     EpgLoaded(String, String), // stream_id, program_title
+    EpgBatchLoaded(Vec<(String, String)>), // Vec of (stream_id, program_title)
     StreamHealthLoaded(String, u64), // stream_id, latency_ms
     UpdateAvailable(String), // new_version
     NoUpdateFound,
@@ -255,6 +256,9 @@ pub struct App {
     pub about_scroll: u16,
     pub loading_log: std::collections::VecDeque<String>,
     pub needs_stream_refresh: bool,
+    #[cfg(not(target_arch = "wasm32"))]
+    pub last_category_move: Option<std::time::Instant>,
+    pub is_navigating_categories: bool,
 
     // Layout tracking for mouse support
     pub area_categories: Rect,
@@ -519,6 +523,9 @@ impl App {
             settings_state: SettingsState::Main,
             previous_screen: None,
             show_save_confirmation: false,
+            needs_stream_refresh: false,
+            last_category_move: None,
+            is_navigating_categories: false,
             about_text,
             about_scroll: 0,
             area_categories: Rect::default(),
@@ -604,7 +611,6 @@ impl App {
             groups: GroupManagementState::new(),
             category_mgmt: CategoryManagementState::new(),
             loading_log: VecDeque::with_capacity(30),
-            needs_stream_refresh: false,
             pending_lazy_loads: std::collections::VecDeque::new(),
         };
 
@@ -1069,10 +1075,16 @@ impl App {
         }
     }
 
-    /// Primary navigation logic for Categories
-    /// Updates selection AND filters the streams pane from global cache immediately (Auto-Load)
     pub fn select_category(&mut self, index: usize) {
         if index >= self.categories.len() { return; }
+        
+        // Track navigation for debounce
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.last_category_move = Some(std::time::Instant::now());
+            self.is_navigating_categories = true;
+        }
+
         self.selected_category_index = index;
         self.category_list_state.select(Some(index / self.grid_cols.max(1)));
         
@@ -1084,6 +1096,13 @@ impl App {
 
     pub fn select_vod_category(&mut self, index: usize) {
         if index >= self.vod_categories.len() { return; }
+        
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.last_category_move = Some(std::time::Instant::now());
+            self.is_navigating_categories = true;
+        }
+
         self.selected_vod_category_index = index;
         self.vod_category_list_state.select(Some(index));
 
@@ -1092,6 +1111,13 @@ impl App {
 
     pub fn select_series_category(&mut self, index: usize) {
         if index >= self.series_categories.len() { return; }
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.last_category_move = Some(std::time::Instant::now());
+            self.is_navigating_categories = true;
+        }
+
         self.selected_series_category_index = index;
         self.series_category_list_state.select(Some(index));
 
@@ -1099,6 +1125,17 @@ impl App {
     }
     
     pub fn refresh_streams_from_cache(&mut self) {
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.is_navigating_categories {
+            if let Some(last) = self.last_category_move {
+                if last.elapsed() < std::time::Duration::from_millis(70) {
+                    self.needs_stream_refresh = true; // Stay dirty to try again next frame
+                    return; 
+                }
+            }
+            self.is_navigating_categories = false;
+        }
+
         if !self.categories.is_empty() && self.selected_category_index < self.categories.len() {
             let cat_id = self.categories[self.selected_category_index].category_id.clone();
             if cat_id == "ALL" {
@@ -1398,13 +1435,19 @@ impl App {
 
                 match self.active_pane {
                     Pane::Categories => {
-                        // Categories usually small enough for full re-filter
-                        self.categories = self.all_categories.par_iter()
-                            .filter(|c| {
-                                c.search_name.contains(&query) && (!is_merica || c.is_american)
-                            })
-                            .cloned()
-                            .collect();
+                        // Categories usually small enough for full re-filter - Parallelize ONLY if massive
+                        if self.all_categories.len() > 1000 {
+                            self.categories = self.all_categories.par_iter()
+                                .filter(|c| c.search_name.contains(&query) && (!is_merica || c.is_american))
+                                .cloned()
+                                .collect();
+                        } else {
+                            self.categories = self.all_categories.iter()
+                                .filter(|c| c.search_name.contains(&query) && (!is_merica || c.is_american))
+                                .cloned()
+                                .collect();
+                        }
+
                         if query_changed {
                             self.selected_category_index = 0;
                             self.category_list_state.select(if self.categories.is_empty() { None } else { Some(0) });
@@ -1423,11 +1466,16 @@ impl App {
                             stream_results.sort_by_cached_key(|s| !s.search_name.contains(&query));
                             self.streams = stream_results.into_iter().take(1000).collect();
                         } else if query.is_empty() && !self.all_streams.is_empty() {
-                            self.streams = self.all_streams.iter()
-                                .filter(|s| !is_merica || s.is_american)
-                                .take(1000)
-                                .cloned()
-                                .collect();
+                            // FAST PATH: Direct cloning/limiting for base view
+                            if !is_merica {
+                                self.streams = self.all_streams.iter().take(1000).cloned().collect();
+                            } else {
+                                self.streams = self.all_streams.iter()
+                                    .filter(|s| s.is_american)
+                                    .take(1000)
+                                    .cloned()
+                                    .collect();
+                            }
                         }
                         
                         if query_changed {
@@ -1437,11 +1485,15 @@ impl App {
                     }
                     Pane::Streams => {
                         if query.is_empty() {
-                            self.streams = self.all_streams.iter()
-                                .filter(|s| !is_merica || s.is_american)
-                                .take(1000)
-                                .cloned()
-                                .collect();
+                            if !is_merica {
+                                self.streams = self.all_streams.iter().take(1000).cloned().collect();
+                            } else {
+                                self.streams = self.all_streams.iter()
+                                    .filter(|s| s.is_american)
+                                    .take(1000)
+                                    .cloned()
+                                    .collect();
+                            }
                             self.search_state.narrow_stack.clear();
                         } else {
                             // Incremental Narrowing Logic
@@ -1499,44 +1551,59 @@ impl App {
             CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
                 match self.active_pane {
                     Pane::Categories => {
-                        self.vod_categories = self.all_vod_categories.par_iter()
-                            .filter(|c| {
-                                c.search_name.contains(&query) && (!is_merica || c.is_english)
-                            })
-                            .cloned()
-                            .collect();
+                        if self.all_vod_categories.len() > 1000 {
+                            self.vod_categories = self.all_vod_categories.par_iter()
+                                .filter(|c| c.search_name.contains(&query) && (!is_merica || c.is_english))
+                                .cloned()
+                                .collect();
+                        } else {
+                            self.vod_categories = self.all_vod_categories.iter()
+                                .filter(|c| c.search_name.contains(&query) && (!is_merica || c.is_english))
+                                .cloned()
+                                .collect();
+                        }
                         if query_changed {
                             self.selected_vod_category_index = 0;
                             self.vod_category_list_state.select(if self.vod_categories.is_empty() { None } else { Some(0) });
                         }
                     }
                     Pane::Streams => {
-                        let (base_list, is_narrowing) = if query.starts_with(&self.last_search_query) && !self.last_search_query.is_empty() && !self.vod_streams.is_empty() {
-                            (&self.vod_streams, true)
-                        } else {
-                            while let Some((len, _)) = self.search_state.narrow_stack.last() {
-                                if *len >= query.len() { self.search_state.narrow_stack.pop(); } else { break; }
+                        if query.is_empty() {
+                            if !is_merica {
+                                self.vod_streams = self.all_vod_streams.iter().take(1000).cloned().collect();
+                            } else {
+                                self.vod_streams = self.all_vod_streams.iter()
+                                    .filter(|s| s.is_english)
+                                    .take(1000)
+                                    .cloned()
+                                    .collect();
                             }
-                            if let Some((_, cached)) = self.search_state.narrow_stack.last() { (cached, false) } else { (&self.all_vod_streams, false) }
-                        };
+                            self.search_state.narrow_stack.clear();
+                        } else {
+                            let (base_list, is_narrowing) = if query.starts_with(&self.last_search_query) && !self.last_search_query.is_empty() && !self.vod_streams.is_empty() {
+                                (&self.vod_streams, true)
+                            } else {
+                                while let Some((len, _)) = self.search_state.narrow_stack.last() {
+                                    if *len >= query.len() { self.search_state.narrow_stack.pop(); } else { break; }
+                                }
+                                if let Some((_, cached)) = self.search_state.narrow_stack.last() { (cached, false) } else { (&self.all_vod_streams, false) }
+                            };
 
-                        let mut results: Vec<Arc<Stream>> = base_list.par_iter()
-                            .filter(|s| {
-                                if is_merica && !s.is_english { return false; }
-                                if query.is_empty() { return true; }
-                                if s.search_name.contains(&query) { return true; }
-                                query.len() >= 4 && s.fuzzy_match(&query, 60)
-                            })
-                            .cloned()
-                            .collect();
-                        
-                        if !query.is_empty() {
+                            let mut results: Vec<Arc<Stream>> = base_list.par_iter()
+                                .filter(|s| {
+                                    if is_merica && !s.is_english { return false; }
+                                    if s.search_name.contains(&query) { return true; }
+                                    query.len() >= 4 && s.fuzzy_match(&query, 60)
+                                })
+                                .cloned()
+                                .collect();
+                            
                             results.sort_by_cached_key(|s| !s.search_name.contains(&query));
-                        }
-                        self.vod_streams = results.into_iter().take(1000).collect();
+                            self.vod_streams = results.into_iter().take(1000).collect();
 
-                        if !query.is_empty() && (!is_narrowing || self.search_state.narrow_stack.is_empty()) {
-                            self.search_state.narrow_stack.push((query.len(), self.vod_streams.clone()));
+                            if !is_narrowing || self.search_state.narrow_stack.is_empty() {
+                                self.search_state.narrow_stack.push((query.len(), self.vod_streams.clone()));
+                            }
                         }
 
                         App::pre_cache_parsed(&mut self.vod_streams, self.session.provider_timezone.as_deref(), None, "");
@@ -1551,44 +1618,59 @@ impl App {
             CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
                 match self.active_pane {
                     Pane::Categories => {
-                        self.series_categories = self.all_series_categories.par_iter()
-                            .filter(|c| {
-                                c.search_name.contains(&query) && (!is_merica || c.is_english)
-                            })
-                            .cloned()
-                            .collect();
+                        if self.all_series_categories.len() > 1000 {
+                            self.series_categories = self.all_series_categories.par_iter()
+                                .filter(|c| c.search_name.contains(&query) && (!is_merica || c.is_english))
+                                .cloned()
+                                .collect();
+                        } else {
+                            self.series_categories = self.all_series_categories.iter()
+                                .filter(|c| c.search_name.contains(&query) && (!is_merica || c.is_english))
+                                .cloned()
+                                .collect();
+                        }
                         if query_changed {
                             self.selected_series_category_index = 0;
                             self.series_category_list_state.select(if self.series_categories.is_empty() { None } else { Some(0) });
                         }
                     }
                     Pane::Streams => {
-                        let (base_list, is_narrowing) = if query.starts_with(&self.last_search_query) && !self.last_search_query.is_empty() && !self.series_streams.is_empty() {
-                            (&self.series_streams, true)
-                        } else {
-                            while let Some((len, _)) = self.search_state.narrow_stack.last() {
-                                if *len >= query.len() { self.search_state.narrow_stack.pop(); } else { break; }
+                        if query.is_empty() {
+                            if !is_merica {
+                                self.series_streams = self.all_series_streams.iter().take(1000).cloned().collect();
+                            } else {
+                                self.series_streams = self.all_series_streams.iter()
+                                    .filter(|s| s.is_english)
+                                    .take(1000)
+                                    .cloned()
+                                    .collect();
                             }
-                            if let Some((_, cached)) = self.search_state.narrow_stack.last() { (cached, false) } else { (&self.all_series_streams, false) }
-                        };
+                            self.search_state.narrow_stack.clear();
+                        } else {
+                            let (base_list, is_narrowing) = if query.starts_with(&self.last_search_query) && !self.last_search_query.is_empty() && !self.series_streams.is_empty() {
+                                (&self.series_streams, true)
+                            } else {
+                                while let Some((len, _)) = self.search_state.narrow_stack.last() {
+                                    if *len >= query.len() { self.search_state.narrow_stack.pop(); } else { break; }
+                                }
+                                if let Some((_, cached)) = self.search_state.narrow_stack.last() { (cached, false) } else { (&self.all_series_streams, false) }
+                            };
 
-                        let mut results: Vec<Arc<Stream>> = base_list.par_iter()
-                            .filter(|s| {
-                                if is_merica && !s.is_english { return false; }
-                                if query.is_empty() { return true; }
-                                if s.search_name.contains(&query) { return true; }
-                                query.len() >= 4 && s.fuzzy_match(&query, 60)
-                            })
-                            .cloned()
-                            .collect();
+                            let mut results: Vec<Arc<Stream>> = base_list.par_iter()
+                                .filter(|s| {
+                                    if is_merica && !s.is_english { return false; }
+                                    if s.search_name.contains(&query) { return true; }
+                                    query.len() >= 4 && s.fuzzy_match(&query, 60)
+                                })
+                                .cloned()
+                                .collect();
 
-                        if !query.is_empty() {
                             results.sort_by_cached_key(|s| !s.search_name.contains(&query));
-                        }
-                        self.series_streams = results.into_iter().take(1000).collect();
+                            self.series_streams = results.into_iter().take(1000).collect();
 
-                        if !query.is_empty() && (!is_narrowing || self.search_state.narrow_stack.is_empty()) {
-                            self.search_state.narrow_stack.push((query.len(), self.series_streams.clone()));
+                            if !is_narrowing || self.search_state.narrow_stack.is_empty() {
+                                self.search_state.narrow_stack.push((query.len(), self.series_streams.clone()));
+                            }
                         }
 
                         App::pre_cache_parsed(&mut self.series_streams, self.session.provider_timezone.as_deref(), None, "");

@@ -27,6 +27,7 @@ fn main() {
             None,
             None,
             ratatui::style::Style::default().fg(MATRIX_GREEN),
+            true,
         );
 
         print!("  Spans: ");

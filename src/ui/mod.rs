@@ -190,9 +190,9 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                         ])
                         .split(content_area);
 
-                    // Check if current CATEGORY is sports (not per-stream — avoids jarring pop in/out)
+                    // Check if current CATEGORY is sports (pre-calculated flag)
                     let is_sports_category = app.categories.get(app.selected_category_index)
-                        .map(|c| crate::parser::is_sports_content(&c.category_name))
+                        .map(|c| c.is_sports)
                         .unwrap_or(false);
 
                     if is_sports_category {
@@ -222,7 +222,7 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                         .split(content_area);
 
                     let is_sports_category = app.categories.get(app.selected_category_index)
-                        .map(|c| crate::parser::is_sports_content(&c.category_name))
+                        .map(|c| c.is_sports)
                         .unwrap_or(false);
 
                     if is_sports_category {
