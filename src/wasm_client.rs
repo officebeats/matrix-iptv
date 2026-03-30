@@ -45,7 +45,7 @@ impl WasmClient {
         let mut term = self.terminal.borrow_mut();
 
         let _ = term.draw(|f| crate::ui::ui(f, &mut app));
-        app.loading_tick = app.loading_tick.wrapping_add(1);
+        app.session.loading_tick = app.session.loading_tick.wrapping_add(1);
 
         let buffer = term.backend().buffer();
         let mut s = String::new();
@@ -91,8 +91,8 @@ impl WasmClient {
                             web_sys::console::log_1(&format!("[Wasm] Authenticating via proxy: {}", proxy_url).into());
 
                             let client = crate::api::XtreamClient::new(proxy_url, username, password);
-                            app.current_client = Some(client.clone());
-                            app.state_loading = true;
+                            app.session.current_client = Some(client.clone());
+                            app.session.state_loading = true;
 
                             let app_rc = self.app.clone();
                             
@@ -101,14 +101,14 @@ impl WasmClient {
                                 let result = client.authenticate().await;
                                 {
                                     let mut app = app_rc.borrow_mut();
-                                    app.state_loading = false;
+                                    app.session.state_loading = false;
                                 }
                                 
                                 match result {
                                     Ok((true, user_info, server_info)) => {
                                         web_sys::console::log_1(&"[Wasm] Login Successful. Fetching categories...".into());
                                         let mut app = app_rc.borrow_mut();
-                                        app.cached_user_timezone = server_info.as_ref()
+                                        app.session.cached_user_timezone = server_info.as_ref()
                                             .and_then(|i| i.timezone.clone())
                                             .unwrap_or_else(|| "UTC".into());
                                         
@@ -267,7 +267,7 @@ impl WasmClient {
                         if app.current_screen == CurrentScreen::Categories {
                             app.current_screen = CurrentScreen::VodCategories;
                              // Fetch VOD categories async?
-                             if let Some(client) = &app.current_client {
+                             if let Some(client) = &app.session.current_client {
                                  let client = client.clone();
                                  let app_rc = self.app.clone();
                                  wasm_bindgen_futures::spawn_local(async move {
@@ -303,7 +303,7 @@ impl WasmClient {
                             CurrentScreen::Categories => {
                                 if let Some(cat) = app.get_selected_category() {
                                     let id = cat.category_id.clone();
-                                    if let Some(client) = &app.current_client {
+                                    if let Some(client) = &app.session.current_client {
                                          let client = client.clone();
                                          let app_rc = self.app.clone();
                                          // Show loading?
@@ -323,7 +323,7 @@ impl WasmClient {
                                      let stream_id = stream.stream_id.to_string_value().unwrap_or_default();
                                      let ext = stream.container_extension.clone().unwrap_or_else(|| "m3u8".to_string());
                                      
-                                     if let Some(client) = &app.current_client {
+                                     if let Some(client) = &app.session.current_client {
                                          let url = client.get_stream_url(&stream_id, &ext);
                                          web_sys::console::log_1(&format!("[Wasm] Playing Stream: {} (URL: {})", stream.name, url).into());
                                          

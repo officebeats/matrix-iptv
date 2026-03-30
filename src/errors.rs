@@ -197,73 +197,7 @@ impl LoadingStage {
     }
 }
 
-/// Search state with history and suggestions
-#[derive(Debug, Clone)]
-pub struct SearchState {
-    pub query: String,
-    pub history: VecDeque<String>,
-    pub suggestions: Vec<String>,
-    pub last_search_time: Option<Instant>,
-    pub debounce_timer: Option<Instant>,
-}
-
-impl Default for SearchState {
-    fn default() -> Self {
-        Self {
-            query: String::new(),
-            history: VecDeque::with_capacity(20),
-            suggestions: Vec::new(),
-            last_search_time: None,
-            debounce_timer: None,
-        }
-    }
-}
-
-impl SearchState {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn add_to_history(&mut self, query: String) {
-        if !query.is_empty() && !self.history.contains(&query) {
-            if self.history.len() >= 20 {
-                self.history.pop_back();
-            }
-            self.history.push_front(query);
-        }
-    }
-
-    pub fn get_suggestions(&self, partial: &str) -> Vec<String> {
-        self.history
-            .iter()
-            .filter(|h| h.to_lowercase().contains(&partial.to_lowercase()))
-            .take(5)
-            .cloned()
-            .collect()
-    }
-
-    pub fn should_search(&mut self, query: &str, debounce_ms: u64) -> bool {
-        if query.is_empty() {
-            return true;
-        }
-
-        let now = Instant::now();
-        match self.debounce_timer {
-            None => {
-                self.debounce_timer = Some(now);
-                false
-            }
-            Some(last) => {
-                if now.duration_since(last).as_millis() >= debounce_ms.into() {
-                    self.debounce_timer = Some(now);
-                    true
-                } else {
-                    false
-                }
-            }
-        }
-    }
-}
+// SearchState moved to src/state.rs
 
 // Re-export necessary types
 pub use std::collections::VecDeque;

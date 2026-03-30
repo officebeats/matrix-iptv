@@ -8,6 +8,7 @@ use ratatui::{
 use crate::app::{App, Pane};
 use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, DARK_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 use crate::ui::common::render_matrix_box;
+use crate::ui::utils::visible_window;
 use crate::sports::get_team_color;
 
 pub fn render_sports_view(f: &mut Frame, app: &mut App, area: Rect) {
@@ -29,12 +30,19 @@ fn render_sports_categories_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let is_active = app.active_pane == Pane::Categories;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
 
-    let items: Vec<ListItem> = app.sports_categories.iter().map(|cat| {
-        let display = cat.to_uppercase().replace("-", " ");
-        ListItem::new(Line::from(vec![
-            Span::styled(display, Style::default().fg(MATRIX_GREEN)),
-        ]))
-    }).collect();
+    let visible_height = area.height.saturating_sub(2) as usize;
+    let (start, end) = visible_window(app.sports_category_list_state.selected().unwrap_or(0), app.sports_categories.len(), visible_height);
+    let selected = app.sports_category_list_state.selected().unwrap_or(0);
+
+    let items: Vec<ListItem> = app.sports_categories.iter().enumerate()
+        .skip(start)
+        .take(end - start)
+        .map(|(_, cat)| {
+            let display = cat.to_uppercase().replace("-", " ");
+            ListItem::new(Line::from(vec![
+                Span::styled(display, Style::default().fg(MATRIX_GREEN)),
+            ]))
+        }).collect();
 
     let inner_area = crate::ui::common::render_matrix_box_active(f, area, "sports", border_color, is_active);
 
@@ -42,7 +50,9 @@ fn render_sports_categories_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
         .highlight_symbol(" ▎");
 
-    f.render_stateful_widget(list, inner_area, &mut app.sports_category_list_state);
+    let mut state = app.sports_category_list_state.clone();
+    state.select(Some(selected - start));
+    f.render_stateful_widget(list, inner_area, &mut state);
 }
 
 fn render_sports_matches_pane(f: &mut Frame, app: &mut App, area: Rect) {
@@ -51,7 +61,14 @@ fn render_sports_matches_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let is_active = app.active_pane == Pane::Streams;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
 
-    let items: Vec<ListItem> = app.sports_matches.iter().map(|m| {
+    let visible_height = area.height.saturating_sub(2) as usize;
+    let (start, end) = visible_window(app.sports_list_state.selected().unwrap_or(0), app.sports_matches.len(), visible_height);
+    let selected = app.sports_list_state.selected().unwrap_or(0);
+
+    let items: Vec<ListItem> = app.sports_matches.iter().enumerate()
+        .skip(start)
+        .take(end - start)
+        .map(|(_, m)| {
         let mut spans = Vec::new();
         
         let icon = match m.category.as_str() {
@@ -91,7 +108,9 @@ fn render_sports_matches_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
         .highlight_symbol(" ▎");
 
-    f.render_stateful_widget(list, inner_area, &mut app.sports_list_state);
+    let mut state = app.sports_list_state.clone();
+    state.select(Some(selected - start));
+    f.render_stateful_widget(list, inner_area, &mut state);
 }
 
 fn render_sports_details_pane(f: &mut Frame, app: &mut App, area: Rect) {

@@ -11,6 +11,7 @@ use crate::api::Category;
 use crate::parser::{parse_category, parse_stream, country_flag, country_color};
 use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 use crate::ui::common::stylize_channel_name;
+use crate::ui::utils::visible_window;
 use chrono::{Utc, DateTime};
 use chrono_tz::Tz;
 
@@ -65,7 +66,7 @@ fn render_categories_grid(f: &mut Frame, app: &mut App, area: Rect, border_color
     let is_active = app.active_pane == crate::app::Pane::Categories;
     let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
     
-    let max_name_len = app.max_category_name_len;
+    let max_name_len = app.session.max_category_name_len;
     let min_cell_width = (max_name_len as u16 + 10).max(14);
     let cols = ((inner_area.width / min_cell_width) as usize).max(1).min(8);
     app.grid_cols = cols; // UPDATE BEFORE BORROWING categories_ref
@@ -145,7 +146,7 @@ fn render_categories_list(f: &mut Frame, app: &mut App, area: Rect, border_color
     let is_active = app.active_pane == crate::app::Pane::Categories;
     let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active); 
 
-    let max_name_len = app.max_category_name_len as u16;
+    let max_name_len = app.session.max_category_name_len as u16;
     let min_col_width = (max_name_len + 15).max(30); 
     let cols = (inner_area.width / min_col_width).max(1).min(4) as usize;
     app.grid_cols = cols; // UPDATE BEFORE BORROWING categories_ref
@@ -257,21 +258,9 @@ fn render_categories_list(f: &mut Frame, app: &mut App, area: Rect, border_color
 
 pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_color: Color) {
     let visible_height = area.height.saturating_sub(2) as usize;
-    let total = app.streams.len();
+    let (start, end) = visible_window(app.selected_stream_index, app.streams.len(), visible_height);
     let selected = app.selected_stream_index;
-
-    let half_window = visible_height / 2;
-    let start = if selected > half_window {
-        selected - half_window
-    } else {
-        0
-    };
-    let end = (start + visible_height + half_window).min(total);
-    let adjusted_start = if end == total && end > visible_height + half_window {
-        end.saturating_sub(visible_height + half_window)
-    } else {
-        start
-    };
+    
     let user_tz_str = app.config.get_user_timezone();
     let user_tz: Tz = user_tz_str.parse().unwrap_or(chrono_tz::UTC);
     let tz_display = format!("{} ({})", user_tz_str, Utc::now().with_timezone(&user_tz).format("%Z"));
@@ -280,8 +269,8 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         .streams
         .iter()
         .enumerate()
-        .skip(adjusted_start)
-        .take(end - adjusted_start)
+        .skip(start)
+        .take(end - start)
         .map(|(idx, s)| {
             let _s_id = crate::api::get_id_str(&s.stream_id);
             let display_name = &s.name;
@@ -289,7 +278,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             let parsed = if let Some(ref cached) = s.cached_parsed {
                  cached.as_ref().clone()
             } else {
-                crate::parser::parse_stream(display_name, app.provider_timezone.as_deref())
+                crate::parser::parse_stream(display_name, app.session.provider_timezone.as_deref())
             };
             if parsed.is_separator {
                 let label = if parsed.display_name.is_empty() {
@@ -309,7 +298,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 ]);
             }
 
-            let _is_blink_on = app.loading_tick / 4 % 2 == 0;
+            let _is_blink_on = app.session.loading_tick / 4 % 2 == 0;
 
             let mut spans = vec![];
             
@@ -321,7 +310,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             let now = Utc::now();
             let is_ended = parsed.stop_time.map(|t| now > t).unwrap_or(false);
             let is_live = parsed.start_time.map(|st| now >= st).unwrap_or(false) && !is_ended;
-            let is_blink_on = app.loading_tick / 4 % 2 == 0;
+            let is_blink_on = app.session.loading_tick / 4 % 2 == 0;
 
             let status_span = if is_live {
                 let live_color = if is_blink_on { Color::Rgb(255, 100, 100) } else { TEXT_DIM };
@@ -589,7 +578,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
 
     // Empty state messaging
     if app.streams.is_empty() {
-        let msg = if app.loading_message.is_some() {
+        let msg = if app.session.loading_message.is_some() {
             "Loading channels..."
         } else if app.search_mode && !app.search_state.query.is_empty() {
             "No matches — press esc to clear search"
@@ -633,32 +622,15 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
 
     // Map the ListState selection to a TableState for rendering
     let mut table_state = ratatui::widgets::TableState::default();
-    if adjusted_start > 0 {
-        table_state.select(Some(selected - adjusted_start));
-    } else {
-        table_state.select(app.stream_list_state.selected());
-    }
+    table_state.select(Some(selected - start));
 
     f.render_stateful_widget(table, inner_area, &mut table_state);
 }
 
 pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let visible_height = area.height.saturating_sub(2) as usize;
-    let total = app.global_search_results.len();
+    let (start, end) = visible_window(app.selected_stream_index, app.global_search_results.len(), visible_height);
     let selected = app.selected_stream_index;
-
-    let half_window = visible_height / 2;
-    let start = if selected > half_window {
-        selected - half_window
-    } else {
-        0
-    };
-    let end = (start + visible_height + half_window).min(total);
-    let adjusted_start = if end == total && end > visible_height + half_window {
-        end.saturating_sub(visible_height + half_window)
-    } else {
-        start
-    };
 
     let user_tz_str = app.config.get_user_timezone();
     let user_tz: Tz = user_tz_str.parse().unwrap_or(chrono_tz::UTC);
@@ -667,8 +639,8 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .global_search_results
         .iter()
         .enumerate()
-        .skip(adjusted_start)
-        .take(end - adjusted_start)
+        .skip(start)
+        .take(end - start)
         .map(|(idx, s)| {
             let s_id = crate::api::get_id_str(&s.stream_id);
             let display_name = &s.name;
@@ -676,7 +648,7 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
             let parsed = if let Some(ref cached) = s.cached_parsed {
                  cached.as_ref().clone()
             } else {
-                crate::parser::parse_stream(display_name, app.provider_timezone.as_deref())
+                crate::parser::parse_stream(display_name, app.session.provider_timezone.as_deref())
             };
             
             if parsed.is_separator {
@@ -718,7 +690,7 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
             let now = Utc::now();
             let is_ended = parsed.stop_time.map(|t| now > t).unwrap_or(false);
             let is_live = parsed.start_time.map(|st| now >= st).unwrap_or(false) && !is_ended;
-            let is_blink_on = app.loading_tick / 4 % 2 == 0;
+            let is_blink_on = app.session.loading_tick / 4 % 2 == 0;
 
             let status_span = if is_live {
                 let live_color = if is_blink_on { Color::Rgb(255, 100, 100) } else { TEXT_DIM };
@@ -812,7 +784,7 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .highlight_symbol("▎");
 
     let mut table_state = ratatui::widgets::TableState::default();
-    table_state.select(Some(selected - adjusted_start));
+    table_state.select(Some(selected - start));
 
     f.render_stateful_widget(table, inner_area, &mut table_state);
 }
@@ -852,7 +824,7 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
     let parsed = if let Some(ref cached) = s.cached_parsed {
         cached.as_ref().clone()
     } else {
-        parse_stream(&s.name, app.provider_timezone.as_deref())
+        parse_stream(&s.name, app.session.provider_timezone.as_deref())
     };
 
     let inner = crate::ui::common::render_matrix_box(f, area, "details", border_color);
@@ -886,7 +858,7 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
         let user_tz_str = app.config.get_user_timezone();
         let user_tz: Tz = user_tz_str.parse().unwrap_or(chrono_tz::UTC);
         let now = Utc::now();
-        let is_blink_on = app.loading_tick / 4 % 2 == 0;
+        let is_blink_on = app.session.loading_tick / 4 % 2 == 0;
 
         // Check live score data first (most authoritative for sports)
         let score_data = app.get_score_for_stream(&parsed.display_name);
@@ -1179,7 +1151,7 @@ pub fn render_stream_details_pane(f: &mut Frame, app: &mut App, area: Rect, bord
     let parsed = if let Some(ref cached) = s.cached_parsed {
         cached.as_ref().clone()
     } else {
-        parse_stream(&s.name, app.provider_timezone.as_deref())
+        parse_stream(&s.name, app.session.provider_timezone.as_deref())
     };
     
     let score_data = app.get_score_for_stream(&parsed.display_name);

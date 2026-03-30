@@ -17,7 +17,7 @@ set CARGO_TARGET_DIR=%USERPROFILE%\cargo-target
 pushd "%~dp0"
 
 echo [*] Rebuilding binary (fast test mode)...
-cargo build
+cargo build --bin matrix-iptv
 if %ERRORLEVEL% NEQ 0 (
     echo [!] Build Failed!
     popd

@@ -200,8 +200,14 @@ async fn run_app<B: ratatui::backend::Backend>(
             needs_redraw = true;
         }
 
-        app.loading_tick = app.loading_tick.wrapping_add(1);
-        if app.state_loading || app.show_matrix_rain {
+        // 1.1 Process lazy category loads
+        while let Some(action) = app.pending_lazy_loads.pop_front() {
+            handlers::async_actions::handle_async_action(app, action, &tx).await;
+            needs_redraw = true;
+        }
+
+        app.session.loading_tick = app.session.loading_tick.wrapping_add(1);
+        if app.session.state_loading || app.show_matrix_rain {
             needs_redraw = true;
         }
 
@@ -221,7 +227,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                 if ts.elapsed().as_millis() >= 300 {
                     app.focus_timestamp = None; // Reset so we don't spam
                     if !app.epg_cache.contains_key(&focused_id) {
-                        if let Some(client) = &app.current_client {
+                        if let Some(client) = &app.session.current_client {
                             let client = client.clone();
                             let tx = tx.clone();
                             let fid = focused_id.clone();
@@ -251,7 +257,7 @@ async fn run_app<B: ratatui::backend::Backend>(
             if let Some(stream) = focused_stream {
                 let focused_id = get_id_str(&stream.stream_id);
                 if stream.latency_ms.is_none() {
-                    if let Some(client) = &app.current_client {
+                    if let Some(client) = &app.session.current_client {
                         let client = client.clone();
                         let tx = tx.clone();
                         let fid = focused_id.clone();
@@ -296,7 +302,7 @@ async fn run_app<B: ratatui::backend::Backend>(
             } else if let Some(ts) = app.focus_timestamp {
                 if ts.elapsed().as_millis() >= 500 {
                     app.focus_timestamp = None;
-                    if let Some(client) = &app.current_client {
+                    if let Some(client) = &app.session.current_client {
                         let client = client.clone();
                         let tx = tx.clone();
                         let fid = focused_id.clone();
@@ -319,7 +325,7 @@ async fn run_app<B: ratatui::backend::Backend>(
             } else if let Some(ts) = app.focus_timestamp {
                 if ts.elapsed().as_millis() >= 500 {
                     app.focus_timestamp = None;
-                    if let Some(client) = &app.current_client {
+                    if let Some(client) = &app.session.current_client {
                         let client = client.clone();
                         let tx = tx.clone();
                         let fid = focused_id.clone();
@@ -344,7 +350,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                 } else if let Some(ts) = app.focus_timestamp {
                     if ts.elapsed().as_millis() >= 500 {
                         app.focus_timestamp = None;
-                        if let Some(client) = &app.current_client {
+                        if let Some(client) = &app.session.current_client {
                             let client = client.clone();
                             let tx = tx.clone();
                             let fid = focused_id.clone();
@@ -367,10 +373,10 @@ async fn run_app<B: ratatui::backend::Backend>(
         }
 
         // 1.10 Debounced Sports Info Fetching (Matches list)
-        if app.current_screen == CurrentScreen::SportsDashboard && app.sports_matches.is_empty() && !app.state_loading {
+        if app.current_screen == CurrentScreen::SportsDashboard && app.sports_matches.is_empty() && !app.session.state_loading {
             let tx = tx.clone();
             let category = app.sports_categories[app.selected_sports_category_index].clone();
-            app.state_loading = true;
+            app.session.state_loading = true;
             tokio::spawn(async move {
                 if let Ok(matches) = sports::fetch_streamed_matches(&category).await {
                     let _ = tx.send(AsyncAction::SportsMatchesLoaded(matches)).await;
@@ -474,7 +480,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                 matrix_iptv_lib::matrix_rain::update_matrix_rain(
                     &mut app.matrix_rain_columns, 
                     rect, 
-                    app.loading_tick, 
+                    app.session.loading_tick, 
                     &mut app.matrix_rain_logo_hits, 
                     !app.matrix_rain_screensaver_mode
                 );
@@ -500,7 +506,7 @@ async fn run_app<B: ratatui::backend::Backend>(
 
         // 2. Poll inputs
         let mut timeout_ms = 33;
-        if app.state_loading || app.show_matrix_rain {
+        if app.session.state_loading || app.show_matrix_rain {
             timeout_ms = 16;
         }
         if event::poll(Duration::from_millis(timeout_ms))? {

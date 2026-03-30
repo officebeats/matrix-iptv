@@ -161,3 +161,22 @@ pub fn scrub_emojis(s: &str) -> String {
     let re = regex::Regex::new(r"[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]").unwrap();
     re.replace_all(s, "").trim().to_string()
 }
+/// Calculate the visible window for a list of `total` items.
+/// Returns (start, end) indices for the slice to render.
+/// `selected` is the currently highlighted index.
+/// `viewport_height` is the number of visible rows.
+pub fn visible_window(selected: usize, total: usize, viewport_height: usize) -> (usize, usize) {
+    if total == 0 || viewport_height == 0 {
+        return (0, 0);
+    }
+    let half = viewport_height / 2;
+    let start = selected.saturating_sub(half);
+    let end = (start + viewport_height).min(total);
+    // Adjust start if end hit the boundary
+    let start = if end == total {
+        total.saturating_sub(viewport_height)
+    } else {
+        start
+    };
+    (start, end)
+}

@@ -22,7 +22,7 @@ pub fn handle_mouse_event(
                     {
                         let row = (y - app.area_accounts.y - 1) as usize;
                         if row < app.config.accounts.len() {
-                            app.selected_account_index = row;
+                            app.session.selected_account_index = row;
                             app.account_list_state.select(Some(row));
                         }
                     }
@@ -51,7 +51,7 @@ pub fn handle_mouse_event(
                         };
 
                         let selected_idx = current_offset + list_y;
-                        let account_name = app.config.accounts.get(app.selected_account_index).map(|a| a.name.clone()).unwrap_or_default();
+                        let account_name = app.config.accounts.get(app.session.selected_account_index).map(|a| a.name.clone()).unwrap_or_default();
 
                         match app.current_screen {
                             CurrentScreen::Categories | CurrentScreen::Streams => {
@@ -60,7 +60,7 @@ pub fn handle_mouse_event(
                                     app.category_list_state.select(Some(selected_idx));
                                     
                                     // Trigger load for streams
-                                    if let Some(client) = &app.current_client {
+                                    if let Some(client) = &app.session.current_client {
                                         let cat_id = app.categories[selected_idx].category_id.clone();
                                         let client = client.clone();
                                         let _tx = tx.clone();
@@ -87,9 +87,9 @@ pub fn handle_mouse_event(
                                     app.vod_category_list_state.select(Some(selected_idx));
                                     
                                     // Trigger load for VOD
-                                    if let Some(client) = &app.current_client {
+                                    if let Some(client) = &app.session.current_client {
                                         let cat_id = app.vod_categories[selected_idx].category_id.clone();
-                                        app.state_loading = true;
+                                        app.session.state_loading = true;
                                         app.active_pane = Pane::Streams;
                                         let client = client.clone();
                                         let tx = tx.clone();
@@ -116,13 +116,13 @@ pub fn handle_mouse_event(
                                     app.series_category_list_state.select(Some(selected_idx));
                                     
                                     // Trigger load for Series
-                                    if let Some(client) = &app.current_client {
+                                    if let Some(client) = &app.session.current_client {
                                         let cat_id = app.series_categories[selected_idx].category_id.clone();
                                         let client = client.clone();
                                         let tx = tx.clone();
                                         let pms = app.config.processing_modes.clone();
                                         let favs = app.config.favorites.vod_streams.clone(); // Series use vod favorites
-                                        app.state_loading = true;
+                                        app.session.state_loading = true;
                                         app.active_pane = Pane::Streams;
                                         let acc_name_cloned = account_name.clone();
                                         let tx_cloned = tx.clone();
@@ -167,14 +167,14 @@ pub fn handle_mouse_event(
                                     app.stream_list_state.select(Some(selected_idx));
                                     
                                     // Trigger Stream Player
-                                    if let Some(client) = &app.current_client {
+                                    if let Some(client) = &app.session.current_client {
                                         let stream = &app.streams[selected_idx];
                                         let id = get_id_str(&stream.stream_id);
                                         let url = client.get_stream_url(&id, "ts");
                                         let _tx = tx.clone();
-                                        app.state_loading = true;
-                                        app.player_error = None;
-                                        app.loading_message = Some(format!("Preparing: {}...", stream.name));
+                                        app.session.state_loading = true;
+                                        app.ui.player_error = None;
+                                        app.session.loading_message = Some(format!("Preparing: {}...", stream.name));
                                         
                                         // The player playback action usually needs handle_key_event's player ref or 
                                         // we just let the main loop or handle_key_event do playback proper. 
@@ -191,7 +191,7 @@ pub fn handle_mouse_event(
                                     app.vod_stream_list_state.select(Some(selected_idx));
                                     
                                     // Trigger VOD detail playback
-                                    if let Some(client) = &app.current_client {
+                                    if let Some(client) = &app.session.current_client {
                                         let stream = &app.vod_streams[selected_idx];
                                         let id = get_id_str(&stream.stream_id);
                                         let extension = stream.container_extension.as_deref().unwrap_or("mp4");
@@ -208,10 +208,10 @@ pub fn handle_mouse_event(
                                     app.series_stream_list_state.select(Some(selected_idx));
                                     
                                     // Trigger Series episode loading
-                                    if let Some(client) = &app.current_client {
+                                    if let Some(client) = &app.session.current_client {
                                         let stream = &app.series_streams[selected_idx];
                                         let id = get_id_str(&stream.stream_id);
-                                        app.state_loading = true;
+                                        app.session.state_loading = true;
                                         app.active_pane = Pane::Episodes;
                                         let tx_cloned = tx.clone();
                                         let client = client.clone();
@@ -228,7 +228,7 @@ pub fn handle_mouse_event(
                                 if selected_idx < app.global_search_results.len() {
                                     app.global_search_list_state.select(Some(selected_idx));
                                     // Same pending logic
-                                    if let Some(client) = &app.current_client {
+                                    if let Some(client) = &app.session.current_client {
                                         let stream = &app.global_search_results[selected_idx];
                                         let id = get_id_str(&stream.stream_id);
                                         let extension = stream.container_extension.as_deref().unwrap_or("ts");
@@ -267,7 +267,7 @@ pub fn handle_mouse_event(
                              app.series_episode_list_state.select(Some(selected_idx));
 
                              let episode = &app.series_episodes[app.selected_series_episode_index];
-                             if let Some(client) = &app.current_client {
+                             if let Some(client) = &app.session.current_client {
                                  let id = episode.id.as_ref().map(|v| get_id_str(v)).unwrap_or_default();
                                  if !id.is_empty() {
                                      let ext = episode.container_extension.as_deref().unwrap_or("mp4");
@@ -296,7 +296,7 @@ pub fn handle_mouse_event(
                             app.current_sports_streams.clear();
                             
                             let category = app.sports_categories[selected_idx].clone();
-                            app.state_loading = true;
+                            app.session.state_loading = true;
                             let tx = tx.clone();
                             
                             let tx_cloned = tx.clone();

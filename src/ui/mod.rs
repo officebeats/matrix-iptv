@@ -81,7 +81,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     }
 
     // Overlays
-    if app.loading_message.is_some() {
+    if app.session.loading_message.is_some() {
         loading::render_loading(f, app, area);
     }
 
@@ -257,7 +257,7 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
             // Check if focused result is a sports event OR has ESPN score data
             let is_sports_event = app.global_search_results.get(app.selected_stream_index)
                 .map(|s| {
-                    let parsed = crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref());
+                    let parsed = crate::parser::parse_stream(&s.name, app.session.provider_timezone.as_deref());
                     parsed.sports_event.is_some() || app.get_score_for_stream(&parsed.display_name).is_some()
                 })
                 .unwrap_or(false);

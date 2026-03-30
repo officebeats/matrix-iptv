@@ -8,6 +8,7 @@ use ratatui::{
 use crate::app::{App, Pane};
 use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, DARK_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 use crate::ui::common::stylize_channel_name;
+use crate::ui::utils::visible_window;
 
 /// Strip provider-prefixed country/region codes from a title.
 /// e.g.  "EN| The Arborist"        → "The Arborist"
@@ -67,27 +68,20 @@ pub fn render_vod_view(f: &mut Frame, app: &mut App, area: Rect) {
 
 pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let visible_height = area.height.saturating_sub(2) as usize;
-    let total = app.vod_streams.len();
+    let (start, end) = visible_window(app.selected_vod_stream_index, app.vod_streams.len(), visible_height);
     let selected = app.selected_vod_stream_index;
-
-    let half_window = visible_height / 2;
-    let start = if selected > half_window { selected - half_window } else { 0 };
-    let end = (start + visible_height + half_window).min(total);
-    let adjusted_start = if end == total && end > visible_height + half_window {
-        end.saturating_sub(visible_height + half_window)
-    } else { start };
 
     // Usable inner width = column width - 2 borders - 2 highlight symbol - 1 padding
     let inner_w = area.width.saturating_sub(5) as usize;
 
     let items: Vec<ListItem> = app.vod_streams.iter().enumerate()
-        .skip(adjusted_start)
-        .take(end - adjusted_start)
+        .skip(start)
+        .take(end - start)
         .map(|(_, s)| {
             let parsed = if let Some(ref cached) = s.cached_parsed {
                  cached.as_ref().clone()
             } else {
-                crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref())
+                crate::parser::parse_stream(&s.name, app.session.provider_timezone.as_deref())
             };
             let mut spans = vec![];
 
@@ -166,7 +160,7 @@ pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .highlight_symbol(" ▎");
 
     // Convert TableState selection to a temporary ListState for List widget rendering
-    let sel = if adjusted_start > 0 { Some(selected - adjusted_start) } else { app.vod_stream_list_state.selected() };
+    let sel = Some(selected - start);
     let mut adjusted_state = ratatui::widgets::ListState::default();
     adjusted_state.select(sel);
     f.render_stateful_widget(list, inner_area, &mut adjusted_state);
@@ -307,7 +301,7 @@ pub fn render_vod_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
         let (display_name, _) = if let Some(ref parsed) = stream.cached_parsed {
             (parsed.display_name.clone(), parsed.quality)
         } else {
-            let p = crate::parser::parse_stream(&stream.name, app.provider_timezone.as_deref());
+            let p = crate::parser::parse_stream(&stream.name, app.session.provider_timezone.as_deref());
             (p.display_name, p.quality)
         };
 

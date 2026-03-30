@@ -50,7 +50,7 @@ pub async fn handle_key_event(
 
         // "Value Prop": If searching from home screen and no data is loaded, boot-up the highlighted account
         if on_home && app.global_all_streams.is_empty() {
-             if let Some(acc) = app.config.accounts.get(app.selected_account_index) {
+             if let Some(acc) = app.config.accounts.get(app.session.selected_account_index) {
                  let tx = tx.clone();
                  let base_url = acc.base_url.clone();
                  let username = acc.username.clone();
@@ -70,11 +70,11 @@ pub async fn handle_key_event(
     }
 
     // Priority 0: Loading State Handling (Cancellation)
-    if app.state_loading {
+    if app.session.state_loading {
         // While loading, we trap input. Allow Esc to cancel.
         if key.code == KeyCode::Esc {
-            app.state_loading = false;
-            app.loading_message = None;
+            app.session.state_loading = false;
+            app.session.loading_message = None;
             app.login_error = None; // clear any previous error
             // If we were connecting, we just stop waiting for the result.
             // The background task will still complete but its result will be ignored 
@@ -128,9 +128,9 @@ pub async fn handle_key_event(
             KeyCode::Enter => {
                 if let Some(url) = app.pending_play_url.take() {
                     let title = app.pending_play_title.take().unwrap_or_default();
-                    app.state_loading = true;
-                    app.player_error = None;
-                    app.loading_message = Some(format!("Preparing: {}...", title));
+                    app.session.state_loading = true;
+                    app.ui.player_error = None;
+                    app.session.loading_message = Some(format!("Preparing: {}...", title));
                     let tx = tx.clone();
                     let player = player.clone();
                     let engine = app.config.preferred_player;
@@ -263,13 +263,13 @@ pub async fn handle_key_event(
         }
         // Refresh Playlist
         if matches!(key.code, KeyCode::Char('r') | KeyCode::Char('R')) {
-            if let Some(client) = app.current_client.clone() {
+            if let Some(client) = app.session.current_client.clone() {
                 let tx = tx.clone();
-                app.state_loading = true;
-                app.loading_message = Some("Refreshing playlist...".to_string());
+                app.session.state_loading = true;
+                app.session.loading_message = Some("Refreshing playlist...".to_string());
 
                 // Invalidate cache for current account
-                if let Some(account) = app.config.accounts.get(app.selected_account_index) {
+                if let Some(account) = app.config.accounts.get(app.session.selected_account_index) {
                     CachedCatalog::invalidate(&account.name);
                 }
 
@@ -337,7 +337,7 @@ pub async fn handle_key_event(
     }
 
     // SCREEN SPECIFIC
-    let account_name = app.config.accounts.get(app.selected_account_index)
+    let account_name = app.config.accounts.get(app.session.selected_account_index)
                         .map(|a| a.name.clone()).unwrap_or_default();
     match app.current_screen {
         CurrentScreen::Home => {
@@ -356,8 +356,8 @@ pub async fn handle_key_event(
                 }
                 KeyCode::Char('e') => {
                     if !app.config.accounts.is_empty() {
-                        app.editing_account_index = Some(app.selected_account_index);
-                        let acc = &app.config.accounts[app.selected_account_index];
+                        app.editing_account_index = Some(app.session.selected_account_index);
+                        let acc = &app.config.accounts[app.session.selected_account_index];
                         app.input_name = tui_input::Input::new(acc.name.clone());
                         app.input_url = tui_input::Input::new(acc.base_url.clone());
                         app.input_username = tui_input::Input::new(acc.username.clone());
@@ -372,15 +372,15 @@ pub async fn handle_key_event(
                 KeyCode::Char('d') => {
                     if !app.config.accounts.is_empty() {
                         // Invalidate cache for the account being deleted
-                        if let Some(account) = app.config.accounts.get(app.selected_account_index) {
+                        if let Some(account) = app.config.accounts.get(app.session.selected_account_index) {
                             CachedCatalog::invalidate(&account.name);
                         }
-                        app.config.remove_account(app.selected_account_index);
-                        if app.selected_account_index >= app.config.accounts.len() && !app.config.accounts.is_empty() {
-                            app.selected_account_index = app.config.accounts.len() - 1;
-                            app.account_list_state.select(Some(app.selected_account_index));
+                        app.config.remove_account(app.session.selected_account_index);
+                        if app.session.selected_account_index >= app.config.accounts.len() && !app.config.accounts.is_empty() {
+                            app.session.selected_account_index = app.config.accounts.len() - 1;
+                            app.account_list_state.select(Some(app.session.selected_account_index));
                         } else if app.config.accounts.is_empty() {
-                            app.selected_account_index = 0;
+                            app.session.selected_account_index = 0;
                             app.account_list_state.select(None);
                         }
                     }
@@ -409,18 +409,18 @@ pub async fn handle_key_event(
                 }
                 KeyCode::Enter => {
                     if !app.config.accounts.is_empty() {
-                        let acc = &app.config.accounts[app.selected_account_index];
+                        let acc = &app.config.accounts[app.session.selected_account_index];
                         let base_url = acc.base_url.clone();
                         let username = acc.username.clone();
                         let password = acc.password.clone();
                         let now = chrono::Utc::now().timestamp();
                         let needs_refresh = acc.last_refreshed.map(|last| now - last > (5 * 3600)).unwrap_or(true);
 
-                        app.state_loading = true;
+                        app.session.state_loading = true;
                         if needs_refresh {
-                            app.loading_message = Some("Refreshing playlist (Data > 5h old)...".to_string());
+                            app.session.loading_message = Some("Refreshing playlist (Data > 5h old)...".to_string());
                         } else {
-                            app.loading_message = Some("Loading playlist...".to_string());
+                            app.session.loading_message = Some("Loading playlist...".to_string());
                         }
 
                         app.login_error = None;
@@ -523,12 +523,12 @@ pub async fn handle_key_event(
                 }
                 KeyCode::Esc | KeyCode::Backspace => {
                     app.current_screen = CurrentScreen::Home;
-                    app.current_client = None; 
+                    app.session.current_client = None; 
                 }
                 KeyCode::Char('R') => {
                     // Manual refresh - force full playlist rescan
-                    if let Some(client) = &app.current_client {
-                        app.loading_message = Some("Refreshing playlist...".to_string());
+                    if let Some(client) = &app.session.current_client {
+                        app.session.loading_message = Some("Refreshing playlist...".to_string());
                         let client = client.clone();
                         let tx = tx.clone();
                         tokio::spawn(async move {
@@ -937,14 +937,14 @@ pub async fn handle_key_event(
                                         app.stream_list_state.select(Some(0));
                                     } else if cat_id == "ALL" {
                                         // Background scan hasn't completed — fetch sequentially to avoid ISP throttling
-                                        if let Some(client) = &app.current_client {
+                                        if let Some(client) = &app.session.current_client {
                                             let client = client.clone();
                                             let tx = tx.clone();
                                             let pms = app.config.processing_modes.clone();
                                             let favs = app.config.favorites.streams.clone();
                                             let account_name = account_name.clone();
-                                            app.state_loading = true;
-                                            app.loading_message = Some("Loading all channels...".to_string());
+                                            app.session.state_loading = true;
+                                            app.session.loading_message = Some("Loading all channels...".to_string());
                                             tokio::spawn(async move {
                                                 let _ = tx.send(AsyncAction::LoadingMessage("Fetching categories...".to_string())).await;
                                                 let mut cats = match client.get_live_categories().await {
@@ -1028,14 +1028,14 @@ pub async fn handle_key_event(
                                         app.selected_stream_index = 0;
                                         app.stream_list_state.select(Some(0));
                                         app.update_search();
-                                    } else if let Some(client) = &app.current_client {
+                                    } else if let Some(client) = &app.session.current_client {
                                         let client = client.clone();
                                         let tx = tx.clone();
                                         let pms = app.config.processing_modes.clone();
                                         let favs = app.config.favorites.streams.clone();
                                         let account_name = account_name.clone();
-                                        app.state_loading = true;
-                                        app.loading_message = Some("Initializing Request...".to_string());
+                                        app.session.state_loading = true;
+                                        app.session.loading_message = Some("Initializing Request...".to_string());
                                         tokio::spawn(async move {
                                             let _ = tx.send(AsyncAction::LoadingMessage("Fetching Live Streams...".to_string())).await;
                                             match client.get_live_streams(&cat_id, Some(tx.clone())).await {
@@ -1052,12 +1052,12 @@ pub async fn handle_key_event(
                             Pane::Streams => {
                                 if !app.streams.is_empty() {
                                     let stream = &app.streams[app.selected_stream_index];
-                                    if let Some(client) = &app.current_client {
+                                    if let Some(client) = &app.session.current_client {
                                         let id = get_id_str(&stream.stream_id);
                                         let url = client.get_stream_url(&id, "ts");
-                                        app.state_loading = true;
-                                        app.player_error = None;
-                                        app.loading_message = Some(format!("Preparing Live Stream: {}...", stream.name));
+                                        app.session.state_loading = true;
+                                        app.ui.player_error = None;
+                                        app.session.loading_message = Some(format!("Preparing Live Stream: {}...", stream.name));
                                         let tx = tx.clone();
                                         let player = player.clone();
                                         let stream_url = url.clone();
@@ -1125,7 +1125,7 @@ pub async fn handle_key_event(
                         // Cast to Chromecast - open device picker
                         if app.active_pane == Pane::Streams && !app.streams.is_empty() {
                             let stream = &app.streams[app.selected_stream_index];
-                            if let Some(client) = &app.current_client {
+                            if let Some(client) = &app.session.current_client {
                                 let id = get_id_str(&stream.stream_id);
                                 let url = client.get_stream_url(&id, "ts");
                                 app.pending_play_url = Some(url);
@@ -1299,15 +1299,15 @@ pub async fn handle_key_event(
                                 app.selected_vod_stream_index = 0;
                                 app.vod_stream_list_state.select(Some(0));
                                 app.update_search();
-                            } else if let Some(client) = &app.current_client {
+                            } else if let Some(client) = &app.session.current_client {
                                 let cat_id = app.vod_categories[idx].category_id.clone();
                                 let client = client.clone();
                                 let tx = tx.clone();
                                 let pms = app.config.processing_modes.clone();
                                 let favs = app.config.favorites.vod_streams.clone();
                                 let account_name = account_name.clone();
-                                app.state_loading = true;
-                                app.loading_message = Some("Loading movies...".to_string());
+                                app.session.state_loading = true;
+                                app.session.loading_message = Some("Loading movies...".to_string());
                                 tokio::spawn(async move {
                                     if cat_id == "ALL" {
                                         match client.get_vod_streams_all().await {
@@ -1367,7 +1367,7 @@ pub async fn handle_key_event(
                     KeyCode::Char('l') | KeyCode::Right => {
                         if !app.vod_streams.is_empty() {
                             let stream = &app.vod_streams[app.selected_vod_stream_index];
-                            if let Some(client) = &app.current_client {
+                            if let Some(client) = &app.session.current_client {
                                 let id = crate::api::get_id_str(&stream.stream_id);
                                 let extension = stream.container_extension.as_deref().unwrap_or("ts");
                                 let url = client.get_vod_url(&id, extension);
@@ -1452,7 +1452,7 @@ pub async fn handle_key_event(
                     KeyCode::Enter => {
                         if !app.vod_streams.is_empty() {
                             let stream = &app.vod_streams[app.selected_vod_stream_index];
-                            if let Some(client) = &app.current_client {
+                            if let Some(client) = &app.session.current_client {
                                 let id = get_id_str(&stream.stream_id);
                                 let extension = stream.container_extension.as_deref().unwrap_or("mp4");
                                 let url = client.get_vod_url(&id, extension);
@@ -1598,14 +1598,14 @@ pub async fn handle_key_event(
                                 app.selected_series_stream_index = 0;
                                 app.series_stream_list_state.select(Some(0));
                                 app.update_search();
-                            } else if let Some(client) = &app.current_client {
+                            } else if let Some(client) = &app.session.current_client {
                                 let cat_id = app.series_categories[idx].category_id.clone();
                                 let client = client.clone();
                                 let tx = tx.clone();
                                 let pms = app.config.processing_modes.clone();
                                 let favs = app.config.favorites.vod_streams.clone();
-                                app.state_loading = true;
-                                app.loading_message = Some("Loading series...".to_string());
+                                app.session.state_loading = true;
+                                app.session.loading_message = Some("Loading series...".to_string());
                                 app.active_pane = Pane::Streams;
                                 let acc_name_cloned = account_name.clone();
                                 tokio::spawn(async move {
@@ -1667,13 +1667,13 @@ pub async fn handle_key_event(
                                     app.selected_series_stream_index = 0;
                                     app.series_stream_list_state.select(Some(0));
                                     app.update_search();
-                                } else if let Some(client) = &app.current_client {
+                                } else if let Some(client) = &app.session.current_client {
                                     let cat_id = app.series_categories[idx].category_id.clone();
                                     let client = client.clone();
                                     let tx = tx.clone();
                                     let pms = app.config.processing_modes.clone();
                                     let favs = app.config.favorites.vod_streams.clone();
-                                    app.state_loading = true;
+                                    app.session.state_loading = true;
                                     app.active_pane = Pane::Streams;
                                     let acc_name_cloned = account_name.clone();
                                     tokio::spawn(async move {
@@ -1691,10 +1691,10 @@ pub async fn handle_key_event(
                         Pane::Streams => {
                             if !app.series_streams.is_empty() {
                                 let stream = &app.series_streams[app.selected_series_stream_index];
-                                if let Some(client) = &app.current_client {
+                                if let Some(client) = &app.session.current_client {
                                     let id = get_id_str(&stream.stream_id);
-                                    app.state_loading = true;
-                                    app.loading_message = Some("Loading episodes...".to_string());
+                                    app.session.state_loading = true;
+                                    app.session.loading_message = Some("Loading episodes...".to_string());
                                     app.active_pane = Pane::Episodes;
                                     let tx = tx.clone();
                                     let client = client.clone();
@@ -1710,7 +1710,7 @@ pub async fn handle_key_event(
                         Pane::Episodes => {
                              if !app.series_episodes.is_empty() {
                                 let episode = &app.series_episodes[app.selected_series_episode_index];
-                                if let Some(client) = &app.current_client {
+                                if let Some(client) = &app.session.current_client {
                                     let id = episode.id.as_ref().map(|v| get_id_str(v)).unwrap_or_default();
                                     if !id.is_empty() {
                                         let ext = episode.container_extension.as_deref().unwrap_or("mp4");
@@ -1730,14 +1730,14 @@ pub async fn handle_key_event(
                                 if !app.global_all_series_streams.is_empty() {
                                     app.select_series_category(idx);
                                     app.active_pane = Pane::Streams;
-                                } else if let Some(client) = &app.current_client {
+                                } else if let Some(client) = &app.session.current_client {
                                     let cat_id = app.series_categories[idx].category_id.clone();
                                     let client = client.clone();
                                     let tx = tx.clone();
                                     let pms = app.config.processing_modes.clone();
                                     let favs = app.config.favorites.vod_streams.clone();
-                                    app.state_loading = true;
-                                    app.loading_message = Some("Loading series...".to_string());
+                                    app.session.state_loading = true;
+                                    app.session.loading_message = Some("Loading series...".to_string());
                                     app.active_pane = Pane::Streams;
                                     let acc_name_cloned = account_name.clone();
                                     tokio::spawn(async move {
@@ -1755,10 +1755,10 @@ pub async fn handle_key_event(
                         Pane::Streams => {
                             if !app.series_streams.is_empty() {
                                 let stream = &app.series_streams[app.selected_series_stream_index];
-                                if let Some(client) = &app.current_client {
+                                if let Some(client) = &app.session.current_client {
                                     let id = get_id_str(&stream.stream_id);
-                                    app.state_loading = true;
-                                    app.loading_message = Some("Loading episodes...".to_string());
+                                    app.session.state_loading = true;
+                                    app.session.loading_message = Some("Loading episodes...".to_string());
                                     app.active_pane = Pane::Episodes;
                                     let tx = tx.clone();
                                     let client = client.clone();
@@ -1774,7 +1774,7 @@ pub async fn handle_key_event(
                         Pane::Episodes => {
                              if !app.series_episodes.is_empty() {
                                 let episode = &app.series_episodes[app.selected_series_episode_index];
-                                if let Some(client) = &app.current_client {
+                                if let Some(client) = &app.session.current_client {
                                     let id = episode.id.as_ref().map(|v| get_id_str(v)).unwrap_or_default();
                                     if !id.is_empty() {
                                         let ext = episode.container_extension.as_deref().unwrap_or("mp4");
@@ -1821,7 +1821,7 @@ pub async fn handle_key_event(
                     KeyCode::Enter => {
                         if !app.global_search_results.is_empty() {
                             let stream = &app.global_search_results[app.selected_stream_index];
-                            if let Some(client) = &app.current_client {
+                            if let Some(client) = &app.session.current_client {
                                 let id = get_id_str(&stream.stream_id);
                                 let extension = stream.container_extension.as_deref().unwrap_or("ts");
                                 
@@ -1836,9 +1836,9 @@ pub async fn handle_key_event(
                                     app.pending_play_title = Some(stream.name.clone());
                                     app.show_play_details = true;
                                 } else {
-                                    app.state_loading = true;
-                                    app.player_error = None;
-                                    app.loading_message = Some(format!("Preparing: {}...", stream.name));
+                                    app.session.state_loading = true;
+                                    app.ui.player_error = None;
+                                    app.session.loading_message = Some(format!("Preparing: {}...", stream.name));
                                     let tx = tx.clone();
                                     let player = player.clone();
                                     let stream_url = url.clone();
@@ -1883,7 +1883,7 @@ pub async fn handle_key_event(
                                 // Initialize list selection so user can navigate
                                 if !app.config.accounts.is_empty() {
                                     app.account_list_state.select(Some(0));
-                                    app.selected_account_index = 0;
+                                    app.session.selected_account_index = 0;
                                 }
                             }
                             1 => { 
@@ -1957,8 +1957,8 @@ pub async fn handle_key_event(
                                 app.matrix_rain_columns.clear();
                             }
                             9 => { 
-                                app.state_loading = true;
-                                app.loading_message = Some("Checking for updates...".to_string());
+                                app.session.state_loading = true;
+                                app.session.loading_message = Some("Checking for updates...".to_string());
                                 let tx = tx.clone();
                                 tokio::spawn(async move {
                                     crate::setup::check_for_updates(tx, true).await;
@@ -1995,15 +1995,15 @@ pub async fn handle_key_event(
                     }
                     KeyCode::Enter => {
                         // Open edit form for selected playlist
-                        if !app.config.accounts.is_empty() && app.selected_account_index < app.config.accounts.len() {
-                            let account = &app.config.accounts[app.selected_account_index];
+                        if !app.config.accounts.is_empty() && app.session.selected_account_index < app.config.accounts.len() {
+                            let account = &app.config.accounts[app.session.selected_account_index];
                             app.input_name = tui_input::Input::new(account.name.clone());
                             app.input_url = tui_input::Input::new(account.base_url.clone());
                             app.input_username = tui_input::Input::new(account.username.clone());
                             app.input_password = tui_input::Input::new(account.password.clone());
                             app.input_epg_url = tui_input::Input::new(account.epg_url.clone().unwrap_or_default());
                             app.input_server_timezone = tui_input::Input::new(account.server_timezone.clone().unwrap_or_default());
-                            app.editing_account_index = Some(app.selected_account_index);
+                            app.editing_account_index = Some(app.session.selected_account_index);
                             app.previous_screen = Some(CurrentScreen::Settings); // Return to Settings on Esc
                             app.current_screen = CurrentScreen::Login;
                             app.login_field_focus = LoginField::Name;
@@ -2011,17 +2011,17 @@ pub async fn handle_key_event(
                     }
                     KeyCode::Char('d') | KeyCode::Delete => {
                         // Delete selected playlist
-                        if !app.config.accounts.is_empty() && app.selected_account_index < app.config.accounts.len() {
+                        if !app.config.accounts.is_empty() && app.session.selected_account_index < app.config.accounts.len() {
                             // Invalidate cache for the account being deleted
-                            if let Some(account) = app.config.accounts.get(app.selected_account_index) {
+                            if let Some(account) = app.config.accounts.get(app.session.selected_account_index) {
                                 CachedCatalog::invalidate(&account.name);
                             }
-                            app.config.accounts.remove(app.selected_account_index);
+                            app.config.accounts.remove(app.session.selected_account_index);
                             let _ = app.config.save();
-                            if app.selected_account_index > 0 {
-                                app.selected_account_index -= 1;
+                            if app.session.selected_account_index > 0 {
+                                app.session.selected_account_index -= 1;
                             }
-                            app.account_list_state.select(Some(app.selected_account_index.min(app.config.accounts.len().saturating_sub(1))));
+                            app.account_list_state.select(Some(app.session.selected_account_index.min(app.config.accounts.len().saturating_sub(1))));
                         }
                     }
                     _ => {}
@@ -2155,7 +2155,7 @@ pub async fn handle_key_event(
                                 let _ = app.config.save();
 
                                 // Invalidate cache since processing modes changed
-                                if let Some(account) = app.config.accounts.get(app.selected_account_index) {
+                                if let Some(account) = app.config.accounts.get(app.session.selected_account_index) {
                                     CachedCatalog::invalidate(&account.name);
                                 }
 
@@ -2166,11 +2166,11 @@ pub async fn handle_key_event(
                                 app.refresh_settings_options();
 
                                 // Trigger Refresh
-                                if app.current_client.is_some() {
-                                    if let Some(client) = app.current_client.clone() {
+                                if app.session.current_client.is_some() {
+                                    if let Some(client) = app.session.current_client.clone() {
                                         let tx = tx.clone();
-                                        app.state_loading = true;
-                                        app.loading_message = Some("Applying filter matrix...".to_string());
+                                        app.session.state_loading = true;
+                                        app.session.loading_message = Some("Applying filter matrix...".to_string());
                                         
                                         tokio::spawn(async move {
                                             if let Ok((true, updated_client, ui, si)) = client.authenticate().await {
@@ -2232,7 +2232,7 @@ pub async fn handle_key_event(
                         } else {
                             // Also allow Enter to toggle visibility like space
                             let content_type = app.category_mgmt.content_type;
-                            let acc = match app.config.accounts.get(app.selected_account_index) {
+                            let acc = match app.config.accounts.get(app.session.selected_account_index) {
                                 Some(a) => a,
                                 None => return Ok(InputResult::Continue),
                             };
@@ -2297,7 +2297,7 @@ pub async fn handle_key_event(
                         } else if c == ' ' {
                             // Handle space for toggle if not in search mode
                              let content_type = app.category_mgmt.content_type;
-                             let acc = match app.config.accounts.get(app.selected_account_index) {
+                             let acc = match app.config.accounts.get(app.session.selected_account_index) {
                                  Some(a) => a,
                                  None => return Ok(InputResult::Continue),
                              };
@@ -2337,7 +2337,7 @@ pub async fn handle_key_event(
                         if idx < app.timezone_list.len() {
                             app.config.timezone = Some(app.timezone_list[idx].clone());
                             let _ = app.config.save();
-                            app.cached_user_timezone = app.config.get_user_timezone();
+                            app.session.cached_user_timezone = app.config.get_user_timezone();
                         }
                     }
                     app.current_screen = CurrentScreen::Settings;
@@ -2420,13 +2420,13 @@ pub async fn handle_key_event(
                         if app.selected_group_index < app.config.favorites.groups.len() {
                             // Add to existing group
                             app.config.add_to_group(app.selected_group_index, stream_id);
-                            app.loading_message = Some(format!("Added to {}", app.config.favorites.groups[app.selected_group_index].name));
+                            app.session.loading_message = Some(format!("Added to {}", app.config.favorites.groups[app.selected_group_index].name));
                         } else {
                             // Create new group and add
                             let new_name = format!("Group {}", app.config.favorites.groups.len() + 1);
                             let idx = app.config.create_group(new_name.clone(), Some("📁".to_string()));
                             app.config.add_to_group(idx, stream_id);
-                            app.loading_message = Some(format!("Created {} and added stream", new_name));
+                            app.session.loading_message = Some(format!("Created {} and added stream", new_name));
                         }
                     }
                     app.current_screen = app.previous_screen.take().unwrap_or(CurrentScreen::Streams);
@@ -2506,8 +2506,8 @@ pub async fn handle_key_event(
                         let url = stream.embed_url.clone();
                         let title = app.sports_matches[app.sports_list_state.selected().unwrap_or(0)].title.clone();
                         
-                        app.state_loading = true;
-                        app.loading_message = Some(format!("Preparing: {}...", title));
+                        app.session.state_loading = true;
+                        app.session.loading_message = Some(format!("Preparing: {}...", title));
                         
                         let tx = tx.clone();
                         let player = player.clone();

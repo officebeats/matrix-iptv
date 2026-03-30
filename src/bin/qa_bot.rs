@@ -42,7 +42,7 @@ async fn run_qa() {
 
         // Reset App to Home
         app.current_screen = CurrentScreen::Home;
-        app.selected_account_index = i; // Force select
+        app.session.selected_account_index = i; // Force select
 
         let acc = app.config.accounts[i].clone();
 

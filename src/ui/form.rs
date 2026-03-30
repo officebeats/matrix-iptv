@@ -50,20 +50,20 @@ pub fn render_login(f: &mut Frame, app: &App, area: Rect) {
     let mode = app.input_mode == InputMode::Editing;
 
     let mut current_chunk = 0;
-    f.render_widget(render_input("playlist name", app.input_name.value(), matches!(active, LoginField::Name), mode, app.input_name.visual_cursor(), app.loading_tick), chunks[current_chunk]);
+    f.render_widget(render_input("playlist name", app.input_name.value(), matches!(active, LoginField::Name), mode, app.input_name.visual_cursor(), app.session.loading_tick), chunks[current_chunk]);
     current_chunk += 1;
     
-    f.render_widget(render_input("server url", app.input_url.value(), matches!(active, LoginField::Url), mode, app.input_url.visual_cursor(), app.loading_tick), chunks[current_chunk]);
+    f.render_widget(render_input("server url", app.input_url.value(), matches!(active, LoginField::Url), mode, app.input_url.visual_cursor(), app.session.loading_tick), chunks[current_chunk]);
     current_chunk += 1;
 
-    f.render_widget(render_input("username", app.input_username.value(), matches!(active, LoginField::Username), mode, app.input_username.visual_cursor(), app.loading_tick), chunks[current_chunk]);
+    f.render_widget(render_input("username", app.input_username.value(), matches!(active, LoginField::Username), mode, app.input_username.visual_cursor(), app.session.loading_tick), chunks[current_chunk]);
     current_chunk += 1;
     
     let mask: String = app.input_password.value().chars().map(|_| '*').collect();
-    f.render_widget(render_input("password", &mask, matches!(active, LoginField::Password), mode, app.input_password.visual_cursor(), app.loading_tick), chunks[current_chunk]);
+    f.render_widget(render_input("password", &mask, matches!(active, LoginField::Password), mode, app.input_password.visual_cursor(), app.session.loading_tick), chunks[current_chunk]);
     current_chunk += 1;
 
-    f.render_widget(render_input("epg url (optional)", app.input_epg_url.value(), matches!(active, LoginField::EpgUrl), mode, app.input_epg_url.visual_cursor(), app.loading_tick), chunks[current_chunk]);
+    f.render_widget(render_input("epg url (optional)", app.input_epg_url.value(), matches!(active, LoginField::EpgUrl), mode, app.input_epg_url.visual_cursor(), app.session.loading_tick), chunks[current_chunk]);
     let hints_chunk = current_chunk + 1;
     let error_chunk = current_chunk + 2;
     
@@ -437,7 +437,7 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
 
 pub fn render_category_management(f: &mut Frame, app: &mut App, area: Rect) {
     let content_type = app.category_mgmt.content_type;
-    let acc = match app.config.accounts.get(app.selected_account_index) {
+    let acc = match app.config.accounts.get(app.session.selected_account_index) {
         Some(a) => a,
         None => return,
     };

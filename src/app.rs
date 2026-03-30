@@ -1,9 +1,8 @@
 use crate::api::{Category, ServerInfo, Stream, UserInfo, IptvClient};
 use crate::config::AppConfig;
-use crate::errors::{SearchState, LoadingProgress};
 use crate::state::{
     SessionState, ContentState, SeriesState, VodState, LoginFormState,
-    UiState, SportsState, MatrixRainState, SearchState as DecomposedSearchState,
+    UiState, SportsState, MatrixRainState, SearchState,
     GroupManagementState, CategoryManagementState,
 };
 use std::sync::Arc;
@@ -73,6 +72,11 @@ pub enum AsyncAction {
     CastStarted(String), // Device name
     CastFailed(String),  // Error message
     Error(String),
+    
+    // Lazy Category Loading (Phase 4)
+    LoadLiveStreams(String),     // category_id
+    LoadVodStreams(String),      // category_id
+    LoadSeriesStreams(String),   // category_id
 }
 
 #[derive(PartialEq, Debug, Clone)]
@@ -130,11 +134,8 @@ pub struct App {
     pub current_screen: CurrentScreen,
     pub input_mode: InputMode,
     pub should_quit: bool,
-    pub state_loading: bool,
-    pub cached_user_timezone: String,
 
     // Home / Accounts
-    pub selected_account_index: usize,
     pub account_list_state: ListState,
 
     // Login Form
@@ -146,10 +147,7 @@ pub struct App {
     pub input_epg_url: Input,
     pub input_server_timezone: Input,
     pub login_error: Option<String>,
-    pub loading_tick: u64,
 
-    // Active Session
-    pub current_client: Option<IptvClient>,
 
     // Categories
     pub all_categories: Vec<Arc<Category>>,
@@ -241,8 +239,6 @@ pub struct App {
     pub search_mode: bool,
     // Track last query for incremental narrowing
     
-    // Loading progress
-    pub loading_progress: Option<LoadingProgress>,
 
     // Help
     pub show_help: bool,
@@ -257,19 +253,8 @@ pub struct App {
     // About content
     pub about_text: String,
     pub about_scroll: u16,
-    pub provider_timezone: Option<String>,
-    pub loading_message: Option<String>,
-    pub player_error: Option<String>,
     pub loading_log: std::collections::VecDeque<String>,
     pub needs_stream_refresh: bool,
-
-    // Account details
-    pub account_info: Option<UserInfo>,
-    pub server_info: Option<ServerInfo>,
-    pub total_channels: usize,
-    pub total_movies: usize,
-    pub max_category_name_len: usize, 
-    pub total_series: usize,
 
     // Layout tracking for mouse support
     pub area_categories: Rect,
@@ -345,10 +330,6 @@ pub struct App {
     pub last_search_update: Option<std::time::Instant>, // 150ms debounce gate
     pub category_channel_counts: std::collections::HashMap<String, usize>, // Counts per category_id
 
-    // Cache state
-    pub background_refresh_active: bool,  // True when background refresh is in progress
-    pub cache_loaded: bool,               // True if current session loaded from cache
-
     // --- Decomposed State Structs (Phase 6) ---
     /// Session state for provider connection
     pub session: SessionState,
@@ -366,12 +347,11 @@ pub struct App {
     pub sports: SportsState,
     /// Matrix rain animation state
     pub matrix_rain: MatrixRainState,
-    /// Search state
-    pub search: DecomposedSearchState,
     /// Group management state
     pub groups: GroupManagementState,
     /// Category management state
     pub category_mgmt: CategoryManagementState,
+    pub pending_lazy_loads: std::collections::VecDeque<AsyncAction>,
 }
 
 #[derive(Clone)]
@@ -417,13 +397,19 @@ impl App {
             .and_then(|w| w.performance())
             .map(|p| p.now());
 
+        let cached_tz = config.get_user_timezone();
+
         let mut app = App {
-            cached_user_timezone: config.get_user_timezone(),
             config,
             current_screen: CurrentScreen::Home,
             input_mode: InputMode::Normal,
             should_quit: false,
-            state_loading: false,
+            session: SessionState {
+                cached_user_timezone: cached_tz,
+                selected_account_index: 0,
+                max_category_name_len: 10,
+                ..Default::default()
+            },
 
             epg_cache: std::collections::HashMap::new(),
             last_focused_stream_id: None,
@@ -431,7 +417,6 @@ impl App {
 
             editing_account_index: None,
 
-            selected_account_index: 0,
             account_list_state,
 
             login_field_focus: LoginField::Name,
@@ -442,9 +427,7 @@ impl App {
             input_epg_url: Input::default(),
             input_server_timezone: Input::default(),
             login_error: None,
-            loading_tick: 0,
 
-            current_client: None,
             all_categories: vec![],
             categories: vec![],
             selected_category_index: 0,
@@ -531,7 +514,6 @@ impl App {
             search_mode: false,
             last_search_query: String::new(),
             show_help: false,
-            loading_progress: None,
             show_guide: None,
             guide_scroll: 0,
             settings_state: SettingsState::Main,
@@ -539,15 +521,6 @@ impl App {
             show_save_confirmation: false,
             about_text,
             about_scroll: 0,
-            provider_timezone: None,
-            loading_message: None,
-            player_error: None,
-            account_info: None,
-            server_info: None,
-            total_channels: 0,
-            total_movies: 0,
-            max_category_name_len: 10,
-            total_series: 0,
             area_categories: Rect::default(),
             area_streams: Rect::default(),
             area_episodes: Rect::default(),
@@ -618,12 +591,9 @@ impl App {
             last_search_update: None,
             category_channel_counts: std::collections::HashMap::new(),
 
-            // Cache state
-            background_refresh_active: false,
-            cache_loaded: false,
 
             // --- Decomposed State Structs ---
-            session: SessionState::new(),
+            // Initialized above
             live: ContentState::new(),
             vod: VodState::new(),
             series: SeriesState::new(),
@@ -631,11 +601,11 @@ impl App {
             ui: UiState::new(),
             sports: SportsState::new(),
             matrix_rain: MatrixRainState::new(),
-            search: DecomposedSearchState::new(),
             groups: GroupManagementState::new(),
             category_mgmt: CategoryManagementState::new(),
             loading_log: VecDeque::with_capacity(30),
             needs_stream_refresh: false,
+            pending_lazy_loads: std::collections::VecDeque::new(),
         };
 
         app.refresh_settings_options();
@@ -644,7 +614,7 @@ impl App {
     }
 
     pub fn toggle_category_visibility(&mut self, category_id: String) {
-        if let Some(acc) = self.config.accounts.get_mut(self.selected_account_index) {
+        if let Some(acc) = self.config.accounts.get_mut(self.session.selected_account_index) {
             if acc.hidden_categories.contains(&category_id) {
                 acc.hidden_categories.remove(&category_id);
             } else {
@@ -656,7 +626,7 @@ impl App {
     }
 
     pub fn cycle_category_sort_order(&mut self) {
-        if let Some(acc) = self.config.accounts.get_mut(self.selected_account_index) {
+        if let Some(acc) = self.config.accounts.get_mut(self.session.selected_account_index) {
             acc.category_sort_order = acc.category_sort_order.next();
             let _ = self.config.save();
         }
@@ -664,7 +634,7 @@ impl App {
     }
 
     pub fn apply_category_filters(&mut self) {
-        let acc = match self.config.accounts.get(self.selected_account_index) {
+        let acc = match self.config.accounts.get(self.session.selected_account_index) {
             Some(a) => a,
             None => return,
         };
@@ -740,8 +710,8 @@ impl App {
             self.current_screen = CurrentScreen::Streams;
             self.active_pane = Pane::Streams;
             self.update_search();
-            self.state_loading = false;
-            self.loading_message = None;
+            self.session.state_loading = false;
+            self.session.loading_message = None;
         } else {
             // Partial update during pipelined ingestion:
             // Append and update counts
@@ -895,7 +865,7 @@ impl App {
     }
 
     pub fn get_selected_account(&self) -> Option<&crate::config::Account> {
-        self.config.accounts.get(self.selected_account_index)
+        self.config.accounts.get(self.session.selected_account_index)
     }
 
     pub fn get_selected_category(&self) -> Option<&Arc<Category>> {
@@ -969,7 +939,7 @@ impl App {
     pub fn next_account(&mut self) {
         Self::navigate_list(
             self.config.accounts.len(),
-            &mut self.selected_account_index,
+            &mut self.session.selected_account_index,
             &mut self.account_list_state,
             true,
         );
@@ -978,7 +948,7 @@ impl App {
     pub fn previous_account(&mut self) {
         Self::navigate_list(
             self.config.accounts.len(),
-            &mut self.selected_account_index,
+            &mut self.session.selected_account_index,
             &mut self.account_list_state,
             false,
         );
@@ -1130,35 +1100,48 @@ impl App {
     
     pub fn refresh_streams_from_cache(&mut self) {
         if !self.categories.is_empty() && self.selected_category_index < self.categories.len() {
-            let cat_id = &self.categories[self.selected_category_index].category_id;
+            let cat_id = self.categories[self.selected_category_index].category_id.clone();
             if cat_id == "ALL" {
                 self.all_streams = self.global_all_streams.clone();
-            } else if let Some(streams) = self.global_streams_by_cat.get(cat_id) {
+            } else if let Some(streams) = self.global_streams_by_cat.get(&cat_id) {
                 self.all_streams = streams.clone();
-            } else {
-                self.all_streams.clear();
+            } else if !self.session.state_loading && self.current_screen == CurrentScreen::Streams {
+                // Trigger lazy load for Live
+                if !self.pending_lazy_loads.iter().any(|a| matches!(a, AsyncAction::LoadLiveStreams(ref id) if id == &cat_id)) {
+                    self.pending_lazy_loads.push_back(AsyncAction::LoadLiveStreams(cat_id));
+                    self.session.state_loading = true;
+                    self.session.loading_message = Some("System Protocol: Uploading Category Streamset...".to_string());
+                }
             }
         }
         
         if !self.vod_categories.is_empty() && self.selected_vod_category_index < self.vod_categories.len() {
-            let cat_id = &self.vod_categories[self.selected_vod_category_index].category_id;
+            let cat_id = self.vod_categories[self.selected_vod_category_index].category_id.clone();
             if cat_id == "ALL" {
                 self.all_vod_streams = self.global_all_vod_streams.clone();
-            } else if let Some(streams) = self.global_vod_streams_by_cat.get(cat_id) {
+            } else if let Some(streams) = self.global_vod_streams_by_cat.get(&cat_id) {
                 self.all_vod_streams = streams.clone();
-            } else {
-                self.all_vod_streams.clear();
+            } else if !self.session.state_loading && self.current_screen == CurrentScreen::VodStreams {
+                // Trigger lazy load for VOD
+                if !self.pending_lazy_loads.iter().any(|a| matches!(a, AsyncAction::LoadVodStreams(ref id) if id == &cat_id)) {
+                    self.pending_lazy_loads.push_back(AsyncAction::LoadVodStreams(cat_id));
+                    self.session.state_loading = true;
+                }
             }
         }
 
         if !self.series_categories.is_empty() && self.selected_series_category_index < self.series_categories.len() {
-            let cat_id = &self.series_categories[self.selected_series_category_index].category_id;
+            let cat_id = self.series_categories[self.selected_series_category_index].category_id.clone();
             if cat_id == "ALL" {
                 self.all_series_streams = self.global_all_series_streams.clone();
-            } else if let Some(streams) = self.global_series_streams_by_cat.get(cat_id) {
+            } else if let Some(streams) = self.global_series_streams_by_cat.get(&cat_id) {
                 self.all_series_streams = streams.clone();
-            } else {
-                self.all_series_streams.clear();
+            } else if !self.session.state_loading && self.current_screen == CurrentScreen::SeriesStreams {
+                // Trigger lazy load for Series
+                if !self.pending_lazy_loads.iter().any(|a| matches!(a, AsyncAction::LoadSeriesStreams(ref id) if id == &cat_id)) {
+                    self.pending_lazy_loads.push_back(AsyncAction::LoadSeriesStreams(cat_id));
+                    self.session.state_loading = true;
+                }
             }
         }
         
@@ -1313,10 +1296,21 @@ impl App {
 
     /// Pre-populate cached_parsed for all visible streams to avoid per-frame parsing.
     /// Uses Arc::make_mut() which only clones if refcount > 1 (copy-on-write).
-    pub fn pre_cache_parsed(streams: &mut [Arc<Stream>], provider_tz: Option<&str>) {
-        for s in streams.iter_mut() {
-            let inner = Arc::make_mut(s);
-            if inner.cached_parsed.is_none() {
+    pub fn pre_cache_parsed(
+        streams: &mut [Arc<Stream>], 
+        provider_tz: Option<&str>,
+        tx: Option<tokio::sync::mpsc::Sender<crate::app::AsyncAction>>,
+        msg_prefix: &str
+    ) {
+        let total = streams.len();
+        for (i, s) in streams.iter_mut().enumerate() {
+            if i % 2000 == 0 {
+                if let Some(ref sender) = tx {
+                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!("{} {} / {}...", msg_prefix, i, total)));
+                }
+            }
+            if s.cached_parsed.is_none() {
+                let inner = Arc::make_mut(s);
                 inner.cached_parsed = Some(Box::new(crate::parser::parse_stream(&inner.name, provider_tz)));
             }
         }
@@ -1394,8 +1388,17 @@ impl App {
 
         match self.current_screen {
             CurrentScreen::Categories | CurrentScreen::Streams => {
+                // Detect context change and clear stack
+                if self.search_state.last_screen.as_ref() != Some(&self.current_screen) || 
+                   self.search_state.last_pane.as_ref() != Some(&self.active_pane) {
+                    self.search_state.narrow_stack.clear();
+                }
+                self.search_state.last_screen = Some(self.current_screen.clone());
+                self.search_state.last_pane = Some(self.active_pane);
+
                 match self.active_pane {
                     Pane::Categories => {
+                        // Categories usually small enough for full re-filter
                         self.categories = self.all_categories.par_iter()
                             .filter(|c| {
                                 c.search_name.contains(&query) && (!is_merica || c.is_american)
@@ -1407,29 +1410,26 @@ impl App {
                             self.category_list_state.select(if self.categories.is_empty() { None } else { Some(0) });
                         }
 
-                        // Cross-pane search: also search streams so users can find channels
-                        // directly from the categories view (e.g. searching "msnbc" in All Channels)
+                        // Cross-pane stream search (All Channels)
                         if !query.is_empty() && !self.global_all_streams.is_empty() {
                             let mut stream_results: Vec<Arc<Stream>> = self.global_all_streams.par_iter()
                                 .filter(|s| {
                                     if is_merica && !s.is_american { return false; }
                                     if s.search_name.contains(&query) { return true; }
-                                    query.len() >= 3 && s.fuzzy_match(&query, 60)
+                                    query.len() >= 4 && s.fuzzy_match(&query, 60)
                                 })
                                 .cloned()
                                 .collect();
                             stream_results.sort_by_cached_key(|s| !s.search_name.contains(&query));
                             self.streams = stream_results.into_iter().take(1000).collect();
                         } else if query.is_empty() && !self.all_streams.is_empty() {
-                            // Restore from loaded category streams when search is cleared
                             self.streams = self.all_streams.iter()
                                 .filter(|s| !is_merica || s.is_american)
                                 .take(1000)
                                 .cloned()
                                 .collect();
                         }
-                        // pre_cache_parsed removed from search hot path — renderer falls back to
-                        // parse_stream when cached_parsed is None, avoiding 1000 regex ops per keystroke
+                        
                         if query_changed {
                             self.selected_stream_index = 0;
                             self.stream_list_state.select(if self.streams.is_empty() { None } else { Some(0) });
@@ -1442,17 +1442,34 @@ impl App {
                                 .take(1000)
                                 .cloned()
                                 .collect();
+                            self.search_state.narrow_stack.clear();
                         } else {
-                            // Multi-pass parallel search prioritization
-                            let mut results: Vec<Arc<Stream>> = self.all_streams.par_iter()
+                            // Incremental Narrowing Logic
+                            let (base_list, is_narrowing) = if query.starts_with(&self.last_search_query) && !self.last_search_query.is_empty() && !self.streams.is_empty() {
+                                // Narrowing: filter current result set
+                                (&self.streams, true)
+                            } else {
+                                // Widening or Jump: search stack or full list
+                                while let Some((len, _)) = self.search_state.narrow_stack.last() {
+                                    if *len >= query.len() {
+                                        self.search_state.narrow_stack.pop();
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                
+                                if let Some((_, cached_results)) = self.search_state.narrow_stack.last() {
+                                    (cached_results, false)
+                                } else {
+                                    (&self.all_streams, false)
+                                }
+                            };
+
+                            let mut results: Vec<Arc<Stream>> = base_list.par_iter()
                                 .filter(|s| {
                                     if is_merica && !s.is_american { return false; }
-                                    
-                                    // Layer 1: Substring match (Fast)
                                     if s.search_name.contains(&query) { return true; }
-                                    
-                                    // Layer 2: Fuzzy match (only for 3+ char queries to avoid lag)
-                                    query.len() >= 3 && s.fuzzy_match(&query, 60)
+                                    query.len() >= 4 && s.fuzzy_match(&query, 60)
                                 })
                                 .cloned()
                                 .collect();
@@ -1461,9 +1478,14 @@ impl App {
                             results.sort_by_cached_key(|s| !s.search_name.contains(&query));
                             
                             self.streams = results.into_iter().take(1000).collect();
+                            
+                            // Push to stack if not narrowing (or if we want to store progress)
+                            if !is_narrowing || self.search_state.narrow_stack.is_empty() {
+                                self.search_state.narrow_stack.push((query.len(), self.streams.clone()));
+                            }
                         }
 
-                        App::pre_cache_parsed(&mut self.streams, self.provider_timezone.as_deref());
+                        App::pre_cache_parsed(&mut self.streams, self.session.provider_timezone.as_deref(), None, "");
                         self.selected_stream_index = 0;
                         if !self.streams.is_empty() {
                             self.stream_list_state.select(Some(0));
@@ -1489,12 +1511,21 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        let mut results: Vec<Arc<Stream>> = self.all_vod_streams.par_iter()
+                        let (base_list, is_narrowing) = if query.starts_with(&self.last_search_query) && !self.last_search_query.is_empty() && !self.vod_streams.is_empty() {
+                            (&self.vod_streams, true)
+                        } else {
+                            while let Some((len, _)) = self.search_state.narrow_stack.last() {
+                                if *len >= query.len() { self.search_state.narrow_stack.pop(); } else { break; }
+                            }
+                            if let Some((_, cached)) = self.search_state.narrow_stack.last() { (cached, false) } else { (&self.all_vod_streams, false) }
+                        };
+
+                        let mut results: Vec<Arc<Stream>> = base_list.par_iter()
                             .filter(|s| {
                                 if is_merica && !s.is_english { return false; }
                                 if query.is_empty() { return true; }
                                 if s.search_name.contains(&query) { return true; }
-                                query.len() >= 3 && s.fuzzy_match(&query, 60)
+                                query.len() >= 4 && s.fuzzy_match(&query, 60)
                             })
                             .cloned()
                             .collect();
@@ -1504,7 +1535,11 @@ impl App {
                         }
                         self.vod_streams = results.into_iter().take(1000).collect();
 
-                        App::pre_cache_parsed(&mut self.vod_streams, self.provider_timezone.as_deref());
+                        if !query.is_empty() && (!is_narrowing || self.search_state.narrow_stack.is_empty()) {
+                            self.search_state.narrow_stack.push((query.len(), self.vod_streams.clone()));
+                        }
+
+                        App::pre_cache_parsed(&mut self.vod_streams, self.session.provider_timezone.as_deref(), None, "");
                         if query_changed {
                             self.selected_vod_stream_index = 0;
                             self.vod_stream_list_state.select(if self.vod_streams.is_empty() { None } else { Some(0) });
@@ -1528,12 +1563,21 @@ impl App {
                         }
                     }
                     Pane::Streams => {
-                        let mut results: Vec<Arc<Stream>> = self.all_series_streams.par_iter()
+                        let (base_list, is_narrowing) = if query.starts_with(&self.last_search_query) && !self.last_search_query.is_empty() && !self.series_streams.is_empty() {
+                            (&self.series_streams, true)
+                        } else {
+                            while let Some((len, _)) = self.search_state.narrow_stack.last() {
+                                if *len >= query.len() { self.search_state.narrow_stack.pop(); } else { break; }
+                            }
+                            if let Some((_, cached)) = self.search_state.narrow_stack.last() { (cached, false) } else { (&self.all_series_streams, false) }
+                        };
+
+                        let mut results: Vec<Arc<Stream>> = base_list.par_iter()
                             .filter(|s| {
                                 if is_merica && !s.is_english { return false; }
                                 if query.is_empty() { return true; }
                                 if s.search_name.contains(&query) { return true; }
-                                query.len() >= 3 && s.fuzzy_match(&query, 60)
+                                query.len() >= 4 && s.fuzzy_match(&query, 60)
                             })
                             .cloned()
                             .collect();
@@ -1543,8 +1587,11 @@ impl App {
                         }
                         self.series_streams = results.into_iter().take(1000).collect();
 
+                        if !query.is_empty() && (!is_narrowing || self.search_state.narrow_stack.is_empty()) {
+                            self.search_state.narrow_stack.push((query.len(), self.series_streams.clone()));
+                        }
 
-                        App::pre_cache_parsed(&mut self.series_streams, self.provider_timezone.as_deref());
+                        App::pre_cache_parsed(&mut self.series_streams, self.session.provider_timezone.as_deref(), None, "");
                         if query_changed {
                             self.selected_series_stream_index = 0;
                             self.series_stream_list_state.select(if self.series_streams.is_empty() { None } else { Some(0) });
@@ -1575,7 +1622,7 @@ impl App {
 
 
                 self.global_search_results = results;
-                App::pre_cache_parsed(&mut self.global_search_results, self.provider_timezone.as_deref());
+                App::pre_cache_parsed(&mut self.global_search_results, self.session.provider_timezone.as_deref(), None, "");
                 self.selected_stream_index = 0;
                 if !self.global_search_results.is_empty() {
                     self.global_search_list_state.select(Some(0));
@@ -1587,7 +1634,7 @@ impl App {
         }
         
         // Recalculate max_category_name_len for current category list
-        self.max_category_name_len = self.categories.iter()
+        self.session.max_category_name_len = self.categories.iter()
             .map(|c| crate::parser::parse_category(&c.category_name).display_name.len())
             .max()
             .unwrap_or(10);
@@ -1747,7 +1794,7 @@ impl App {
                             // For testing purposes, we might just return a "signal" or set loading state.
                             // In a real refactor, we would return an Action enum like `Action::FetchSeries(account_index)`
                             // key-handling logic should primarily update synchronous state.
-                            self.state_loading = true;
+                            self.session.state_loading = true;
                             // For testing: we can assert that state_loading became true.
                         }
                     }
@@ -2080,12 +2127,12 @@ mod tests {
         // Retry 'x'
         app.handle_key_event(make_key(KeyCode::Char('x')));
         assert!(
-            app.state_loading,
+            app.session.state_loading,
             "State should be loading after pressing x"
         );
 
         // 3. Simulate Series Categories Loaded (Manual State Transition)
-        app.state_loading = false;
+        app.session.state_loading = false;
         app.current_screen = CurrentScreen::SeriesCategories;
         app.series_categories = vec![
             Arc::new(Category {

@@ -69,6 +69,8 @@ pub struct SessionState {
     pub loading_tick: u64,
     /// Selected account index
     pub selected_account_index: usize,
+    /// Max category name length for UI alignment
+    pub max_category_name_len: usize,
 }
 
 impl SessionState {
@@ -473,11 +475,29 @@ pub struct SearchState {
     pub results: Vec<Arc<Stream>>,
     /// Search results list state
     pub list_state: ListState,
+    /// Progressive narrowing stack for incremental search optimization
+    /// Stores results from previous query lengths to avoid full-list scans
+    pub narrow_stack: Vec<(usize, Vec<Arc<Stream>>)>,
+    /// Search history
+    pub history: std::collections::VecDeque<String>,
+    /// Auto-complete suggestions
+    pub suggestions: Vec<String>,
+    /// Last search timestamp for throttle
+    pub last_search_time: Option<std::time::Instant>,
+    /// Debounce timer for active typing
+    pub debounce_timer: Option<std::time::Instant>,
+    /// Last screen where search was performed
+    pub last_screen: Option<crate::app::CurrentScreen>,
+    /// Last pane where search was performed
+    pub last_pane: Option<crate::app::Pane>,
 }
 
 impl SearchState {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            history: std::collections::VecDeque::with_capacity(20),
+            ..Default::default()
+        }
     }
     
     /// Clear search

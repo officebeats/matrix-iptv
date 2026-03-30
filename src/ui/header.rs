@@ -111,7 +111,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
     }
 
     // Background refresh
-    if app.background_refresh_active {
+    if app.session.background_refresh_active {
         left_spans.push(Span::styled("  ⟳ syncing...", Style::default().fg(Color::Rgb(80, 160, 80))));
     }
 
@@ -119,14 +119,14 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(tabs, left_inner);
 
     // System/Account Info Context
-    if let Some(_) = &app.current_client {
-        let name = app.config.accounts.get(app.selected_account_index).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
+    if let Some(_) = &app.session.current_client {
+        let name = app.config.accounts.get(app.session.selected_account_index).map(|a| a.name.clone()).unwrap_or_else(|| "Unknown".to_string());
         let tz_str = app.config.get_user_timezone();
         let user_tz: Tz = Tz::from_str(&tz_str).unwrap_or(chrono_tz::Europe::London);
         let now = Utc::now().with_timezone(&user_tz);
         let time = now.format("%I:%M %p").to_string();
 
-        let (_active, _total, exp) = if let Some(info) = &app.account_info {
+        let (_active, _total, exp) = if let Some(info) = &app.session.account_info {
             let a = info.active_cons.as_ref().map(clean_val).unwrap_or_else(|| "0".to_string());
             let t = info.max_connections.as_ref().map(clean_val).unwrap_or_else(|| "1".to_string());
             let e = info.exp_date.as_ref().map(clean_val).unwrap_or_else(|| "N/A".to_string());

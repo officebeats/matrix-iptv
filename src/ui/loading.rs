@@ -9,7 +9,7 @@ use crate::app::App;
 use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 
 pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
-    if !app.state_loading {
+    if !app.session.state_loading {
         return;
     }
 
@@ -25,7 +25,7 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(Clear, popup_area);
 
     // Dynamic title: show % when progress is available
-    let title = if let Some(ref progress) = app.loading_progress {
+    let title = if let Some(ref progress) = app.session.loading_progress {
         let pct = if progress.total > 0 { (progress.current * 100) / progress.total } else { 0 };
         format!(" loading  {}% ", pct)
     } else {
@@ -55,7 +55,7 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
         ])
         .split(popup_area);
 
-    let tick = app.loading_tick;
+    let tick = app.session.loading_tick;
 
     // Matrix style Katakana spinner and decoding effect
     let katakana = ['ｦ', 'ｧ', 'ｨ', 'ｩ', 'ｪ', 'ｫ', 'ｬ', 'ｭ', 'ｮ', 'ｯ', 'ｰ', 'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ｶ', 'ｷ', 'ｸ', 'ｹ', 'ｺ', 'ｻ', 'ｼ', 'ｽ', 'ｾ', 'ｿ', 'ﾀ', 'ﾁ', 'ﾂ', 'ﾃ', 'ﾄ', 'ﾅ', 'ﾆ', 'ﾇ', 'ﾈ', 'ﾉ', 'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ', 'ﾎ', 'ﾏ', 'ﾐ', 'ﾑ', 'ﾒ', 'ﾓ', 'ﾔ', 'ﾕ', 'ﾖ', 'ﾗ', 'ﾘ', 'ﾙ', 'ﾚ', 'ﾛ', 'ﾜ', 'ﾝ'];
@@ -68,7 +68,7 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
         glitch_str.push(katakana[char_idx]);
     }
 
-    let current_msg = app.loading_message.as_deref().unwrap_or("Initializing system...");
+    let current_msg = app.session.loading_message.as_deref().unwrap_or("Initializing system...");
 
     // ── Hero line ─────────────────────────────────────────────
     // Matrix style: Katakana spinner + Message + Glitch decoding tail
@@ -80,7 +80,7 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(hero, chunks[0]);
 
     // ── Progress bar ──────────────────────────────────────────
-    if let Some(ref progress) = app.loading_progress {
+    if let Some(ref progress) = app.session.loading_progress {
         let pct = if progress.total > 0 { (progress.current * 100) / progress.total } else { 0 };
         // Dynamic bar width: pad to fit inside border margins
         let bar_width = (popup_area.width as usize).saturating_sub(22).max(10).min(40);

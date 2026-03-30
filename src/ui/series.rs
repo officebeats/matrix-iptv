@@ -9,6 +9,7 @@ use crate::app::{App, Pane};
 use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, DARK_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_DIM};
 use crate::parser::parse_stream;
 use crate::ui::common::stylize_channel_name;
+use crate::ui::utils::visible_window;
 
 pub fn render_series_view(f: &mut Frame, app: &mut App, area: Rect) {
     let is_active = true; // Overall view is active
@@ -39,19 +40,12 @@ pub fn render_series_view(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let visible_height = area.height.saturating_sub(2) as usize;
-    let total = app.series_streams.len();
+    let (start, end) = visible_window(app.selected_series_stream_index, app.series_streams.len(), visible_height);
     let selected = app.selected_series_stream_index;
 
-    let half_window = visible_height / 2;
-    let start = if selected > half_window { selected - half_window } else { 0 };
-    let end = (start + visible_height + half_window).min(total);
-    let adjusted_start = if end == total && end > visible_height + half_window {
-        end.saturating_sub(visible_height + half_window)
-    } else { start };
-
     let items: Vec<ListItem> = app.series_streams.iter().enumerate()
-        .skip(adjusted_start)
-        .take(end - adjusted_start)
+        .skip(start)
+        .take(end - start)
         .map(|(_, s)| {
             let mut spans = vec![];
             
@@ -59,7 +53,7 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
             let (display_name, quality) = if let Some(ref parsed) = s.cached_parsed {
                 (parsed.display_name.clone(), parsed.quality)
             } else {
-                let p = parse_stream(&s.name, app.provider_timezone.as_deref());
+                let p = parse_stream(&s.name, app.session.provider_timezone.as_deref());
                 (p.display_name, p.quality)
             };
 
@@ -123,7 +117,7 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .highlight_symbol(" ▎");
 
     // Convert TableState selection to a temporary ListState for List widget rendering
-    let sel = if adjusted_start > 0 { Some(selected - adjusted_start) } else { app.series_stream_list_state.selected() };
+    let sel = Some(selected - start);
     let mut adjusted_state = ratatui::widgets::ListState::default();
     adjusted_state.select(sel);
     f.render_stateful_widget(list, inner_area, &mut adjusted_state);
@@ -131,19 +125,12 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
 
 fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let visible_height = area.height.saturating_sub(2) as usize;
-    let total = app.series_episodes.len();
+    let (start, end) = visible_window(app.selected_series_episode_index, app.series_episodes.len(), visible_height);
     let selected = app.selected_series_episode_index;
 
-    let half_window = visible_height / 2;
-    let start = if selected > half_window { selected - half_window } else { 0 };
-    let end = (start + visible_height + half_window).min(total);
-    let adjusted_start = if end == total && end > visible_height + half_window {
-        end.saturating_sub(visible_height + half_window)
-    } else { start };
-
     let items: Vec<ListItem> = app.series_episodes.iter().enumerate()
-        .skip(adjusted_start)
-        .take(end - adjusted_start)
+        .skip(start)
+        .take(end - start)
         .map(|(_, ep)| {
             let title = ep.title.as_deref().unwrap_or("Untitled");
             let spans = vec![
@@ -167,6 +154,6 @@ fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .highlight_symbol(" ▎");
 
     let mut adjusted_state = app.series_episode_list_state.clone();
-    if adjusted_start > 0 { adjusted_state.select(Some(selected - adjusted_start)); }
+    adjusted_state.select(Some(selected - start));
     f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }
