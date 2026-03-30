@@ -1031,18 +1031,23 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     }
 
     // Try to extract location (keep existing logic)
-    if let Some(start) = display_name.find('(') {
-        if let Some(end) = display_name.find(')') {
-            if end > start {
-                let loc = display_name[start + 1..end].to_string();
-                if loc.len() < 20 && !loc.contains("LIVE") && !loc.contains(':') {
-                    // Exclude timestamps
-                    location = Some(loc);
-                    // Strip the parenthetical from display_name to avoid duplicate display
-                    display_name = format!("{}{}",
-                        &display_name[..start],
-                        &display_name[end + 1..]
-                    ).trim().to_string();
+    // Only extract location if it doesn't look like an active sports matchup with abbreviations 
+    // to prevent stripping team abbreviations (e.g. `Hawks (ATL) x Bulls (CHI)`)
+    let is_matchup = display_name.to_lowercase().contains(" vs ") || display_name.to_lowercase().contains(" x ") || display_name.contains(" @ ");
+    if !is_matchup {
+        if let Some(start) = display_name.find('(') {
+            if let Some(end) = display_name.find(')') {
+                if end > start {
+                    let loc = display_name[start + 1..end].to_string();
+                    if loc.len() < 20 && !loc.contains("LIVE") && !loc.contains(':') {
+                        // Exclude timestamps
+                        location = Some(loc);
+                        // Strip the parenthetical from display_name to avoid duplicate display
+                        display_name = format!("{}{}",
+                            &display_name[..start],
+                            &display_name[end + 1..]
+                        ).trim().to_string();
+                    }
                 }
             }
         }

@@ -464,12 +464,6 @@ pub async fn handle_key_event(
                     app.search_state.query.clear();
                     app.last_search_query.clear();
                     app.update_search();
-
-                    // Pre-fetch all live streams if not cached
-                    if app.global_all_streams.is_empty() && !app.state_loading {
-                        app.state_loading = true;
-                        crate::handlers::async_actions::spawn_live_scan(app, tx);
-                    }
                 }
                 KeyCode::Char('2') => {
                     app.current_screen = CurrentScreen::VodCategories;
@@ -507,12 +501,6 @@ pub async fn handle_key_event(
                             app.search_state.query.clear();
                             app.last_search_query.clear();
                             app.update_search();
-                            
-                            // Pre-fetch all live streams if not cached
-                            if app.global_all_streams.is_empty() && !app.state_loading {
-                                app.state_loading = true;
-                                crate::handlers::async_actions::spawn_live_scan(app, tx);
-                            }
                         }
                         1 => {
                             app.current_screen = CurrentScreen::VodCategories;
@@ -1033,6 +1021,13 @@ pub async fn handle_key_event(
                                                 let _ = tx.send(AsyncAction::TotalChannelsLoaded(all_streams)).await;
                                             });
                                         }
+                                    } else if let Some(streams) = app.global_streams_by_cat.get(&cat_id) {
+                                        app.all_streams = streams.clone();
+                                        app.current_screen = CurrentScreen::Streams;
+                                        app.active_pane = Pane::Streams;
+                                        app.selected_stream_index = 0;
+                                        app.stream_list_state.select(Some(0));
+                                        app.update_search();
                                     } else if let Some(client) = &app.current_client {
                                         let client = client.clone();
                                         let tx = tx.clone();
@@ -1296,6 +1291,14 @@ pub async fn handle_key_event(
                                 app.select_vod_category(idx);
                                 app.current_screen = CurrentScreen::VodStreams;
                                 app.active_pane = Pane::Streams;
+                            } else if let Some(streams) = app.global_vod_streams_by_cat.get(&app.vod_categories[idx].category_id) {
+                                app.all_vod_streams = streams.clone();
+                                app.vod_streams = streams.clone();
+                                app.current_screen = CurrentScreen::VodStreams;
+                                app.active_pane = Pane::Streams;
+                                app.selected_vod_stream_index = 0;
+                                app.vod_stream_list_state.select(Some(0));
+                                app.update_search();
                             } else if let Some(client) = &app.current_client {
                                 let cat_id = app.vod_categories[idx].category_id.clone();
                                 let client = client.clone();
@@ -1587,6 +1590,14 @@ pub async fn handle_key_event(
                                 app.select_series_category(idx);
                                 app.current_screen = CurrentScreen::SeriesStreams;
                                 app.active_pane = Pane::Streams;
+                            } else if let Some(streams) = app.global_series_streams_by_cat.get(&app.series_categories[idx].category_id) {
+                                app.all_series_streams = streams.clone();
+                                app.series_streams = streams.clone();
+                                app.current_screen = CurrentScreen::SeriesStreams;
+                                app.active_pane = Pane::Streams;
+                                app.selected_series_stream_index = 0;
+                                app.series_stream_list_state.select(Some(0));
+                                app.update_search();
                             } else if let Some(client) = &app.current_client {
                                 let cat_id = app.series_categories[idx].category_id.clone();
                                 let client = client.clone();
@@ -1649,6 +1660,13 @@ pub async fn handle_key_event(
                                 if !app.global_all_series_streams.is_empty() {
                                     app.select_series_category(idx);
                                     app.active_pane = Pane::Streams;
+                                } else if let Some(streams) = app.global_series_streams_by_cat.get(&app.series_categories[idx].category_id) {
+                                    app.all_series_streams = streams.clone();
+                                    app.series_streams = streams.clone();
+                                    app.active_pane = Pane::Streams;
+                                    app.selected_series_stream_index = 0;
+                                    app.series_stream_list_state.select(Some(0));
+                                    app.update_search();
                                 } else if let Some(client) = &app.current_client {
                                     let cat_id = app.series_categories[idx].category_id.clone();
                                     let client = client.clone();

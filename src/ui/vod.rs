@@ -165,8 +165,10 @@ pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
         .highlight_symbol(" ▎");
 
-    let mut adjusted_state = app.vod_stream_list_state.clone();
-    if adjusted_start > 0 { adjusted_state.select(Some(selected - adjusted_start)); }
+    // Convert TableState selection to a temporary ListState for List widget rendering
+    let sel = if adjusted_start > 0 { Some(selected - adjusted_start) } else { app.vod_stream_list_state.selected() };
+    let mut adjusted_state = ratatui::widgets::ListState::default();
+    adjusted_state.select(sel);
     f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }
 

@@ -329,6 +329,8 @@ pub fn get_team_color_with_fallback(name: &str, is_home: bool) -> Color {
     }
 }
 
+use std::sync::OnceLock;
+
 pub fn is_generic_label(name: &str) -> bool {
     let name = name.to_uppercase();
     let generics = [
@@ -346,7 +348,8 @@ pub fn is_generic_label(name: &str) -> bool {
     }
 
     // Check for "PACKAGE 01", "LIVE 05" etc.
-    let re_generic = regex::Regex::new(r"(?i)^(LIVE|PACKAGE|NETWORK|TV|STREAM)\s+\d+$").unwrap();
+    static RE_GENERIC: OnceLock<regex::Regex> = OnceLock::new();
+    let re_generic = RE_GENERIC.get_or_init(|| regex::Regex::new(r"(?i)^(LIVE|PACKAGE|NETWORK|TV|STREAM)\s+\d+$").unwrap());
     if re_generic.is_match(&name) {
         return true;
     }
@@ -364,18 +367,18 @@ pub struct SportsEvent {
 }
 
 pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
-    // Regex for: [Prefix:] Team One (T1) [separator] Team Two (T2) [time/other info]
-    // Supported separators: x, vs, @, - (if surrounded by spaces)
-    // We use a non-greedy match for names and look for boundaries like " - ", " start:", "[", or end of string.
-    // Enhanced stop markers: look for common IPTV suffixes like " (HD)", " - ET", " / UK", " | ", etc.
-    let re = regex::Regex::new(r"(?i)(?:^|[:])\s*([^:(|]+?)\s*(?:\(([^)]+?)\))?\s*(?:(?:\s+(?:x|vs|at)\s+)|@|\s-\s)\s*([^:(\[|/]+?)\s*(?:\(([^)]+?)\))?(?:\s+(?:start:|\[|\(|\d{1,2}:\d{2}|\s+-\s+|/|\|)|$)").ok()?;
+    static RE_EVENT: OnceLock<regex::Regex> = OnceLock::new();
+    let re = RE_EVENT.get_or_init(|| {
+        regex::Regex::new(r"(?i)(?:^|[:])\s*([^:(|]+?)\s*(?:\(([^)]+?)\))?\s*(?:(?:\s+(?:x|vs|at)\s+)|@|\s-\s)\s*([^:(\[|/]+?)\s*(?:\(([^)]+?)\))?(?:\s+(?:start:|\[|\(|\d{1,2}:\d{2}|\s+-\s+|/|\|)|$)").unwrap()
+    });
+    println!("display_name entering parse_sports_event: {:?}", display_name);
 
     if let Some(caps) = re.captures(display_name) {
         let team1 = caps.get(1)?.as_str().trim().to_string();
         let team1_abbr = caps.get(2).map(|m| m.as_str().trim().to_string());
         let team2 = caps.get(3)?.as_str().trim().to_string();
         let team2_abbr = caps.get(4).map(|m| m.as_str().trim().to_string());
-        
+
         // Debug prints
         if display_name.contains("start:2025-12-21") {
             println!("DEBUG: display_name: {:?}", display_name);
@@ -386,27 +389,31 @@ pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
 
         // 1. Strip [brackets] (e.g. [EVENT ONLY])
         if team1.contains('[') {
-            let re_bracket = regex::Regex::new(r"\[.*?\]").unwrap();
+            static RE_BRACKET: OnceLock<regex::Regex> = OnceLock::new();
+            let re_bracket = RE_BRACKET.get_or_init(|| regex::Regex::new(r"\[.*?\]").unwrap());
             team1 = re_bracket.replace_all(&team1, "").to_string();
         }
 
         // 2. Strip common patterns like "LIVE FOOTBALL 01", "NBA PACKAGE", etc.
         // Usually these are at the start and followed by spaces.
-        let prefixes = [
-            r"(?i)^LIVE\s+FOOTBALL\s+\d+\b",
-            r"(?i)^LIVE\s+NBA\s+\d+\b",
-            r"(?i)^NBA\s+PACKAGE\b",
-            r"(?i)^NFL\s+PACKAGE\b",
-            r"(?i)^WORLD\s+SPORT\b",
-            r"(?i)^UK\s+SPORTS\b",
-            r"(?i)^US\s+SPORTS\b",
-            r"(?i)^✦●✦",
-            r"(?i)^######",
-            r"(?i)^======",
-        ];
+        static RE_PREFIXES: OnceLock<Vec<regex::Regex>> = OnceLock::new();
+        let prefixes_re = RE_PREFIXES.get_or_init(|| {
+            let prefixes = [
+                r"(?i)^LIVE\s+FOOTBALL\s+\d+\b",
+                r"(?i)^LIVE\s+NBA\s+\d+\b",
+                r"(?i)^NBA\s+PACKAGE\b",
+                r"(?i)^NFL\s+PACKAGE\b",
+                r"(?i)^WORLD\s+SPORT\b",
+                r"(?i)^UK\s+SPORTS\b",
+                r"(?i)^US\s+SPORTS\b",
+                r"(?i)^✦●✦",
+                r"(?i)^######",
+                r"(?i)^======",
+            ];
+            prefixes.iter().map(|p| regex::Regex::new(p).unwrap()).collect()
+        });
 
-        for p in prefixes {
-            let re_p = regex::Regex::new(p).unwrap();
+        for re_p in prefixes_re {
             team1 = re_p.replace(&team1, "").to_string();
         }
 
@@ -418,9 +425,11 @@ pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
         }
 
         // Try to extract start time if present in the rest of the string
-        let start_time_re =
-            regex::Regex::new(r"(?i)start:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").ok()?;
-        let am_pm_re = regex::Regex::new(r"(?i)(\d{1,2}:\d{2})\s*(am|pm)").ok()?;
+        static RE_START: OnceLock<regex::Regex> = OnceLock::new();
+        static RE_AMPM: OnceLock<regex::Regex> = OnceLock::new();
+        
+        let start_time_re = RE_START.get_or_init(|| regex::Regex::new(r"(?i)start:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").unwrap());
+        let am_pm_re = RE_AMPM.get_or_init(|| regex::Regex::new(r"(?i)(\d{1,2}:\d{2})\s*(am|pm)").unwrap());
 
         let start_time_raw = if let Some(time_caps) = start_time_re.captures(display_name) {
             time_caps

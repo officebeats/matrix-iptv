@@ -255,6 +255,8 @@ pub async fn handle_async_action(
             let wrapped: Vec<Arc<Stream>> = streams.into_iter().map(Arc::new).collect();
             if cat_id == "ALL" {
                 app.global_all_streams = wrapped.clone();
+            } else {
+                app.global_streams_by_cat.insert(cat_id.clone(), wrapped.clone());
             }
             app.all_streams = wrapped.clone();
             app.current_screen = CurrentScreen::Streams;
@@ -289,6 +291,8 @@ pub async fn handle_async_action(
             let wrapped: Vec<Arc<Stream>> = streams.into_iter().map(Arc::new).collect();
             if cat_id == "ALL" {
                 app.global_all_vod_streams = wrapped.clone();
+            } else {
+                app.global_vod_streams_by_cat.insert(cat_id.clone(), wrapped.clone());
             }
             app.all_vod_streams = wrapped.clone();
             app.vod_streams = wrapped;
@@ -322,6 +326,8 @@ pub async fn handle_async_action(
             let wrapped: Vec<Arc<Stream>> = streams.into_iter().map(Arc::new).collect();
             if cat_id == "ALL" {
                 app.global_all_series_streams = wrapped.clone();
+            } else {
+                app.global_series_streams_by_cat.insert(cat_id.clone(), wrapped.clone());
             }
             app.all_series_streams = wrapped.clone();
             app.series_streams = wrapped;

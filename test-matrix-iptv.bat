@@ -12,12 +12,12 @@ taskkill /F /IM mpv.exe 2>nul && echo     - Killed mpv.exe
 timeout /t 1 /nobreak >nul
 
 :: Set local target dir to avoid OneDrive sync locks
-set CARGO_TARGET_DIR=C:\Users\admin-beats\cargo-target
+set CARGO_TARGET_DIR=%USERPROFILE%\cargo-target
 
 pushd "%~dp0"
 
-echo [*] Rebuilding binary...
-cargo build --release
+echo [*] Rebuilding binary (fast test mode)...
+cargo build
 if %ERRORLEVEL% NEQ 0 (
     echo [!] Build Failed!
     popd
@@ -26,7 +26,7 @@ if %ERRORLEVEL% NEQ 0 (
 
 echo [*] Syncing binary to bin/ folder...
 :: Copy from the new target location
-copy /Y "C:\Users\admin-beats\cargo-target\release\matrix-iptv.exe" "bin\matrix-iptv.exe" >nul
+copy /Y "%USERPROFILE%\cargo-target\debug\matrix-iptv.exe" "bin\matrix-iptv.exe" >nul
 
 echo [*] Verifying version before launch:
 bin\matrix-iptv.exe --version

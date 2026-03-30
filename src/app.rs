@@ -2288,9 +2288,12 @@ mod tests {
 
         // 4. Simulate Background Scan Completion (TotalChannelsLoaded)
         app.global_all_streams = vec![Arc::new(sports_stream), Arc::new(news_stream)];
+        app.build_category_indices();
         
         // Trigger the logic we added to AsyncAction::TotalChannelsLoaded
         app.select_category(app.selected_category_index);
+        app.refresh_streams_from_cache();
+        app.update_search();
 
         // 5. Verify View
         // Should ONLY contain Sports stream
@@ -2324,36 +2327,36 @@ mod tests {
         app.grid_cols = 4;
         
         // Horizontal testing
-        app.selected_category_index = 0; // Starts at 0
-        app.move_category_x(true); // Right -> 1
-        assert_eq!(app.selected_category_index, 1);
+        app.selected_category_index = 0; // Col 0 Row 0
+        app.move_category_x(true); // Right -> Col 1 Row 0 (index 3)
+        assert_eq!(app.selected_category_index, 3);
         
-        app.move_category_x(false); // Left -> 0
+        app.move_category_x(false); // Left -> Col 0 Row 0 (index 0)
         assert_eq!(app.selected_category_index, 0);
         
         app.move_category_x(false); // Left bounded -> 0
         assert_eq!(app.selected_category_index, 0);
+
+        // Vertical testing (Up/Down)
+        app.move_category_y(true); // Down -> Col 0 Row 1 (index 1)
+        assert_eq!(app.selected_category_index, 1);
         
-        // Vertical testing (2D grid logic)
-        app.move_category_y(true); // Down -> 0 + 4 = 4
-        assert_eq!(app.selected_category_index, 4);
+        app.move_category_y(true); // Down -> Col 0 Row 2 (index 2)
+        assert_eq!(app.selected_category_index, 2);
         
-        app.move_category_y(true); // Down -> 4 + 4 = 8
-        assert_eq!(app.selected_category_index, 8);
+        app.move_category_y(true); // Down bounded -> Col 0 Row 2 (index 2)
+        assert_eq!(app.selected_category_index, 2);
+
+        app.move_category_y(false); // Up -> Col 0 Row 1 (index 1)
+        assert_eq!(app.selected_category_index, 1);
         
-        app.move_category_y(true); // Down -> 8 + 4 = 12 (snaps to max 9)
-        assert_eq!(app.selected_category_index, 9);
-        
-        // Jump bottom boundary check
-        app.move_category_y(false); // Up -> 9 - 4 = 5
+        // Horizontal from row 2
+        app.selected_category_index = 2; // Col 0 Row 2
+        app.move_category_x(true); // Right to Col 1 -> Col 1 Row 2 (index 5)
         assert_eq!(app.selected_category_index, 5);
         
-        // Edge boundaries over uneven sizes
-        app.selected_category_index = 3; // End of row 1
-        app.move_category_y(true); // Down from 3 -> 7
+        app.move_category_x(true); // Right to Col 2 -> Col 2 only has 2 rows! 
+        // So it snaps to Col 2 Row 1 (index 7)
         assert_eq!(app.selected_category_index, 7);
-        
-        app.move_category_y(true); // Down from 7 -> 11 (snaps to max 9)
-        assert_eq!(app.selected_category_index, 9);
     }
 }

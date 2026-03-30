@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Rect, Layout, Constraint, Direction},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{List, ListItem, Paragraph, Block, Borders, Cell, Row, Table},
+    widgets::{Paragraph, Block, Borders, Cell, Row, Table},
     Frame,
 };
 use crate::app::{App, CurrentScreen};
@@ -272,12 +272,11 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
     } else {
         start
     };
-
     let user_tz_str = app.config.get_user_timezone();
     let user_tz: Tz = user_tz_str.parse().unwrap_or(chrono_tz::UTC);
     let tz_display = format!("{} ({})", user_tz_str, Utc::now().with_timezone(&user_tz).format("%Z"));
 
-    let items: Vec<ListItem> = app
+    let items: Vec<Row> = app
         .streams
         .iter()
         .enumerate()
@@ -292,37 +291,46 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             } else {
                 crate::parser::parse_stream(display_name, app.provider_timezone.as_deref())
             };
-            // Separator entries — render as dim section headers, not as channels
             if parsed.is_separator {
                 let label = if parsed.display_name.is_empty() {
                     "───".to_string()
                 } else {
                     format!("─── {} ───", parsed.display_name)
                 };
-                return ListItem::new(Line::from(vec![
-                    ratatui::text::Span::styled("     ", Style::default()),
-                    ratatui::text::Span::styled("│", Style::default().fg(TEXT_DIM)),
-                    ratatui::text::Span::styled(label, Style::default().fg(TEXT_DIM).add_modifier(Modifier::DIM)),
-                ]));
+                return Row::new(vec![
+                    Cell::from(""),
+                    Cell::from(""),
+                    Cell::from(Line::from(vec![
+                        ratatui::text::Span::styled("     ", Style::default()),
+                        ratatui::text::Span::styled("│", Style::default().fg(TEXT_DIM)),
+                        ratatui::text::Span::styled(label, Style::default().fg(TEXT_DIM).add_modifier(Modifier::DIM)),
+                    ])),
+                    Cell::from(""),
+                ]);
             }
 
+            let _is_blink_on = app.loading_tick / 4 % 2 == 0;
+
+            let mut spans = vec![];
+            
+            // 0. Channel number column (fixed width, right-aligned) — use relative row number
+            let ch_num_str = format!("{}", idx + 1);
+            let ch_display = ch_num_str.clone();
+
+            // 1. Live Status / Icon
             let now = Utc::now();
             let is_ended = parsed.stop_time.map(|t| now > t).unwrap_or(false);
             let is_live = parsed.start_time.map(|st| now >= st).unwrap_or(false) && !is_ended;
             let is_blink_on = app.loading_tick / 4 % 2 == 0;
 
-            let mut spans = vec![];
-            
-            // 0. Channel number column (fixed width, right-aligned) — use provider's num field
-            let ch_num = s.num.as_ref()
-                .and_then(|n| n.to_string_value())
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or((idx + 1) as u64);
-            let row_num = format!("{:>4} ", ch_num);
-            spans.push(ratatui::text::Span::styled(row_num, Style::default().fg(TEXT_DIM)));
-            spans.push(ratatui::text::Span::styled(" ", Style::default().fg(TEXT_DIM)));
-            
-            // 1. Icon Logic (Sports Only)
+            let status_span = if is_live {
+                let live_color = if is_blink_on { Color::Rgb(255, 100, 100) } else { TEXT_DIM };
+                ratatui::text::Span::styled(" ● ", Style::default().fg(live_color))
+            } else {
+                ratatui::text::Span::styled("   ", Style::default())
+            };
+
+            // 2. Icon Logic (Sports Only)
             let mut league_icon_span: Option<ratatui::text::Span> = None;
             let upper_name = parsed.display_name.to_uppercase();
             if upper_name.contains("NBA") || upper_name.contains("NCAAB") {
@@ -354,7 +362,6 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             if let Some(icon) = league_icon_span {
                  spans.push(icon);
             } else {
-                // Extended Auto-Discovery (Silent discovery, no icons needed if not matched above)
                 let name = parsed.display_name.to_uppercase();
                 if name.contains("FOOTBALL") || name.contains("LIGUE") || name.contains("BUNDESLIGA") || name.contains("SERIE A") {
                     spans.push(ratatui::text::Span::styled("SOCCER ", Style::default().fg(Color::Rgb(200, 255, 200))));
@@ -367,21 +374,13 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 }
             }
 
-            // 2. Channel Number
-            if let Some(ref cp) = parsed.channel_prefix {
-                 let num_only = cp.chars().filter(|c| c.is_digit(10)).collect::<String>();
-                 if !num_only.is_empty() {
-                     spans.push(ratatui::text::Span::styled(format!("{}: ", num_only), Style::default().fg(TEXT_DIM)));
-                 }
-            }
-
             // 3. Favorite indicator
             let s_id = crate::api::get_id_str(&s.stream_id);
             if app.config.favorites.streams.contains(&s_id) {
                 spans.push(ratatui::text::Span::styled("* ", Style::default().fg(MATRIX_GREEN)));
             }
 
-            // 3. Country Flag
+            // 4. Country Flag
             if let Some(ref country) = parsed.country {
                 let is_us_en = country == "US" || country == "USA" || country == "AM" || country == "EN";
                 if !(app.config.playlist_mode.is_merica_variant() && is_us_en) {
@@ -392,7 +391,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 }
             }
 
-            // 4. Name / Matchup
+            // 5. Name / Matchup
             let is_league = parsed.country.as_ref().map(|cc| ["NBA", "NFL", "MLB", "NHL", "UFC", "SPORTS", "PPV"].contains(&cc.as_str())).unwrap_or(false);
             
             let score_data_for_color = app.get_score_for_stream(&parsed.display_name);
@@ -401,7 +400,6 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             } else {
                 MATRIX_GREEN
             };
-            
             
             // SPLIT TEAM COLORING
             if let Some(score) = score_data_for_color {
@@ -451,7 +449,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                  spans.push(ratatui::text::Span::raw("   "));
             } else {
                 // Standard rendering
-                let max_width = area.width.saturating_sub(4) as usize; 
+                let max_width = area.width.saturating_sub(15) as usize; 
                 let mut display_name = parsed.display_name.clone();
                 let mut year_suffix = String::new();
                 
@@ -495,12 +493,22 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 }
                 
                 spans.extend(styled_name);
+                
+                // UX Fix: Inline the currently playing EPG program title directly into the row if available!
+                let s_id_str = crate::api::get_id_str(&s.stream_id);
+                if let Some(epg_title) = app.epg_cache.get(&s_id_str) {
+                    if !epg_title.is_empty() {
+                        spans.push(ratatui::text::Span::styled("   [", Style::default().fg(TEXT_DIM)));
+                        spans.push(ratatui::text::Span::styled(epg_title.clone(), Style::default().fg(Color::Rgb(150, 150, 150))));
+                        spans.push(ratatui::text::Span::styled("]", Style::default().fg(TEXT_DIM)));
+                    }
+                }
             }
 
-            // 5. Score/Clock Logic
+            // 6. Score/Clock Logic
             let score_data = app.get_score_for_stream(&parsed.display_name);
             
-            let (final_is_live, final_is_ended, status_text, score_text) = if let Some(score) = score_data {
+            let (_final_is_live, final_is_ended, status_text, score_text) = if let Some(score) = score_data {
                 let is_active = score.status_state == "in";
                 let is_finished = score.status_state == "post";
                 let clock = if is_finished {
@@ -531,7 +539,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                     let time_str = format!(" {} ", format_relative_time(st, &user_tz));
                     let mut time_style = Style::default().fg(TEXT_SECONDARY);
                     if final_is_ended {
-                        time_style = time_style.add_modifier(Modifier::CROSSED_OUT);
+                         time_style = time_style.add_modifier(Modifier::CROSSED_OUT);
                     }
                     spans.push(ratatui::text::Span::styled(time_str, time_style));
                 }
@@ -543,13 +551,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 }
             }
 
-            // 6. Live / Ended Badges
-            if final_is_live {
-                let live_color = if is_blink_on { Color::Rgb(255, 100, 100) } else { TEXT_DIM };
-                let dot = if is_blink_on { "● " } else { "  " };
-                spans.push(ratatui::text::Span::styled(dot, Style::default().fg(live_color)));
-                spans.push(ratatui::text::Span::styled("LIVE", Style::default().fg(live_color).add_modifier(Modifier::BOLD)));
-            } else if final_is_ended {
+            if final_is_ended {
                 spans.push(ratatui::text::Span::styled(" ended", Style::default().fg(TEXT_DIM)));
             }
 
@@ -562,9 +564,22 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
 
             // 8. Network Health
             let health = app.sports.stream_health_cache.get(&s_id).copied().or(s.latency_ms);
-            spans.push(latency_to_bars(health));
+            let health_span = latency_to_bars(health);
 
-            ListItem::new(Line::from(spans))
+            // Construct Table Row
+            let is_selected = idx == selected;
+            let row_style = if is_selected {
+                Style::default().bg(HIGHLIGHT_BG)
+            } else {
+                Style::default()
+            };
+
+            Row::new(vec![
+                Cell::from(format!("{:>5}", ch_display)).style(Style::default().fg(TEXT_DIM)),
+                Cell::from(status_span),
+                Cell::from(Line::from(spans)),
+                Cell::from(health_span),
+            ]).style(row_style)
         })
         .collect();
 
@@ -594,44 +609,37 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         return;
     }
 
-    // ── Column Header Row (JiraTUI-style) ──
-    let header_height = 2u16; // header text + separator line
-    let header_area = Rect {
-        x: inner_area.x,
-        y: inner_area.y,
-        width: inner_area.width,
-        height: header_height.min(inner_area.height),
-    };
-    let list_area = Rect {
-        x: inner_area.x,
-        y: inner_area.y + header_height.min(inner_area.height),
-        width: inner_area.width,
-        height: inner_area.height.saturating_sub(header_height),
-    };
-
-    // Render column headers
-    let header_style = Style::default().fg(TEXT_SECONDARY).add_modifier(Modifier::BOLD);
-    let sep_line = "─".repeat(inner_area.width as usize);
-    let header_text = vec![
-        Line::from(vec![
-            Span::styled("   Ch # ", header_style),
-            Span::styled("│ ", Style::default().fg(TEXT_DIM)),
-            Span::styled("Name", header_style),
-        ]),
-        Line::from(Span::styled(&sep_line, Style::default().fg(TEXT_DIM))),
+    // ── Table Layout (Advanced Alignment) ──
+    let constraints = [
+        Constraint::Length(6),  // Ch #
+        Constraint::Length(3),  // Status dot
+        Constraint::Fill(1),    // Name / Info
+        Constraint::Length(6),  // Health bars (Expanded to fit "HEALTH" text)
     ];
-    f.render_widget(Paragraph::new(header_text), header_area);
 
-    let list = List::new(items)
-        .highlight_style(list_highlight_style())
-        .highlight_symbol(" ▎");
+    let header_style = Style::default().fg(TEXT_SECONDARY).add_modifier(Modifier::BOLD);
+    let header = Row::new(vec![
+        Cell::from("  CH#").style(header_style),
+        Cell::from("").style(header_style),
+        Cell::from(" CHANNEL / STREAM").style(header_style),
+        Cell::from("HEALTH").style(header_style),
+    ]).height(1).style(Style::default().bg(Color::Rgb(10, 25, 10))); // Subtle dark green header bg
 
-    let mut adjusted_state = app.stream_list_state.clone();
+    let table = Table::new(items, constraints)
+        .header(header)
+        .column_spacing(1)
+        .row_highlight_style(list_highlight_style())
+        .highlight_symbol("▎");
+
+    // Map the ListState selection to a TableState for rendering
+    let mut table_state = ratatui::widgets::TableState::default();
     if adjusted_start > 0 {
-        adjusted_state.select(Some(selected - adjusted_start));
+        table_state.select(Some(selected - adjusted_start));
+    } else {
+        table_state.select(app.stream_list_state.selected());
     }
 
-    f.render_stateful_widget(list, list_area, &mut adjusted_state);
+    f.render_stateful_widget(table, inner_area, &mut table_state);
 }
 
 pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
@@ -655,13 +663,13 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let user_tz_str = app.config.get_user_timezone();
     let user_tz: Tz = user_tz_str.parse().unwrap_or(chrono_tz::UTC);
 
-    let items: Vec<ListItem> = app
+    let items: Vec<Row> = app
         .global_search_results
         .iter()
         .enumerate()
         .skip(adjusted_start)
         .take(end - adjusted_start)
-        .map(|(_, s)| {
+        .map(|(idx, s)| {
             let s_id = crate::api::get_id_str(&s.stream_id);
             let display_name = &s.name;
 
@@ -670,17 +678,65 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 crate::parser::parse_stream(display_name, app.provider_timezone.as_deref())
             };
+            
+            if parsed.is_separator {
+                 return Row::new(vec![
+                    Cell::from(""),
+                    Cell::from(""),
+                    Cell::from(Line::from(vec![
+                        ratatui::text::Span::styled("     ", Style::default()),
+                        ratatui::text::Span::styled("│", Style::default().fg(TEXT_DIM)),
+                        ratatui::text::Span::styled(format!("─── {} ───", parsed.display_name), Style::default().fg(TEXT_DIM).add_modifier(Modifier::DIM)),
+                    ])),
+                    Cell::from(""),
+                ]);
+            }
+
             let mut spans = vec![];
             
+            // Channel Number Logic
+            let ch_num_str = if let Some(ref num) = s.num {
+                let num_val = num.to_string_value().unwrap_or_default();
+                if num_val == "0" || num_val.is_empty() {
+                    crate::api::get_id_str(&s.stream_id)
+                } else {
+                    num_val
+                }
+            } else if let Some(ref cp) = parsed.channel_prefix {
+                cp.clone()
+            } else {
+                crate::api::get_id_str(&s.stream_id)
+            };
+            
+            let ch_display = if ch_num_str.len() > 5 {
+                format!("..{}", &ch_num_str[ch_num_str.len().saturating_sub(4)..])
+            } else {
+                ch_num_str.clone()
+            };
+
+            // Status Icon logic
+            let now = Utc::now();
+            let is_ended = parsed.stop_time.map(|t| now > t).unwrap_or(false);
+            let is_live = parsed.start_time.map(|st| now >= st).unwrap_or(false) && !is_ended;
+            let is_blink_on = app.loading_tick / 4 % 2 == 0;
+
+            let status_span = if is_live {
+                let live_color = if is_blink_on { Color::Rgb(255, 100, 100) } else { TEXT_DIM };
+                ratatui::text::Span::styled(" ● ", Style::default().fg(live_color))
+            } else {
+                ratatui::text::Span::styled("   ", Style::default())
+            };
+
+            let name_color = if s.stream_type == "live" { MATRIX_GREEN } else { TEXT_PRIMARY };
 
             let (mut styled_name, _) = stylize_channel_name(
                 &parsed.display_name,
                 false,
-                false,
+                is_ended,
                 parsed.quality,
                 None,
                 parsed.sports_event.as_ref(),
-                Style::default().fg(MATRIX_GREEN),
+                Style::default().fg(name_color),
             );
             
             if let Some(y) = &parsed.year {
@@ -698,14 +754,28 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
                 }
             }
 
+            // Network Health
             let health = app.sports.stream_health_cache.get(&s_id).copied().or(s.latency_ms);
-            spans.push(latency_to_bars(health));
+            let health_span = latency_to_bars(health);
 
             if let Some(account) = &s.account_name {
                 spans.push(ratatui::text::Span::styled(format!(" [{}]", account), Style::default().fg(TEXT_DIM)));
             }
 
-            ListItem::new(Line::from(spans))
+            // Construct Row
+            let is_selected = idx == selected;
+            let row_style = if is_selected {
+                Style::default().bg(HIGHLIGHT_BG)
+            } else {
+                Style::default()
+            };
+
+            Row::new(vec![
+                Cell::from(format!("{:>5}", ch_display)).style(Style::default().fg(TEXT_DIM)),
+                Cell::from(status_span),
+                Cell::from(Line::from(spans)),
+                Cell::from(health_span),
+            ]).style(row_style)
         })
         .collect();
 
@@ -716,16 +786,35 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
     };
     let inner_area = crate::ui::common::render_matrix_box(f, area, &title, SOFT_GREEN);
 
-    let list = List::new(items)
-        .highlight_style(list_highlight_style())
-        .highlight_symbol(" ▎");
-
-    let mut adjusted_state = app.global_search_list_state.clone();
-    if adjusted_start > 0 {
-        adjusted_state.select(Some(selected - adjusted_start));
+    if app.global_search_results.is_empty() {
+         return; // Empty state handled by default box
     }
 
-    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
+    let constraints = [
+        Constraint::Length(6),  // Ch #
+        Constraint::Length(3),  // Status dot
+        Constraint::Fill(1),    // Name / Info
+        Constraint::Length(5),  // Health bars
+    ];
+
+    let header_style = Style::default().fg(TEXT_SECONDARY).add_modifier(Modifier::BOLD);
+    let header = Row::new(vec![
+        Cell::from("  CH#").style(header_style),
+        Cell::from("").style(header_style),
+        Cell::from(" SEARCH RESULTS").style(header_style),
+        Cell::from("HLTH").style(header_style),
+    ]).height(1).style(Style::default().bg(Color::Rgb(10, 20, 10)));
+
+    let table = Table::new(items, constraints)
+        .header(header)
+        .column_spacing(1)
+        .row_highlight_style(list_highlight_style())
+        .highlight_symbol("▎");
+
+    let mut table_state = ratatui::widgets::TableState::default();
+    table_state.select(Some(selected - adjusted_start));
+
+    f.render_stateful_widget(table, inner_area, &mut table_state);
 }
 
 fn latency_to_bars(latency: Option<u64>) -> ratatui::text::Span<'static> {
@@ -909,37 +998,36 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
     }
 
     // ── Field Grid (JiraTUI 2-column fields) ──
-    // Quality | Region on same row
-    let _quality_str = parsed.quality.as_ref()
-        .map(|q| format!(" {} ", q.badge()))
-        .unwrap_or_else(|| "—".to_string());
-    let region_str = parsed.country.as_ref()
-        .map(|c| {
-            let flag = country_flag(c);
-            if !flag.is_empty() { format!("{} {}", flag, c) } else { c.clone() }
-        })
-        .unwrap_or_else(|| "—".to_string());
-
-    // Quality label + Region label
+    let has_quality = parsed.quality.is_some();
+    let has_region = parsed.country.is_some();
     let half = w / 2;
-    lines.push(Line::from(vec![
-        Span::styled(format!("{:<half$}", "Quality"), Style::default().fg(label_color)),
-        Span::styled("Region", Style::default().fg(label_color)),
-    ]));
-    // Quality value + Region value
-    let quality_span = if let Some(q) = &parsed.quality {
-        Span::styled(
-            format!("{:<half$}", format!(" {} ", q.badge())),
-            Style::default().fg(Color::Black).bg(q.color()).add_modifier(Modifier::BOLD),
-        )
-    } else {
-        Span::styled(format!("{:<half$}", "—"), dim_style)
-    };
-    lines.push(Line::from(vec![
-        quality_span,
-        Span::styled(&region_str, value_style),
-    ]));
-    lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+    
+    if has_quality || has_region {
+        let region_str = parsed.country.as_ref()
+            .map(|c| {
+                let flag = country_flag(c);
+                if !flag.is_empty() { format!("{} {}", flag, c) } else { c.clone() }
+            })
+            .unwrap_or_else(|| "—".to_string());
+
+        lines.push(Line::from(vec![
+            Span::styled(format!("{:<half$}", "Quality"), Style::default().fg(label_color)),
+            Span::styled("Region", Style::default().fg(label_color)),
+        ]));
+        let quality_span = if let Some(q) = &parsed.quality {
+            Span::styled(
+                format!("{:<half$}", format!(" {} ", q.badge())),
+                Style::default().fg(Color::Black).bg(q.color()).add_modifier(Modifier::BOLD),
+            )
+        } else {
+            Span::styled(format!("{:<half$}", "—"), dim_style)
+        };
+        lines.push(Line::from(vec![
+            quality_span,
+            Span::styled(region_str.clone(), value_style),
+        ]));
+        lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+    }
 
     // Category
     let cat_display = s.category_id.as_ref().map(|cat_id| {
@@ -951,38 +1039,44 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
                 .map(|c| c.category_name.as_str()))
             .unwrap_or(cat_id.as_str())
             .to_string()
-    }).unwrap_or_else(|| "—".to_string());
+    }).unwrap_or_default();
     
-    lines.push(Line::from(Span::styled("Category", Style::default().fg(label_color))));
-    let cat_trunc = if cat_display.chars().count() > w { 
-        let s: String = cat_display.chars().take(w.saturating_sub(1)).collect();
-        format!("{}…", s) 
-    } else { cat_display };
-    lines.push(Line::from(Span::styled(cat_trunc, value_style)));
-    lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+    if !cat_display.is_empty() && cat_display.to_lowercase() != "null" {
+        lines.push(Line::from(Span::styled("Category", Style::default().fg(label_color))));
+        let cat_trunc = if cat_display.chars().count() > w { 
+            let s: String = cat_display.chars().take(w.saturating_sub(1)).collect();
+            format!("{}…", s) 
+        } else { cat_display };
+        lines.push(Line::from(Span::styled(cat_trunc, value_style)));
+        lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+    }
 
     // EPG Now Playing (own row)
     let s_id_for_epg = crate::api::get_id_str(&s.stream_id);
     let now_playing = app.epg_cache.get(&s_id_for_epg)
-        .map(|s| s.clone())
-        .unwrap_or_else(|| "—".to_string());
+        .cloned()
+        .filter(|s| !s.is_empty() && s.to_lowercase() != "null");
         
-    let epg_trunc = if now_playing.chars().count() > w.saturating_sub(1) {
-        let sc: String = now_playing.chars().take(w.saturating_sub(2)).collect();
-        format!("{}…", sc)
-    } else { now_playing };
-    
-    lines.push(Line::from(Span::styled("Now Playing", Style::default().fg(label_color))));
-    lines.push(Line::from(Span::styled(epg_trunc, value_style)));
-    lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+    if let Some(np) = now_playing {
+        let epg_trunc = if np.chars().count() > w.saturating_sub(1) {
+            let sc: String = np.chars().take(w.saturating_sub(2)).collect();
+            format!("{}…", sc)
+        } else { np };
+        
+        lines.push(Line::from(Span::styled("Now Playing", Style::default().fg(label_color))));
+        lines.push(Line::from(Span::styled(epg_trunc, value_style)));
+        lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+    }
 
     // Stream ID (own row)
-    let sid = s_id_for_epg;
-    lines.push(Line::from(vec![
-        Span::styled("Stream ID", Style::default().fg(label_color)),
-    ]));
-    lines.push(Line::from(Span::styled(&sid, dim_style)));
-    lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+    let sid = s_id_for_epg.clone();
+    if !sid.is_empty() && sid.to_lowercase() != "null" {
+        lines.push(Line::from(vec![
+            Span::styled("Stream ID", Style::default().fg(label_color)),
+        ]));
+        lines.push(Line::from(Span::styled(&sid, dim_style)));
+        lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+    }
 
     // Favorite + Rating row
     let s_id = crate::api::get_id_str(&s.stream_id);
