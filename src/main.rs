@@ -178,6 +178,7 @@ async fn run_app<B: ratatui::backend::Backend>(
     tx: mpsc::Sender<AsyncAction>,
     rx: &mut mpsc::Receiver<AsyncAction>,
 ) -> io::Result<Option<i32>> {
+    #[allow(unused_assignments)]
     let mut needs_redraw = true;
 
     loop {
@@ -211,11 +212,8 @@ async fn run_app<B: ratatui::backend::Backend>(
             needs_redraw = true;
         }
 
-        // Keep animating while a screen transition effect is running
-        #[cfg(not(target_arch = "wasm32"))]
-        if app.transition_effect.is_some() {
-            needs_redraw = true;
-        }
+        // Force continuous redraw to drive the animated lava-lamp typographic borders
+        needs_redraw = true;
 
         // 1.5 Batch EPG Fetching — prefetch for all visible streams, not just the focused one
         if app.current_screen == CurrentScreen::Streams && app.active_pane == Pane::Streams && !app.streams.is_empty() {
@@ -535,7 +533,12 @@ async fn run_app<B: ratatui::backend::Backend>(
         if app.session.state_loading || app.show_matrix_rain {
             timeout_ms = 16;
         }
-        if event::poll(Duration::from_millis(timeout_ms))? {
+        
+        // Yield executor and wait asynchronously to avoid `crossterm::event::poll` hanging indefinitely on Windows
+        tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
+        
+        // Non-blocking poll
+        if event::poll(Duration::from_millis(0))? {
             match event::read()? {
                 Event::Key(key) => {
                     match handlers::input::handle_key_event(app, key, &tx, player).await? {

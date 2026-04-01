@@ -1,7 +1,6 @@
 use matrix_iptv_lib::config::AppConfig;
 use matrix_iptv_lib::api::XtreamClient;
 use matrix_iptv_lib::player::Player;
-use matrix_iptv_lib::config::PlayerEngine;
 use std::time::Duration;
 use tokio::time::sleep;
 

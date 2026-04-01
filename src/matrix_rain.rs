@@ -254,6 +254,95 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
     }
 }
 
+pub fn render_matrix_edge_border(f: &mut Frame, area: Rect, margin_v: u16, margin_h: u16) {
+    let buf = f.buffer_mut();
+    #[cfg(not(target_arch = "wasm32"))]
+    let ms = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis();
+    #[cfg(not(target_arch = "wasm32"))]
+    let t = (ms % 1000000) as f32 / 1000.0 * 0.5;
+    #[cfg(target_arch = "wasm32")]
+    let t = ((js_sys::Date::now() as u64) % 1000000) as f32 / 1000.0 * 0.5;
+
+
+    // Ordered by visual density (Variable Typographic ASCII)
+    let char_set = [' ', '.', '-', '~', ':', '=', '+', '*', 'x', '#', '%', 'W', '@', '█'];
+    
+    let w = area.width as f32;
+    let h = area.height as f32;
+
+    // Define 3 slow-moving boundary attractors using intersecting sine waves
+    let a1x = w * 0.5 + f32::sin(t * 0.8) * w * 0.4;
+    let a1y = h * 0.5 + f32::cos(t * 0.9) * h * 0.4;
+    
+    let a2x = w * 0.5 + f32::cos(t * 1.2 + 1.0) * w * 0.3;
+    let a2y = h * 0.5 + f32::sin(t * 1.5 + 2.0) * h * 0.4;
+    
+    let a3x = w * 0.5 + f32::sin(t * 0.5 + 2.0) * w * 0.45;
+    let a3y = h * 0.5 + f32::sin(t * 0.7 + 1.0) * h * 0.35;
+
+    for y in area.top()..area.bottom() {
+        for x in area.left()..area.right() {
+            let in_top = y < area.top() + margin_v;
+            let in_bottom = y >= area.bottom() - margin_v;
+            let in_left = x < area.left() + margin_h;
+            let in_right = x >= area.right() - margin_h;
+
+            if in_top || in_bottom || in_left || in_right {
+                if let Some(cell) = buf.cell_mut((x, y)) {
+                    let fx = x as f32;
+                    let fy = y as f32 * 2.0; // Terminal chars are typically ~2x taller than wide
+
+                    let py1 = a1y * 2.0;
+                    let py2 = a2y * 2.0;
+                    let py3 = a3y * 2.0;
+
+                    // Calculate squared distances to attractors
+                    let d1 = (fx - a1x).powi(2) + (fy - py1).powi(2) + 1.0;
+                    let d2 = (fx - a2x).powi(2) + (fy - py2).powi(2) + 1.0;
+                    let d3 = (fx - a3x).powi(2) + (fy - py3).powi(2) + 1.0;
+
+                    // Convert distances into brightness blob intensities
+                    // exp(-d/scale) creates a nice Gaussian metaball shape
+                    let blob1 = f32::exp(-d1 / 600.0) * 1.2;
+                    let blob2 = f32::exp(-d2 / 400.0) * 1.0;
+                    let blob3 = f32::exp(-d3 / 700.0) * 1.5;
+
+                    // Add a wavy low-frequency background noise layer
+                    let wave = (f32::sin(fx * 0.08 + t) * f32::cos(fy * 0.05 - t) + 1.0) * 0.15;
+                    
+                    let mut brightness = blob1 + blob2 + blob3 + wave;
+                    brightness = brightness.clamp(0.0, 1.0);
+
+                    // Map brightness to character index
+                    let idx = (brightness * (char_set.len() - 1) as f32).round() as usize;
+                    let ch = char_set[idx];
+
+                    if ch != ' ' {
+                        // Color styling based on brightness density gradient
+                        let color = if brightness > 0.85 {
+                            Color::White
+                        } else if brightness > 0.65 {
+                            Color::Rgb(150, 255, 150)
+                        } else if brightness > 0.4 {
+                            crate::ui::colors::MATRIX_GREEN
+                        } else if brightness > 0.2 {
+                            Color::Rgb(0, 100, 0)
+                        } else {
+                            Color::Rgb(0, 40, 0)
+                        };
+
+                        cell.set_char(ch);
+                        cell.set_style(Style::default().fg(color).add_modifier(Modifier::BOLD));
+                    } else {
+                        cell.set_char(' ');
+                        cell.set_style(Style::default().bg(Color::Rgb(0,0,0)));
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub fn render_welcome_popup(f: &mut Frame, app: &App, area: Rect) {
     let popup_area = centered_rect(70, 60, area);
     

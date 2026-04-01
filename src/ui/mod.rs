@@ -37,46 +37,65 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         area
     );
 
+    // Calculate dynamic margins for Variable Typographic ASCII Matrix border
+    let mut margin_v = 1;
+    let mut margin_h = 2; // Double horizontal to roughly match terminal aspect ratio
+    
+    // The home screen should use a healthy amount of canvas for the background decoration
+    if app.current_screen == CurrentScreen::Home {
+        margin_v = area.height.saturating_mul(15) / 100;
+        margin_h = area.width.saturating_mul(20) / 100;
+    }
+
+    crate::matrix_rain::render_matrix_edge_border(f, area, margin_v, margin_h);
+    
+    let inner_area = ratatui::layout::Rect {
+        x: area.x.saturating_add(margin_h),
+        y: area.y.saturating_add(margin_v),
+        width: area.width.saturating_sub(margin_h * 2),
+        height: area.height.saturating_sub(margin_v * 2),
+    };
+
     // Base Screens
     match app.current_screen {
         CurrentScreen::Home => {
-            home::render_home(f, app, area);
+            home::render_home(f, app, inner_area);
         }
         CurrentScreen::Login => {
-            form::render_login(f, app, area);
+            form::render_login(f, app, inner_area);
         }
         CurrentScreen::Categories | CurrentScreen::Streams => {
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::Settings | CurrentScreen::TimezoneSettings => {
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::ContentTypeSelection => {
-            popups::render_content_type_selection(f, app, area);
+            popups::render_content_type_selection(f, app, inner_area);
         }
         CurrentScreen::GroupManagement => {
-            groups::render_group_management(f, app, area);
+            groups::render_group_management(f, app, inner_area);
         }
         CurrentScreen::GroupPicker => {
             // Render the underlying screen first, then overlay the picker
-            render_main_layout(f, app, area);
-            groups::render_group_picker(f, app, area);
+            render_main_layout(f, app, inner_area);
+            groups::render_group_picker(f, app, inner_area);
         }
         CurrentScreen::Play | CurrentScreen::GlobalSearch => {
             // Placeholder or actual play info screen
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::UpdatePrompt => {
-            popups::render_update_prompt(f, app, area);
+            popups::render_update_prompt(f, app, inner_area);
         }
         CurrentScreen::SportsDashboard => {
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
     }
 
