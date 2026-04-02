@@ -389,6 +389,56 @@ fn is_newer_version(current: &str, tag: &str) -> bool {
     false
 }
 
+/// Returns the path to the update cooldown file (stored next to config)
+#[cfg(not(target_arch = "wasm32"))]
+fn get_update_cooldown_path() -> Option<std::path::PathBuf> {
+    directories::ProjectDirs::from("", "", "matrix-iptv")
+        .map(|dirs| dirs.config_dir().join(".update_cooldown"))
+}
+
+/// Check if an update for the given version was recently dismissed (within cooldown_hours)
+#[cfg(not(target_arch = "wasm32"))]
+fn is_update_dismissed(version: &str, cooldown_hours: u64) -> bool {
+    let path = match get_update_cooldown_path() {
+        Some(p) => p,
+        None => return false,
+    };
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        // Format: "version|unix_timestamp"
+        let parts: Vec<&str> = content.trim().split('|').collect();
+        if parts.len() == 2 {
+            let dismissed_version = parts[0];
+            if let Ok(ts) = parts[1].parse::<u64>() {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let elapsed_hours = (now.saturating_sub(ts)) / 3600;
+                // If same version was dismissed within cooldown window, skip
+                if dismissed_version == version && elapsed_hours < cooldown_hours {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Record that the user dismissed an update for a specific version
+#[cfg(not(target_arch = "wasm32"))]
+pub fn dismiss_update(version: &str) {
+    if let Some(path) = get_update_cooldown_path() {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let _ = std::fs::write(&path, format!("{}|{}", version, now));
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn check_for_updates(tx: tokio::sync::mpsc::Sender<crate::app::AsyncAction>, manual: bool) {
     let current_version = env!("CARGO_PKG_VERSION");
@@ -409,6 +459,10 @@ pub async fn check_for_updates(tx: tokio::sync::mpsc::Sender<crate::app::AsyncAc
         if let Some(tag) = final_url.split("/tag/").last() {
             let tag = tag.trim_start_matches('v');
             if is_newer_version(current_version, tag) {
+                // For automatic (non-manual) checks: skip if user dismissed this version recently
+                if !manual && is_update_dismissed(tag, 24) {
+                    return; // User dismissed this version within the last 24 hours
+                }
                 let _ = tx.send(crate::app::AsyncAction::UpdateAvailable(tag.to_string())).await;
             } else if manual {
                 let _ = tx.send(crate::app::AsyncAction::NoUpdateFound).await;

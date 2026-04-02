@@ -62,8 +62,20 @@ async function performUpdate() {
 
   const tempPath = binaryPath + ".tmp";
 
+  // Record old binary size for loop detection
+  let oldSize = 0;
+  try {
+    oldSize = fs.statSync(binaryPath).size;
+  } catch (e) {}
+
   try {
     await download(releaseUrl, tempPath);
+
+    // Verify the downloaded file is not empty and is a valid size
+    const newSize = fs.statSync(tempPath).size;
+    if (newSize < 1024 * 100) { // Less than 100KB is almost certainly not a valid binary
+      throw new Error(`Downloaded file is too small (${newSize} bytes). Update may have failed.`);
+    }
 
     if (os.platform() !== "win32") {
       fs.chmodSync(tempPath, "755");
@@ -114,6 +126,14 @@ async function performUpdate() {
         const { execSync } = require("child_process");
         execSync(`xattr -d com.apple.quarantine "${binaryPath}" 2>/dev/null || true`);
       } catch (e) {}
+    }
+
+    // Loop detection: if the new binary is the exact same size as the old one,
+    // the update likely downloaded the same version. Don't relaunch to avoid an infinite loop.
+    if (oldSize > 0 && newSize === oldSize) {
+      console.log(`[!] Update downloaded but binary size unchanged (${newSize} bytes).`);
+      console.log(`[!] You may already be on the latest available binary. Skipping relaunch.`);
+      process.exit(0);
     }
 
     console.log(`[+] Update complete. Rebooting system...\n`);

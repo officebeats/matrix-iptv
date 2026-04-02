@@ -409,47 +409,53 @@ pub async fn handle_key_event(
                 }
                 KeyCode::Enter => {
                     if !app.config.accounts.is_empty() {
-                        let acc = &app.config.accounts[app.session.selected_account_index];
-                        let base_url = acc.base_url.clone();
-                        let username = acc.username.clone();
-                        let password = acc.password.clone();
-                        let now = chrono::Utc::now().timestamp();
-                        let needs_refresh = acc.last_refreshed.map(|last| now - last > (5 * 3600)).unwrap_or(true);
-
-                        app.session.state_loading = true;
-                        if needs_refresh {
-                            app.session.loading_message = Some("Refreshing playlist (Data > 5h old)...".to_string());
+                        // If we already have an active session for this account, reuse it
+                        // instead of re-authenticating (avoids provider rate-limiting / 503s)
+                        if app.session.current_client.is_some() && !app.all_categories.is_empty() {
+                            app.current_screen = CurrentScreen::ContentTypeSelection;
+                            app.login_error = None;
                         } else {
-                            app.session.loading_message = Some("Loading playlist...".to_string());
-                        }
+                            let acc = &app.config.accounts[app.session.selected_account_index];
+                            let base_url = acc.base_url.clone();
+                            let username = acc.username.clone();
+                            let password = acc.password.clone();
+                            let now = chrono::Utc::now().timestamp();
+                            let needs_refresh = acc.last_refreshed.map(|last| now - last > (5 * 3600)).unwrap_or(true);
 
-                        app.login_error = None;
-                        app.login_error = None;
-                        let tx = tx.clone();
-                        let dns_provider = app.config.dns_provider;
-                        tokio::spawn(async move {
-                            let _ = tx.send(AsyncAction::LoadingMessage("Connecting to server...".to_string())).await;
-                            match crate::api::XtreamClient::new_with_doh(base_url, username, password, dns_provider).await {
-                                Ok(client) => {
-                                    let _ = tx.send(AsyncAction::LoadingMessage("Authenticating...".to_string())).await;
-                                    match client.authenticate().await {
-                                    Ok((true, ui, si)) => {
-                                        let _ = tx.send(AsyncAction::LoadingMessage("Processing Playlist...".to_string())).await;
-                                        let _ = tx.send(AsyncAction::LoginSuccess(crate::api::IptvClient::Xtream(client), ui, si)).await;
-                                    }
-                                    Ok((false, _, _)) => {
-                                        let _ = tx.send(AsyncAction::LoginFailed("Authentication failed".to_string())).await;
+                            app.session.state_loading = true;
+                            if needs_refresh {
+                                app.session.loading_message = Some("Refreshing playlist (Data > 5h old)...".to_string());
+                            } else {
+                                app.session.loading_message = Some("Loading playlist...".to_string());
+                            }
+
+                            app.login_error = None;
+                            let tx = tx.clone();
+                            let dns_provider = app.config.dns_provider;
+                            tokio::spawn(async move {
+                                let _ = tx.send(AsyncAction::LoadingMessage("Connecting to server...".to_string())).await;
+                                match crate::api::XtreamClient::new_with_doh(base_url, username, password, dns_provider).await {
+                                    Ok(client) => {
+                                        let _ = tx.send(AsyncAction::LoadingMessage("Authenticating...".to_string())).await;
+                                        match client.authenticate().await {
+                                        Ok((true, ui, si)) => {
+                                            let _ = tx.send(AsyncAction::LoadingMessage("Processing Playlist...".to_string())).await;
+                                            let _ = tx.send(AsyncAction::LoginSuccess(crate::api::IptvClient::Xtream(client), ui, si)).await;
+                                        }
+                                        Ok((false, _, _)) => {
+                                            let _ = tx.send(AsyncAction::LoginFailed("Authentication failed".to_string())).await;
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(AsyncAction::LoginFailed(e.to_string())).await;
+                                        }
+                                        }
                                     }
                                     Err(e) => {
-                                        let _ = tx.send(AsyncAction::LoginFailed(e.to_string())).await;
-                                    }
+                                        let _ = tx.send(AsyncAction::LoginFailed(format!("Connection error: {}", e))).await;
                                     }
                                 }
-                                Err(e) => {
-                                    let _ = tx.send(AsyncAction::LoginFailed(format!("Connection error: {}", e))).await;
-                                }
-                            }
-                        });
+                            });
+                        }
                     }
                 }
                 _ => {}
@@ -523,7 +529,9 @@ pub async fn handle_key_event(
                 }
                 KeyCode::Esc | KeyCode::Backspace => {
                     app.current_screen = CurrentScreen::Home;
-                    app.session.current_client = None; 
+                    // Keep current_client alive — don't force re-authentication
+                    // on re-entry. The session is still valid and reused if the
+                    // user presses Enter on the same account again.
                 }
                 KeyCode::Char('R') => {
                     // Manual refresh - force full playlist rescan
@@ -2440,6 +2448,10 @@ pub async fn handle_key_event(
                     return Ok(InputResult::UpdateRequested);
                 }
                 KeyCode::Esc | KeyCode::Char('l') | KeyCode::Char('L') | KeyCode::Char('q') => {
+                    // Record dismissal so we don't prompt again for 24 hours
+                    if let Some(ref version) = app.new_version_available {
+                        crate::setup::dismiss_update(version);
+                    }
                     app.current_screen = CurrentScreen::Home;
                 }
                 _ => {}

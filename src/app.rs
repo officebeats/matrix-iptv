@@ -943,21 +943,31 @@ impl App {
     }
 
     pub fn next_account(&mut self) {
+        let prev = self.session.selected_account_index;
         Self::navigate_list(
             self.config.accounts.len(),
             &mut self.session.selected_account_index,
             &mut self.account_list_state,
             true,
         );
+        if self.session.selected_account_index != prev {
+            // Switched to a different account — invalidate cached session
+            // so re-entry will authenticate with the new account's credentials.
+            self.session.current_client = None;
+        }
     }
 
     pub fn previous_account(&mut self) {
+        let prev = self.session.selected_account_index;
         Self::navigate_list(
             self.config.accounts.len(),
             &mut self.session.selected_account_index,
             &mut self.account_list_state,
             false,
         );
+        if self.session.selected_account_index != prev {
+            self.session.current_client = None;
+        }
     }
 
     pub fn next_category(&mut self) {
