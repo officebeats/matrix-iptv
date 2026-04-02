@@ -425,6 +425,8 @@ pub fn is_english_vod(name: &str) -> bool {
     // User requested to keep VIP content
     static ENGLISH_VOD_PREFIXES: &[&str] = &[
         "EN|", "EN |", "US|", "US |", "USA|", "USA |", "AM|", "AM |", "VIP|", "VIP |",
+        "[EN]", "[US]", "[USA]", "[AM]", "[VIP]",
+        "(EN)", "(US)", "(USA)", "(AM)", "(VIP)",
     ];
     
     let is_english_prefix = ENGLISH_VOD_PREFIXES.iter().any(|p| trimmed.starts_with(p));
@@ -434,13 +436,16 @@ pub fn is_english_vod(name: &str) -> bool {
         // e.g. "EN| TURKISH SERIES" or "EN| KOREAN SERIES", unless it's a VIP
         let after_prefix = if let Some(pos) = trimmed.find('|') {
             trimmed[pos+1..].trim()
+        } else if trimmed.starts_with('[') {
+            if let Some(end) = trimmed.find(']') { trimmed[end+1..].trim() } else { trimmed }
+        } else if trimmed.starts_with('(') {
+            if let Some(end) = trimmed.find(')') { trimmed[end+1..].trim() } else { trimmed }
         } else {
             trimmed
         };
         // Check the content after the prefix for foreign keywords
-        // But for VIP, maybe allow everything?
-        // the user said "Keep the VIP content though", let's allow VIP entirely.
-        if trimmed.starts_with("VIP") {
+        // But for VIP, allow everything.
+        if trimmed.starts_with("VIP") || trimmed.starts_with("[VIP]") || trimmed.starts_with("(VIP)") {
             return true;
         }
 
@@ -448,6 +453,26 @@ pub fn is_english_vod(name: &str) -> bool {
             return false;
         }
         return true;
+    }
+    
+    // Check for bracketed country code prefixes: [FR], [AR], [DE], [ES], [IT], etc.
+    if trimmed.starts_with('[') {
+        if let Some(end) = trimmed.find(']') {
+            let code = trimmed[1..end].trim();
+            if FOREIGN_COUNTRY_CODES.contains(code) {
+                return false;
+            }
+        }
+    }
+    
+    // Check for parenthesized country code prefixes: (FR), (AR), (DE), etc.
+    if trimmed.starts_with('(') {
+        if let Some(end) = trimmed.find(')') {
+            let code = trimmed[1..end].trim();
+            if FOREIGN_COUNTRY_CODES.contains(code) {
+                return false;
+            }
+        }
     }
     
     // Non-English prefixed categories: check the prefix itself
@@ -1605,5 +1630,31 @@ mod tests {
         let parsed = parse_stream(input, None);
         // "u " should be stripped, then pipe logic applies; time may be parsed and removed
         assert!(parsed.display_name.contains("02"), "Expected '02' in: {}", parsed.display_name);
+    }
+
+    #[test]
+    fn test_is_english_vod_bracketed_country_codes() {
+        // These bracketed foreign categories should be BLOCKED by 'Merica mode
+        assert!(!is_english_vod("[AR] SHAHID-VIP"), "[AR] should be blocked");
+        assert!(!is_english_vod("[FR] FILMS"), "[FR] should be blocked");
+        assert!(!is_english_vod("[DE] KINDER FILME"), "[DE] should be blocked");
+        assert!(!is_english_vod("[ES] PELICULA"), "[ES] should be blocked");
+        assert!(!is_english_vod("[IT] AVVENTURA"), "[IT] should be blocked");
+        assert!(!is_english_vod("[GR] KIDS"), "[GR] should be blocked");
+        assert!(!is_english_vod("[BR] FILMES"), "[BR] should be blocked");
+        assert!(!is_english_vod("[NL] FILMS NIEUW"), "[NL] should be blocked");
+        assert!(!is_english_vod("[PT] DISNEY+"), "[PT] should be blocked");
+        assert!(!is_english_vod("[RU] MOVIES"), "[RU] should be blocked");
+        assert!(!is_english_vod("[PH] PHILIPPINE"), "[PH] should be blocked");
+        assert!(!is_english_vod("[MY] ASTRO MOVIES"), "[MY] should be blocked");
+
+        // English/US categories should PASS
+        assert!(is_english_vod("ALL MOVIES"), "ALL MOVIES should pass");
+        assert!(is_english_vod("3D MOVIES"), "3D MOVIES should pass");
+        assert!(is_english_vod("ACTION/WAR"), "ACTION/WAR should pass");
+        assert!(is_english_vod("HBO"), "HBO should pass");
+        assert!(is_english_vod("NETFLIX"), "NETFLIX should pass");
+        assert!(is_english_vod("NEW RELEASES"), "NEW RELEASES should pass");
+        assert!(is_english_vod("VIP| PREMIUM"), "VIP should pass");
     }
 }
