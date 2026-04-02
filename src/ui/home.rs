@@ -14,7 +14,7 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
         .constraints([
             Constraint::Length(4),   // Logo
             Constraint::Min(0),      // Content
-            Constraint::Length(1),   // Footer
+            Constraint::Length(2),   // Footer (bordered bar needs 2 rows)
         ])
         .split(area);
 

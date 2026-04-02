@@ -44,7 +44,7 @@ fn render_sports_categories_pane(f: &mut Frame, app: &mut App, area: Rect) {
             ]))
         }).collect();
 
-    let inner_area = crate::ui::common::render_matrix_box_active(f, area, "sports", border_color, is_active);
+    let inner_area = crate::ui::common::render_matrix_box_active(f, area, " sports ", border_color, is_active);
 
     let list = List::new(items)
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
@@ -102,7 +102,8 @@ fn render_sports_matches_pane(f: &mut Frame, app: &mut App, area: Rect) {
         ListItem::new(Line::from(spans))
     }).collect();
 
-    let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
+    let title_padded = format!(" {} ", title);
+    let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title_padded, border_color, is_active);
 
     let list = List::new(items)
         .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
@@ -114,7 +115,7 @@ fn render_sports_matches_pane(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn render_sports_details_pane(f: &mut Frame, app: &mut App, area: Rect) {
-    let inner_area = render_matrix_box(f, area, "match details", DARK_GREEN);
+    let inner_area = render_matrix_box(f, area, " match details ", SOFT_GREEN);
 
     let selected_idx = app.sports_list_state.selected().unwrap_or(0);
     if let Some(m) = app.sports_matches.get(selected_idx) {

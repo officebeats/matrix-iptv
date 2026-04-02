@@ -115,6 +115,12 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
             hint!("↑↓", "navigate");
             hint!("R", "refresh");
         }
+        CurrentScreen::GroupManagement => {
+            hint!("esc", "back");
+            hint!("n", "new");
+            hint!("d", "del");
+            hint!("enter", "view");
+        }
         _ => {
             hint!("q", "quit");
             hint!("esc", "back");

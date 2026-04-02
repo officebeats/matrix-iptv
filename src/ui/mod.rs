@@ -61,9 +61,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         CurrentScreen::Home => {
             home::render_home(f, app, inner_area);
         }
-        CurrentScreen::Login => {
-            form::render_login(f, app, inner_area);
-        }
+        CurrentScreen::Login => { render_main_layout(f, app, inner_area); }
         CurrentScreen::Categories | CurrentScreen::Streams => {
             render_main_layout(f, app, inner_area);
         }
@@ -79,9 +77,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         CurrentScreen::ContentTypeSelection => {
             popups::render_content_type_selection(f, app, inner_area);
         }
-        CurrentScreen::GroupManagement => {
-            groups::render_group_management(f, app, inner_area);
-        }
+        CurrentScreen::GroupManagement => { render_main_layout(f, app, inner_area); }
         CurrentScreen::GroupPicker => {
             // Render the underlying screen first, then overlay the picker
             render_main_layout(f, app, inner_area);
@@ -271,6 +267,12 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
         }
         CurrentScreen::SportsDashboard => {
             sports::render_sports_view(f, app, content_area);
+        }
+        CurrentScreen::Login => {
+            form::render_login(f, app, content_area);
+        }
+        CurrentScreen::GroupManagement => {
+            groups::render_group_management(f, app, content_area);
         }
         CurrentScreen::GlobalSearch => {
             // Check if focused result is a sports event OR has ESPN score data

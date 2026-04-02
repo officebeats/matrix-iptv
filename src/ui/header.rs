@@ -83,6 +83,8 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
 
     match app.current_screen {
         CurrentScreen::Home => add_breadcrumb("home", true),
+        CurrentScreen::Login => { add_breadcrumb("home", false); add_breadcrumb("add playlist", true); },
+        CurrentScreen::GroupManagement => { add_breadcrumb("home", false); add_breadcrumb("groups", true); },
         CurrentScreen::Categories => { add_breadcrumb("home", false); add_breadcrumb("tv", true); },
         CurrentScreen::Streams => {
             add_breadcrumb("home", false); add_breadcrumb("tv", false); add_breadcrumb("streams", false);
