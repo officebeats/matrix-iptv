@@ -147,7 +147,7 @@ pub fn preprocess_streams(
 
     if let Some(ref tx) = tx {
         let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
-            "Phase 1/3: Stripping provider separators...".to_string()
+            "Phase 4/4: Removing provider separators and empty placeholders...".to_string()
         ));
     }
     
@@ -165,7 +165,7 @@ pub fn preprocess_streams(
 
     if let Some(ref tx) = tx {
         let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
-            format!("Refining metadata for {} streams...", streams.len())
+            format!("Phase 4/4: Applying playlist filters to {} channels...", streams.len())
         ));
     }
 
@@ -203,7 +203,7 @@ pub fn preprocess_streams(
     
     if let Some(ref tx) = tx {
         let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
-            format!("Refining metadata for {} streams (Multi-Core)...", streams.len())
+            format!("Phase 4/4: Refining metadata across CPU cores for {} channels...", streams.len())
         ));
     }
 

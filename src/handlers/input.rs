@@ -424,22 +424,22 @@ pub async fn handle_key_event(
 
                             app.session.state_loading = true;
                             if needs_refresh {
-                                app.session.loading_message = Some("Refreshing playlist (Data > 5h old)...".to_string());
+                                app.session.loading_message = Some("Opening provider session and refreshing stale playlist data...".to_string());
                             } else {
-                                app.session.loading_message = Some("Loading playlist...".to_string());
+                                app.session.loading_message = Some("Opening provider session and preparing playlist import...".to_string());
                             }
 
                             app.login_error = None;
                             let tx = tx.clone();
                             let dns_provider = app.config.dns_provider;
                             tokio::spawn(async move {
-                                let _ = tx.send(AsyncAction::LoadingMessage("Connecting to server...".to_string())).await;
+                                let _ = tx.send(AsyncAction::LoadingMessage("Connecting to provider server...".to_string())).await;
                                 match crate::api::XtreamClient::new_with_doh(base_url, username, password, dns_provider).await {
                                     Ok(client) => {
-                                        let _ = tx.send(AsyncAction::LoadingMessage("Authenticating...".to_string())).await;
+                                        let _ = tx.send(AsyncAction::LoadingMessage("Authenticating with provider...".to_string())).await;
                                         match client.authenticate().await {
                                         Ok((true, ui, si)) => {
-                                            let _ = tx.send(AsyncAction::LoadingMessage("Processing Playlist...".to_string())).await;
+                                            let _ = tx.send(AsyncAction::LoadingMessage("Provider accepted the login. Preparing the first playlist sync...".to_string())).await;
                                             let _ = tx.send(AsyncAction::LoginSuccess(crate::api::IptvClient::Xtream(client), ui, si)).await;
                                         }
                                         Ok((false, _, _)) => {
@@ -952,9 +952,9 @@ pub async fn handle_key_event(
                                             let favs = app.config.favorites.streams.clone();
                                             let account_name = account_name.clone();
                                             app.session.state_loading = true;
-                                            app.session.loading_message = Some("Loading all channels...".to_string());
+                                            app.session.loading_message = Some("First-time sync: preparing a full live channel scan...".to_string());
                                             tokio::spawn(async move {
-                                                let _ = tx.send(AsyncAction::LoadingMessage("Loading categories...".to_string())).await;
+                                                let _ = tx.send(AsyncAction::LoadingMessage("Step 1/4: Loading live categories from the provider...".to_string())).await;
                                                 let mut cats = match client.get_live_categories().await {
                                                     Ok(cats) => cats,
                                                     Err(e) => {
@@ -969,13 +969,15 @@ pub async fn handle_key_event(
                                                     let before = cats.len();
                                                     cats.retain(|c| crate::parser::is_american_live(&c.category_name));
                                                     let _ = tx.send(AsyncAction::LoadingMessage(format!(
-                                                        "'merica mode: scanning {}/{} categories", cats.len(), before
+                                                        "'merica mode active: scanning {} of {} American-focused categories",
+                                                        cats.len(), before
                                                     ))).await;
                                                 } else if use_all_english {
                                                     let before = cats.len();
                                                     cats.retain(|c| crate::parser::is_english_live(&c.category_name));
                                                     let _ = tx.send(AsyncAction::LoadingMessage(format!(
-                                                        "English mode: scanning {}/{} categories", cats.len(), before
+                                                        "All-English mode active: scanning {} of {} English-friendly categories",
+                                                        cats.len(), before
                                                     ))).await;
                                                 }
                                                 let total_cats = cats.len();
@@ -1004,7 +1006,7 @@ pub async fn handle_key_event(
                                                         let pct = (done * 100) / total_cats;
                                                         let _ = tx2.send(AsyncAction::ScanProgress { current: done, total: total_cats, eta_secs }).await;
                                                         let _ = tx2.send(AsyncAction::LoadingMessage(format!(
-                                                            "{}% [{}/{}] · {} · ETA {}s",
+                                                            "{}% [{}/{}] categories scanned · current category {} · ETA {}s",
                                                             pct, done, total_cats, cat_name, eta_secs
                                                         ))).await;
                                                         streams
@@ -2549,4 +2551,3 @@ pub async fn handle_key_event(
     }
     Ok(InputResult::Continue)
 }
-
