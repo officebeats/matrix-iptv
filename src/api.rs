@@ -650,7 +650,10 @@ impl XtreamClient {
                                     let speed_mb_s = if elapsed > 0.0 { bytes_mb / elapsed } else { 0.0 };
                                     let eta_secs = if speed_mb_s > 0.0 { (total_mb - bytes_mb) / speed_mb_s } else { 0.0 };
                                     
-                                    let msg = format!("Phase 0/3: Downloading playlist... {}% (ETA {:.0}s) [{:.1}/{:.1} MB]", percent, eta_secs, bytes_mb, total_mb);
+                                    let msg = format!(
+                                        "Phase 1/4: Downloading playlist payload... {}% (ETA {:.0}s) [{:.1}/{:.1} MB]",
+                                        percent, eta_secs, bytes_mb, total_mb
+                                    );
                                     let _ = sender.send(crate::app::AsyncAction::LoadingMessage(msg)).await;
                                 }
                             }
@@ -661,7 +664,7 @@ impl XtreamClient {
                                 last_progress_mb = current_mb;
                                 if let Some(ref sender) = tx {
                                     let bytes_mb = downloaded as f64 / 1_048_576.0;
-                                    let msg = format!("Phase 0/3: Downloading playlist... {:.1} MB", bytes_mb);
+                                    let msg = format!("Phase 1/4: Downloading playlist payload... {:.1} MB", bytes_mb);
                                     let _ = sender.send(crate::app::AsyncAction::LoadingMessage(msg)).await;
                                 }
                             }
@@ -719,7 +722,7 @@ impl XtreamClient {
 
             if let Some(ref sender) = tx {
                 let bytes_mb = bytes.len() as f64 / 1_048_576.0;
-                let msg = format!("Phase 1/3: Received {:.1} MB data stream. Preparing memory mapping...", bytes_mb);
+                let msg = format!("Phase 2/4: Received {:.1} MB. Staging provider data in memory...", bytes_mb);
                 let _ = sender.send(crate::app::AsyncAction::LoadingMessage(msg)).await;
             }
 
@@ -728,14 +731,19 @@ impl XtreamClient {
             
             let unique_streams = tokio::task::spawn_blocking(move || -> Result<Vec<Stream>, anyhow::Error> {
                 if let Some(ref sender) = tx_clone {
-                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!("Phase 2/3: Deserializing JSON structures out of RAM heap...")));
+                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(
+                        "Phase 3/4: Decoding provider payload into channel records...".to_string()
+                    ));
                 }
 
                 let streams = serde_json::from_slice::<Vec<Stream>>(&bytes)
                     .map_err(|e| anyhow::anyhow!("Failed to parse live streams JSON (category {}): {}", cat_id, e))?;
                 
                 if let Some(ref sender) = tx_clone {
-                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!("Optimizing {} streams...", streams.len())));
+                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!(
+                        "Phase 4/4: Cleaning, filtering, and organizing {} channels...",
+                        streams.len()
+                    )));
                 }
                 
                 // Deduplicate streams based on ID AND name
@@ -767,7 +775,10 @@ impl XtreamClient {
                     .collect();
 
                 if let Some(ref sender) = tx_clone {
-                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!("Finalized: Extracted {} unique validated streams...", filtered.len())));
+                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!(
+                        "Phase 4/4: Finalized {} unique channels. Building the browser index...",
+                        filtered.len()
+                    )));
                 }
 
                 Ok(filtered)

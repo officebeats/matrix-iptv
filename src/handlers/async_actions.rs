@@ -982,14 +982,15 @@ pub fn spawn_live_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
         // No filter active — one bulk request for all channels.
         // 1 HTTP request vs 150+ requests; fastest for unfiltered access.
         let _ = tx.send(AsyncAction::LoadingMessage(
-            "Fetching all channels (single request)...".to_string()
+            "Step 1/4: Fetching the full live channel library in a single request...".to_string()
         )).await;
 
         match client.get_live_streams("ALL", Some(tx.clone())).await {
             Ok(mut all_streams) if !all_streams.is_empty() => {
                 let count = all_streams.len();
                 let _ = tx.send(AsyncAction::LoadingMessage(format!(
-                    "Phase 2/3: Preprocessing & deduplicating {} channels...", count
+                    "Phase 4/4: Preprocessing, deduplicating, and tagging {} channels...",
+                    count
                 ))).await;
 
                 let tx_clone = tx.clone();
@@ -1003,7 +1004,8 @@ pub fn spawn_live_scan(app: &App, tx: &mpsc::Sender<AsyncAction>) {
                 match result {
                     Ok(processed) => {
                         let _ = tx.send(AsyncAction::LoadingMessage(format!(
-                            "Sorting {} channels completed. Linking UI...", count
+                            "Phase 4/4: Sorting finished for {} channels. Linking the browser UI...",
+                            count
                         ))).await;
                         let _ = tx.send(AsyncAction::TotalChannelsLoaded(processed)).await;
                     }
