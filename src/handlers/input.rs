@@ -67,14 +67,28 @@ pub async fn handle_key_event(
                 let base_url = acc.base_url.clone();
                 let username = acc.username.clone();
                 let password = acc.password.clone();
+                let account_type = acc.account_type;
 
                 tokio::spawn(async move {
-                    let client = crate::api::XtreamClient::new(base_url, username, password);
-                    if let Ok((true, _, _)) = client.authenticate().await {
-                        let iptv_client = crate::api::IptvClient::Xtream(client.clone());
-                        let _ = tx
-                            .send(AsyncAction::LoginSuccess(iptv_client, None, None))
-                            .await;
+                    match account_type {
+                        crate::config::AccountType::M3uUrl => {
+                            let client = crate::api::M3uClient::new(base_url);
+                            if let Ok((true, _, _)) = client.authenticate().await {
+                                let iptv_client = crate::api::IptvClient::M3u(client);
+                                let _ = tx
+                                    .send(AsyncAction::LoginSuccess(iptv_client, None, None))
+                                    .await;
+                            }
+                        }
+                        _ => {
+                            let client = crate::api::XtreamClient::new(base_url, username, password);
+                            if let Ok((true, _, _)) = client.authenticate().await {
+                                let iptv_client = crate::api::IptvClient::Xtream(client.clone());
+                                let _ = tx
+                                    .send(AsyncAction::LoginSuccess(iptv_client, None, None))
+                                    .await;
+                            }
+                        }
                     }
                 });
             }
@@ -472,6 +486,7 @@ pub async fn handle_key_event(
                             let base_url = acc.base_url.clone();
                             let username = acc.username.clone();
                             let password = acc.password.clone();
+                            let account_type = acc.account_type;
                             let now = chrono::Utc::now().timestamp();
                             let needs_refresh = acc
                                 .last_refreshed
@@ -492,57 +507,104 @@ pub async fn handle_key_event(
                             let tx = tx.clone();
                             let dns_provider = app.config.dns_provider;
                             tokio::spawn(async move {
-                                let _ = tx
-                                    .send(AsyncAction::LoadingMessage(
-                                        "Connecting to provider server...".to_string(),
-                                    ))
-                                    .await;
-                                match crate::api::XtreamClient::new_with_doh(
-                                    base_url,
-                                    username,
-                                    password,
-                                    dns_provider,
-                                )
-                                .await
-                                {
-                                    Ok(client) => {
+                                match account_type {
+                                    crate::config::AccountType::M3uUrl => {
                                         let _ = tx
                                             .send(AsyncAction::LoadingMessage(
-                                                "Authenticating with provider...".to_string(),
+                                                "Downloading M3U playlist...".to_string(),
                                             ))
                                             .await;
-                                        match client.authenticate().await {
-                                            Ok((true, ui, si)) => {
-                                                let _ = tx.send(AsyncAction::LoadingMessage("Provider accepted the login. Preparing the first playlist sync...".to_string())).await;
-                                                let _ = tx
-                                                    .send(AsyncAction::LoginSuccess(
-                                                        crate::api::IptvClient::Xtream(client),
-                                                        ui,
-                                                        si,
-                                                    ))
-                                                    .await;
-                                            }
-                                            Ok((false, _, _)) => {
-                                                let _ = tx
-                                                    .send(AsyncAction::LoginFailed(
-                                                        "Authentication failed".to_string(),
-                                                    ))
-                                                    .await;
+                                        match crate::api::M3uClient::new_with_doh(base_url, dns_provider).await {
+                                            Ok(client) => {
+                                                match client.authenticate().await {
+                                                    Ok((true, ui, si)) => {
+                                                        let _ = tx.send(AsyncAction::LoadingMessage("Processing M3U Playlist...".to_string())).await;
+                                                        let _ = tx
+                                                            .send(AsyncAction::LoginSuccess(
+                                                                crate::api::IptvClient::M3u(client),
+                                                                ui,
+                                                                si,
+                                                            ))
+                                                            .await;
+                                                    }
+                                                    Ok((false, _, _)) => {
+                                                        let _ = tx
+                                                            .send(AsyncAction::LoginFailed(
+                                                                "Invalid M3U playlist URL or format".to_string(),
+                                                            ))
+                                                            .await;
+                                                    }
+                                                    Err(e) => {
+                                                        let _ = tx
+                                                            .send(AsyncAction::LoginFailed(e.to_string()))
+                                                            .await;
+                                                    }
+                                                }
                                             }
                                             Err(e) => {
                                                 let _ = tx
-                                                    .send(AsyncAction::LoginFailed(e.to_string()))
+                                                    .send(AsyncAction::LoginFailed(format!(
+                                                        "Connection error: {}",
+                                                        e
+                                                    )))
                                                     .await;
                                             }
                                         }
                                     }
-                                    Err(e) => {
+                                    _ => {
                                         let _ = tx
-                                            .send(AsyncAction::LoginFailed(format!(
-                                                "Connection error: {}",
-                                                e
-                                            )))
+                                            .send(AsyncAction::LoadingMessage(
+                                                "Connecting to provider server...".to_string(),
+                                            ))
                                             .await;
+                                        match crate::api::XtreamClient::new_with_doh(
+                                            base_url,
+                                            username,
+                                            password,
+                                            dns_provider,
+                                        )
+                                        .await
+                                        {
+                                            Ok(client) => {
+                                                let _ = tx
+                                                    .send(AsyncAction::LoadingMessage(
+                                                        "Authenticating with provider...".to_string(),
+                                                    ))
+                                                    .await;
+                                                match client.authenticate().await {
+                                                    Ok((true, ui, si)) => {
+                                                        let _ = tx.send(AsyncAction::LoadingMessage("Provider accepted the login. Preparing the first playlist sync...".to_string())).await;
+                                                        let _ = tx
+                                                            .send(AsyncAction::LoginSuccess(
+                                                                crate::api::IptvClient::Xtream(client),
+                                                                ui,
+                                                                si,
+                                                            ))
+                                                            .await;
+                                                    }
+                                                    Ok((false, _, _)) => {
+                                                        let _ = tx
+                                                            .send(AsyncAction::LoginFailed(
+                                                                "Authentication failed".to_string(),
+                                                            ))
+                                                            .await;
+                                                    }
+                                                    Err(e) => {
+                                                        let _ = tx
+                                                            .send(AsyncAction::LoginFailed(e.to_string()))
+                                                            .await;
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                let _ = tx
+                                                    .send(AsyncAction::LoginFailed(format!(
+                                                        "Connection error: {}",
+                                                        e
+                                                    )))
+                                                    .await;
+                                            }
+                                        }
                                     }
                                 }
                             });
@@ -826,12 +888,17 @@ pub async fn handle_key_event(
                                     let epg_opt = if epg.is_empty() { None } else { Some(epg) };
 
                                     if !name.is_empty() && !url.is_empty() {
+                                        let detected_type = if crate::app::App::is_m3u_url(&url, &user, &pass) {
+                                            crate::config::AccountType::M3uUrl
+                                        } else {
+                                            crate::config::AccountType::Xtream
+                                        };
                                         let acc = Account {
                                             name,
                                             base_url: url,
                                             username: user,
                                             password: pass,
-                                            account_type: crate::config::AccountType::Xtream,
+                                            account_type: detected_type,
                                             epg_url: epg_opt,
                                             last_refreshed: None,
                                             total_channels: None,

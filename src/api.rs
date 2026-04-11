@@ -211,6 +211,7 @@ pub struct EpgResponse {
 #[derive(Debug, Clone)]
 pub enum IptvClient {
     Xtream(XtreamClient),
+    M3u(M3uClient),
 }
 
 impl IptvClient {
@@ -222,12 +223,17 @@ impl IptvClient {
                 let (success, ui, si) = c.authenticate().await?;
                 Ok((success, IptvClient::Xtream(c.clone()), ui, si))
             }
+            IptvClient::M3u(c) => {
+                let (success, ui, si) = c.authenticate().await?;
+                Ok((success, IptvClient::M3u(c.clone()), ui, si))
+            }
         }
     }
 
     pub async fn get_live_categories(&self) -> Result<Vec<Category>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_live_categories().await,
+            IptvClient::M3u(c) => c.get_live_categories().await,
         }
     }
 
@@ -238,36 +244,42 @@ impl IptvClient {
     ) -> Result<Vec<Stream>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_live_streams(category_id, tx).await,
+            IptvClient::M3u(c) => c.get_live_streams(category_id, tx).await,
         }
     }
 
     pub async fn get_vod_categories(&self) -> Result<Vec<Category>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_vod_categories().await,
+            IptvClient::M3u(_) => Ok(Vec::new()), // M3U playlists don't have VOD categories
         }
     }
 
     pub async fn get_vod_streams(&self, category_id: &str) -> Result<Vec<Stream>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_vod_streams(category_id).await,
+            IptvClient::M3u(_) => Ok(Vec::new()),
         }
     }
 
     pub async fn get_vod_streams_all(&self) -> Result<Vec<Stream>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_vod_streams_all().await,
+            IptvClient::M3u(_) => Ok(Vec::new()),
         }
     }
 
     pub async fn get_series_categories(&self) -> Result<Vec<Category>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_series_categories().await,
+            IptvClient::M3u(_) => Ok(Vec::new()),
         }
     }
 
     pub async fn get_series_all(&self) -> Result<Vec<Stream>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_series_all().await,
+            IptvClient::M3u(_) => Ok(Vec::new()),
         }
     }
 
@@ -277,42 +289,49 @@ impl IptvClient {
     ) -> Result<Vec<Stream>, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_series_streams(category_id).await,
+            IptvClient::M3u(_) => Ok(Vec::new()),
         }
     }
 
     pub async fn get_series_info(&self, series_id: &str) -> Result<SeriesInfo, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_series_info(series_id).await,
+            IptvClient::M3u(_) => Err(anyhow::anyhow!("Series info not available for M3U playlists")),
         }
     }
 
     pub async fn get_vod_info(&self, vod_id: &str) -> Result<VodInfo, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_vod_info(vod_id).await,
+            IptvClient::M3u(_) => Ok(VodInfo::default()),
         }
     }
 
     pub async fn get_short_epg(&self, stream_id: &str) -> Result<EpgResponse, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_short_epg(stream_id).await,
+            IptvClient::M3u(_) => Ok(EpgResponse { epg_listings: Vec::new() }),
         }
     }
 
     pub fn get_stream_url(&self, stream_id: &str, extension: &str) -> String {
         match self {
             IptvClient::Xtream(c) => c.get_stream_url(stream_id, extension),
+            IptvClient::M3u(c) => c.get_stream_url(stream_id),
         }
     }
 
     pub fn get_vod_url(&self, stream_id: &str, extension: &str) -> String {
         match self {
             IptvClient::Xtream(c) => c.get_vod_url(stream_id, extension),
+            IptvClient::M3u(c) => c.get_stream_url(stream_id),
         }
     }
 
     pub fn get_series_url(&self, stream_id: &str, extension: &str) -> String {
         match self {
             IptvClient::Xtream(c) => c.get_series_url(stream_id, extension),
+            IptvClient::M3u(c) => c.get_stream_url(stream_id),
         }
     }
 }
@@ -1287,5 +1306,421 @@ impl XtreamClient {
         }
 
         Ok(epg)
+    }
+}
+
+// ============================================================================
+// M3U URL Playlist Client
+// ============================================================================
+
+/// Parsed M3U entry from an M3U playlist file
+#[derive(Debug, Clone)]
+struct M3uEntry {
+    name: String,
+    group: String,
+    logo: Option<String>,
+    url: String,
+}
+
+/// Client for M3U URL playlists. Downloads and parses .m3u/.m3u8 files
+/// into the same Category/Stream data model used by Xtream.
+#[derive(Debug, Clone)]
+pub struct M3uClient {
+    pub m3u_url: String,
+    client: reqwest::Client,
+    /// Parsed entries cached after first download
+    cached_entries: Arc<Mutex<Option<Vec<M3uEntry>>>>,
+    /// Map of stream_id -> direct URL for playback
+    stream_urls: Arc<Mutex<HashMap<String, String>>>,
+}
+
+impl M3uClient {
+    pub fn new(m3u_url: String) -> Self {
+        let m3u_url = m3u_url.trim().to_string();
+
+        let builder = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .danger_accept_invalid_certs(true);
+
+        #[cfg(not(target_arch = "wasm32"))]
+        let builder = builder
+            .timeout(std::time::Duration::from_secs(120))
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .gzip(true)
+            .brotli(true);
+
+        let client = builder.build().unwrap_or_else(|_| reqwest::Client::new());
+
+        Self {
+            m3u_url,
+            client,
+            cached_entries: Arc::new(Mutex::new(None)),
+            stream_urls: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Create an M3U client with DNS-over-HTTPS resolver for ISP-blocked domains
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn new_with_doh(m3u_url: String, dns_provider: crate::config::DnsProvider) -> Result<Self, anyhow::Error> {
+        use hickory_resolver::AsyncResolver;
+        use hickory_resolver::config::{ResolverConfig, ResolverOpts, NameServerConfig, Protocol};
+        use std::net::SocketAddr;
+        use crate::config::DnsProvider;
+
+        let m3u_url = m3u_url.trim().to_string();
+
+        // If System DNS, skip custom resolver
+        if dns_provider == DnsProvider::System {
+            return Ok(Self::new(m3u_url));
+        }
+
+        // Configure DNS-over-HTTPS based on provider
+        let mut config = ResolverConfig::new();
+
+        let (ips, tls_name) = match dns_provider {
+            DnsProvider::Quad9 => (
+                vec![([9, 9, 9, 11], 443), ([149, 112, 112, 11], 443)],
+                "dns11.quad9.net",
+            ),
+            DnsProvider::AdGuard => (
+                vec![([94, 140, 14, 14], 443), ([94, 140, 15, 15], 443)],
+                "dns.adguard-dns.com",
+            ),
+            DnsProvider::Cloudflare => (
+                vec![([1, 1, 1, 1], 443), ([1, 0, 0, 1], 443)],
+                "cloudflare-dns.com",
+            ),
+            DnsProvider::Google => (
+                vec![([8, 8, 8, 8], 443), ([8, 8, 4, 4], 443)],
+                "dns.google",
+            ),
+            DnsProvider::System => unreachable!(),
+        };
+
+        for (ip, port) in ips {
+            let mut ns = NameServerConfig::new(
+                SocketAddr::from((ip, port)),
+                Protocol::Https,
+            );
+            ns.tls_dns_name = Some(tls_name.to_string());
+            config.add_name_server(ns);
+        }
+
+        let async_resolver = AsyncResolver::tokio(config, ResolverOpts::default());
+
+        #[derive(Clone)]
+        struct DohResolver(hickory_resolver::TokioAsyncResolver);
+        impl reqwest::dns::Resolve for DohResolver {
+            fn resolve(&self, name: reqwest::dns::Name) -> reqwest::dns::Resolving {
+                let resolver = self.0.clone();
+                let name = name.as_str().to_string();
+                Box::pin(async move {
+                    match resolver.lookup_ip(name).await {
+                        Ok(lookup) => {
+                            let addrs: Vec<SocketAddr> = lookup.iter()
+                                .map(|ip| SocketAddr::new(ip, 0))
+                                .collect();
+                            Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
+                        }
+                        Err(e) => Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>),
+                    }
+                })
+            }
+        }
+
+        let client = reqwest::Client::builder()
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .danger_accept_invalid_certs(true)
+            .dns_resolver(Arc::new(DohResolver(async_resolver)))
+            .timeout(std::time::Duration::from_secs(120))
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .pool_max_idle_per_host(4)
+            .tcp_keepalive(std::time::Duration::from_secs(60))
+            .gzip(true)
+            .brotli(true)
+            .build()?;
+
+        Ok(Self {
+            m3u_url,
+            client,
+            cached_entries: Arc::new(Mutex::new(None)),
+            stream_urls: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+
+    /// Download and parse the M3U file, caching the result
+    async fn fetch_and_parse(&self) -> Result<Vec<M3uEntry>, anyhow::Error> {
+        // Check cache first
+        {
+            let cache = self.cached_entries.lock().await;
+            if let Some(ref entries) = *cache {
+                return Ok(entries.clone());
+            }
+        }
+
+        let resp = self.client.get(&self.m3u_url)
+            .send().await
+            .map_err(|e| anyhow::anyhow!("Failed to download M3U playlist: {}", e))?;
+
+        if !resp.status().is_success() {
+            return Err(anyhow::anyhow!("M3U download failed with status: {}", resp.status()));
+        }
+
+        let body = resp.text().await
+            .map_err(|e| anyhow::anyhow!("Failed to read M3U playlist body: {}", e))?;
+
+        let entries = Self::parse_m3u(&body);
+
+        // Cache the stream URLs for playback
+        {
+            let mut url_map = self.stream_urls.lock().await;
+            for entry in &entries {
+                let id = Self::make_stream_id(&entry.url);
+                url_map.insert(id, entry.url.clone());
+            }
+        }
+
+        // Cache parsed entries
+        {
+            let mut cache = self.cached_entries.lock().await;
+            *cache = Some(entries.clone());
+        }
+
+        Ok(entries)
+    }
+
+    /// Parse M3U file content into entries
+    fn parse_m3u(content: &str) -> Vec<M3uEntry> {
+        let mut entries = Vec::new();
+        let lines: Vec<&str> = content.lines().collect();
+        let mut i = 0;
+
+        while i < lines.len() {
+            let line = lines[i].trim();
+
+            if line.starts_with("#EXTINF:") {
+                // Parse the EXTINF line for metadata
+                let extinf = &line[8..]; // Skip "#EXTINF:"
+
+                // Extract group-title
+                let group = Self::extract_attribute(extinf, "group-title")
+                    .unwrap_or_else(|| "Uncategorized".to_string());
+
+                // Extract tvg-logo
+                let logo = Self::extract_attribute(extinf, "tvg-logo");
+
+                // Extract stream name (after the last comma)
+                let name = extinf.rsplit(',').next()
+                    .unwrap_or("Unknown")
+                    .trim()
+                    .to_string();
+
+                // Next non-comment, non-empty line should be the URL
+                i += 1;
+                while i < lines.len() {
+                    let url_line = lines[i].trim();
+                    if !url_line.is_empty() && !url_line.starts_with('#') {
+                        entries.push(M3uEntry {
+                            name,
+                            group,
+                            logo,
+                            url: url_line.to_string(),
+                        });
+                        break;
+                    }
+                    i += 1;
+                }
+            }
+
+            i += 1;
+        }
+
+        entries
+    }
+
+    /// Extract an attribute value from an EXTINF line, e.g. group-title="Sports"
+    fn extract_attribute(extinf: &str, attr: &str) -> Option<String> {
+        let search = format!("{}=\"", attr);
+        if let Some(start) = extinf.find(&search) {
+            let value_start = start + search.len();
+            if let Some(end) = extinf[value_start..].find('"') {
+                let value = extinf[value_start..value_start + end].trim().to_string();
+                if !value.is_empty() {
+                    return Some(value);
+                }
+            }
+        }
+        None
+    }
+
+    /// Generate a deterministic stream ID from a URL using a simple hash
+    fn make_stream_id(url: &str) -> String {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        url.hash(&mut hasher);
+        format!("m3u_{}", hasher.finish())
+    }
+
+    /// Authenticate by testing if the M3U URL is reachable and valid
+    pub async fn authenticate(&self) -> Result<(bool, Option<UserInfo>, Option<ServerInfo>), crate::errors::IptvError> {
+        let resp = self.client.get(&self.m3u_url)
+            .send().await
+            .map_err(|e| {
+                if crate::doh::is_dns_error(&e) {
+                    crate::errors::IptvError::DnsResolution(
+                        crate::doh::redact_url(&self.m3u_url),
+                        e.to_string(),
+                    )
+                } else if e.is_timeout() {
+                    crate::errors::IptvError::ConnectionTimeout(
+                        crate::doh::redact_url(&self.m3u_url), 120
+                    )
+                } else {
+                    crate::errors::IptvError::ConnectionFailed(
+                        crate::errors::ConnectionStage::TcpConnection,
+                        e.to_string(),
+                    )
+                }
+            })?;
+
+        if !resp.status().is_success() {
+            return Ok((false, None, None));
+        }
+
+        // Peek at the body to check if it looks like an M3U file
+        let body = resp.text().await
+            .map_err(|e| crate::errors::IptvError::ParseError(e.to_string()))?;
+
+        let is_valid = body.contains("#EXTINF") || body.starts_with("#EXTM3U");
+
+        if is_valid {
+            // Parse and cache the entries while we have the body
+            let entries = Self::parse_m3u(&body);
+            let total = entries.len();
+
+            // Cache stream URLs
+            {
+                let mut url_map = self.stream_urls.lock().await;
+                for entry in &entries {
+                    let id = Self::make_stream_id(&entry.url);
+                    url_map.insert(id, entry.url.clone());
+                }
+            }
+
+            // Cache parsed entries
+            {
+                let mut cache = self.cached_entries.lock().await;
+                *cache = Some(entries);
+            }
+
+            // Build a synthetic UserInfo
+            let ui = UserInfo {
+                auth: 1,
+                status: Some("Active".to_string()),
+                exp_date: None,
+                max_connections: None,
+                active_cons: None,
+                total_live_streams: Some(crate::flex_id::FlexId::Number(total as i64)),
+                total_vod_streams: Some(crate::flex_id::FlexId::Number(0)),
+                total_series_streams: Some(crate::flex_id::FlexId::Number(0)),
+            };
+
+            Ok((true, Some(ui), None))
+        } else {
+            Ok((false, None, None))
+        }
+    }
+
+    /// Get categories from the parsed M3U data
+    pub async fn get_live_categories(&self) -> Result<Vec<Category>, anyhow::Error> {
+        let entries = self.fetch_and_parse().await?;
+
+        // Collect unique group names as categories
+        let mut seen = std::collections::HashSet::new();
+        let mut categories = Vec::new();
+        let mut id_counter: usize = 1;
+
+        for entry in &entries {
+            if seen.insert(entry.group.clone()) {
+                categories.push(Category {
+                    category_id: format!("m3u_cat_{}", id_counter),
+                    category_name: entry.group.clone(),
+                    ..Default::default()
+                });
+                id_counter += 1;
+            }
+        }
+
+        Ok(categories)
+    }
+
+    /// Get streams for a given category
+    pub async fn get_live_streams(&self, category_id: &str, _tx: Option<tokio::sync::mpsc::Sender<crate::app::AsyncAction>>) -> Result<Vec<Stream>, anyhow::Error> {
+        let entries = self.fetch_and_parse().await?;
+
+        // Build category name -> id mapping
+        let categories = self.get_live_categories().await?;
+        let cat_name_to_id: HashMap<String, String> = categories.iter()
+            .map(|c| (c.category_name.clone(), c.category_id.clone()))
+            .collect();
+
+        let target_cat_name = if category_id == "ALL" {
+            None
+        } else {
+            categories.iter()
+                .find(|c| c.category_id == category_id)
+                .map(|c| c.category_name.clone())
+        };
+
+        let mut streams = Vec::new();
+        for entry in &entries {
+            // Filter by category if specified
+            if let Some(ref target) = target_cat_name {
+                if &entry.group != target {
+                    continue;
+                }
+            }
+
+            let stream_id_str = Self::make_stream_id(&entry.url);
+            let cat_id = cat_name_to_id.get(&entry.group).cloned();
+
+            streams.push(Stream {
+                num: None,
+                name: entry.name.clone(),
+                stream_display_name: None,
+                stream_type: "live".to_string(),
+                stream_id: crate::flex_id::FlexId::String(stream_id_str),
+                stream_icon: entry.logo.clone(),
+                epg_channel_id: None,
+                added: None,
+                category_id: cat_id,
+                container_extension: None,
+                rating: None,
+                rating_5: None,
+                cached_parsed: None,
+                search_name: String::new(),
+                is_american: false,
+                is_english: false,
+                clean_name: String::new(),
+                latency_ms: None,
+                account_name: None,
+            });
+        }
+
+        Ok(streams)
+    }
+
+    /// Get the direct stream URL for a given stream ID
+    pub fn get_stream_url(&self, stream_id: &str) -> String {
+        // Try to get from the cached URL map synchronously
+        // Since this is called from a sync context, we use try_lock
+        if let Ok(urls) = self.stream_urls.try_lock() {
+            if let Some(url) = urls.get(stream_id) {
+                return url.clone();
+            }
+        }
+        // Fallback: return the stream_id itself (it might be a URL already)
+        stream_id.to_string()
     }
 }
