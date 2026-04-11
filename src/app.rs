@@ -1820,10 +1820,14 @@ impl App {
 
             let acc = Account {
                 name,
-                base_url: final_url,
-                username: user,
-                password: pass,
-                account_type: crate::config::AccountType::Xtream,
+                base_url: final_url.clone(),
+                username: user.clone(),
+                password: pass.clone(),
+                account_type: if Self::is_m3u_url(&final_url, &user, &pass) {
+                    crate::config::AccountType::M3uUrl
+                } else {
+                    crate::config::AccountType::Xtream
+                },
                 epg_url: epg_opt,
                 last_refreshed: None,
                 total_channels: None,
@@ -1850,6 +1854,42 @@ impl App {
         self.input_server_timezone = Input::default();
         self.editing_account_index = None;
         self.login_error = None;
+    }
+
+    /// Detect if a URL is an M3U playlist URL rather than an Xtream Codes server
+    pub fn is_m3u_url(url: &str, username: &str, password: &str) -> bool {
+        let url_lower = url.to_lowercase();
+
+        // If both username and password are empty, it's likely M3U
+        if username.is_empty() && password.is_empty() {
+            return true;
+        }
+
+        // Check for M3U file extensions
+        if url_lower.ends_with(".m3u") || url_lower.ends_with(".m3u8") {
+            return true;
+        }
+
+        // Check URL patterns: strip query string for extension check
+        if let Some(path) = url_lower.split('?').next() {
+            if path.ends_with(".m3u") || path.ends_with(".m3u8") {
+                return true;
+            }
+        }
+
+        // Check for common M3U URL patterns in query string
+        if url_lower.contains("type=m3u") || url_lower.contains("output=m3u")
+            || url_lower.contains("type=m3u_plus") || url_lower.contains("output=ts")
+        {
+            return true;
+        }
+
+        // Check for get.php pattern (common M3U CDN pattern)
+        if url_lower.contains("/get.php") && (url_lower.contains("type=m3u") || url_lower.contains("output=")) {
+            return true;
+        }
+
+        false
     }
 
     /// Handles a key event and returns an optional AsyncAction to be spawned.

@@ -7,7 +7,7 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame, Terminal,
 };
-use crate::api::{IptvClient, XtreamClient};
+use crate::api::{IptvClient, XtreamClient, M3uClient};
 use crate::config::{Account, AccountType, CategorySortOrder};
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
@@ -103,10 +103,14 @@ where
                         Ok((url, username, password, name)) => {
                             state.success_account = Some(Account {
                                 name: if name.is_empty() { "My Playlist".to_string() } else { name },
-                                base_url: url,
-                                username,
-                                password,
-                                account_type: AccountType::Xtream,
+                                base_url: url.clone(),
+                                username: username.clone(),
+                                password: password.clone(),
+                                account_type: if crate::app::App::is_m3u_url(&url, &username, &password) {
+                                    AccountType::M3uUrl
+                                } else {
+                                    AccountType::Xtream
+                                },
                                 epg_url: None,
                                 last_refreshed: None,
                                 total_channels: None,
@@ -174,8 +178,10 @@ fn handle_key(state: &mut OnboardingState, key: KeyCode) {
                     state.show_password = !state.show_password;
                 }
                 KeyCode::Enter => {
-                    if state.input_url.is_empty() || state.input_username.is_empty() || state.input_password.is_empty() {
-                        state.error_msg = Some("Please fill in all fields".to_string());
+                    if state.input_url.is_empty() {
+                        state.error_msg = Some("Please fill in the URL field".to_string());
+                    } else if state.input_username.is_empty() && state.input_password.is_empty() && !crate::app::App::is_m3u_url(&state.input_url, &state.input_username, &state.input_password) {
+                        state.error_msg = Some("Please fill in all fields (or leave username/password empty for M3U URL)".to_string());
                     } else {
                         state.error_msg = None;
                         state.spinner_frame = 0;
@@ -190,22 +196,39 @@ fn handle_key(state: &mut OnboardingState, key: KeyCode) {
                         let (tx, rx) = mpsc::channel();
                         state.validation_rx = Some(rx);
                         
+                        let is_m3u = crate::app::App::is_m3u_url(&url, &username, &password);
+                        
                         thread::spawn(move || {
                             let rt = tokio::runtime::Builder::new_current_thread()
                                 .enable_all()
                                 .build()
                                 .unwrap();
                             rt.block_on(async {
-                                let client = IptvClient::Xtream(XtreamClient::new(url.clone(), username.clone(), password.clone()));
-                                match client.authenticate().await {
-                                    Ok((true, _, _, _)) => {
-                                        let _ = tx.send(Ok((url, username, password, name)));
+                                if is_m3u {
+                                    let client = IptvClient::M3u(M3uClient::new(url.clone()));
+                                    match client.authenticate().await {
+                                        Ok((true, _, _, _)) => {
+                                            let _ = tx.send(Ok((url, username, password, name)));
+                                        }
+                                        Ok((false, _, _, _)) => {
+                                            let _ = tx.send(Err("Invalid M3U playlist URL or format".to_string()));
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(Err(e.to_string()));
+                                        }
                                     }
-                                    Ok((false, _, _, _)) => {
-                                        let _ = tx.send(Err("Invalid credentials".to_string()));
-                                    }
-                                    Err(e) => {
-                                        let _ = tx.send(Err(e.to_string()));
+                                } else {
+                                    let client = IptvClient::Xtream(XtreamClient::new(url.clone(), username.clone(), password.clone()));
+                                    match client.authenticate().await {
+                                        Ok((true, _, _, _)) => {
+                                            let _ = tx.send(Ok((url, username, password, name)));
+                                        }
+                                        Ok((false, _, _, _)) => {
+                                            let _ = tx.send(Err("Invalid credentials".to_string()));
+                                        }
+                                        Err(e) => {
+                                            let _ = tx.send(Err(e.to_string()));
+                                        }
                                     }
                                 }
                             });
