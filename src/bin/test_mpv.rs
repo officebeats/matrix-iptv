@@ -49,17 +49,17 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     // v4.0.17: 'Anti-Loop' Profile
-    cmd.arg("--demuxer-max-bytes=64MiB");    
-    cmd.arg("--demuxer-max-back-bytes=0");
-    cmd.arg("--demuxer-readahead-secs=15");   
+    cmd.arg("--demuxer-max-bytes=128MiB");    
+    cmd.arg("--demuxer-max-back-bytes=50MiB");
+    cmd.arg("--demuxer-readahead-secs=20");   
     cmd.arg("--demuxer-thread=yes");
-    cmd.arg("--stream-buffer-size=512KiB");
     cmd.arg("--network-timeout=60");
-    cmd.arg("--cache-pause=no"); 
+    cmd.arg("--cache-pause=yes"); 
     cmd.arg("--keep-open=yes"); 
     cmd.arg("--stream-lavf-o=reconnect=1,reconnect_at_eof=1,reconnect_streamed=1,reconnect_delay_max=5,multiple_requests=1");
     cmd.arg("--demuxer-lavf-o=analyzeduration=3000000,probesize=3000000,fflags=+genpts+igndts");
     cmd.arg("--tls-verify=no");
+    cmd.arg("--hwdec=auto-safe");
     cmd.arg("--ytdl=no");
     cmd.arg("--msg-level=all=v");
     cmd.arg("--log-file=mpv_trace.log");

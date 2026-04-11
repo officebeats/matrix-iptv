@@ -21,12 +21,12 @@ impl FlexId {
     pub fn from_number(n: i64) -> Self {
         FlexId::Number(n)
     }
-    
+
     /// Create a FlexId from a string
     pub fn from_string(s: String) -> Self {
         FlexId::String(s)
     }
-    
+
     /// Get as i64 if this is a number
     pub fn as_i64(&self) -> Option<i64> {
         match self {
@@ -35,7 +35,7 @@ impl FlexId {
             FlexId::Null => None,
         }
     }
-    
+
     /// Get as &str if this is a string
     pub fn as_str(&self) -> Option<&str> {
         match self {
@@ -44,7 +44,7 @@ impl FlexId {
             FlexId::Null => None,
         }
     }
-    
+
     /// Get as string (converts numbers to string)
     pub fn to_string_value(&self) -> Option<String> {
         match self {
@@ -53,12 +53,12 @@ impl FlexId {
             FlexId::Null => None,
         }
     }
-    
+
     /// Check if this is null
     pub fn is_null(&self) -> bool {
         matches!(self, FlexId::Null)
     }
-    
+
     /// Check if this has a value
     pub fn is_some(&self) -> bool {
         !self.is_null()
@@ -94,16 +94,16 @@ impl<'de> Deserialize<'de> for FlexId {
         D: Deserializer<'de>,
     {
         use serde::de::{self, Visitor};
-        
+
         struct FlexIdVisitor;
-        
+
         impl<'de> Visitor<'de> for FlexIdVisitor {
             type Value = FlexId;
-            
+
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
                 f.write_str("a number, string, or null")
             }
-            
+
             fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -123,14 +123,14 @@ impl<'de> Deserialize<'de> for FlexId {
                     Ok(FlexId::String(v.to_string()))
                 }
             }
-            
+
             fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
                 Ok(FlexId::Number(v as i64))
             }
-            
+
             fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -142,7 +142,7 @@ impl<'de> Deserialize<'de> for FlexId {
                     Ok(FlexId::String(v.to_string()))
                 }
             }
-            
+
             fn visit_string<E>(self, v: String) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -153,14 +153,14 @@ impl<'de> Deserialize<'de> for FlexId {
                     Ok(FlexId::String(v))
                 }
             }
-            
+
             fn visit_none<E>(self) -> Result<Self::Value, E>
             where
                 E: de::Error,
             {
                 Ok(FlexId::Null)
             }
-            
+
             fn visit_unit<E>(self) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -168,7 +168,7 @@ impl<'de> Deserialize<'de> for FlexId {
                 Ok(FlexId::Null)
             }
         }
-        
+
         deserializer.deserialize_any(FlexIdVisitor)
     }
 }
@@ -187,12 +187,10 @@ pub fn deserialize_flex_f32<'de, D>(deserializer: D) -> Result<f32, D::Error>
 where
     D: Deserializer<'de>,
 {
-    use serde::de::Error;
-    
     let flex = FlexId::deserialize(deserializer)?;
     match flex {
         FlexId::Number(n) => Ok(n as f32),
-        FlexId::String(s) => s.parse().map_err(|_| D::Error::custom("invalid float")),
+        FlexId::String(s) => Ok(parse_optional_f32(&s).unwrap_or(0.0)),
         FlexId::Null => Ok(0.0),
     }
 }
@@ -202,20 +200,30 @@ pub fn deserialize_flex_option_f32<'de, D>(deserializer: D) -> Result<Option<f32
 where
     D: Deserializer<'de>,
 {
-    use serde::de::Error;
-    
     let flex = FlexId::deserialize(deserializer)?;
     match flex {
         FlexId::Number(n) => Ok(Some(n as f32)),
-        FlexId::String(s) => s.parse().map(Some).map_err(|_| D::Error::custom("invalid float")),
+        FlexId::String(s) => Ok(parse_optional_f32(&s)),
         FlexId::Null => Ok(None),
     }
+}
+
+fn parse_optional_f32(raw: &str) -> Option<f32> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    trimmed
+        .parse::<f32>()
+        .ok()
+        .filter(|value| value.is_finite())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_number_deserialize() {
         let json = "123";
@@ -223,25 +231,50 @@ mod tests {
         assert_eq!(id, FlexId::Number(123));
         assert_eq!(id.as_i64(), Some(123));
     }
-    
+
     #[test]
     fn test_string_deserialize() {
         let json = r#""abc123""#;
         let id: FlexId = serde_json::from_str(json).unwrap();
         assert_eq!(id, FlexId::String("abc123".to_string()));
     }
-    
+
     #[test]
     fn test_numeric_string_deserialize() {
         let json = r#""456""#;
         let id: FlexId = serde_json::from_str(json).unwrap();
         assert_eq!(id, FlexId::Number(456));
     }
-    
+
     #[test]
     fn test_null_deserialize() {
         let json = "null";
         let id: FlexId = serde_json::from_str(json).unwrap();
         assert_eq!(id, FlexId::Null);
+    }
+
+    #[test]
+    fn test_deserialize_flex_option_f32_ignores_invalid_string() {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            #[serde(deserialize_with = "deserialize_flex_option_f32")]
+            value: Option<f32>,
+        }
+
+        let parsed: Wrapper =
+            serde_json::from_str(r#"{"value":"Meet big-time crime boss Val Fagan"}"#).unwrap();
+        assert_eq!(parsed.value, None);
+    }
+
+    #[test]
+    fn test_deserialize_flex_option_f32_parses_numeric_string() {
+        #[derive(Deserialize)]
+        struct Wrapper {
+            #[serde(deserialize_with = "deserialize_flex_option_f32")]
+            value: Option<f32>,
+        }
+
+        let parsed: Wrapper = serde_json::from_str(r#"{"value":"7.5"}"#).unwrap();
+        assert_eq!(parsed.value, Some(7.5));
     }
 }
