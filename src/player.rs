@@ -353,18 +353,19 @@ impl Player {
         // Safe defaults that work across platforms (macOS, Windows, Linux)
         if !use_default_mpv {
             cmd.arg("--cache=yes")
-               .arg("--demuxer-max-bytes=64MiB")
-               .arg("--demuxer-max-back-bytes=0") 
-               .arg("--demuxer-readahead-secs=15") 
+               .arg("--demuxer-max-bytes=128MiB") // Increased cache size
+               .arg("--demuxer-max-back-bytes=50MiB") // Keep backward buffer
+               .arg("--demuxer-readahead-secs=20") // Read more ahead
                .arg("--demuxer-thread=yes")
-               .arg("--stream-buffer-size=512KiB")
-               .arg("--cache-pause=no")
+               .arg("--cache-pause=yes") // Let MPV buffer gracefully instead of stuttering
                .arg("--network-timeout=60")
                .arg("--keep-open=yes")
                .arg("--video-sync=audio")
-               .arg("--stream-lavf-o=reconnect=1,reconnect_at_eof=1,reconnect_streamed=1,reconnect_delay_max=5")
+               .arg("--stream-lavf-o=reconnect=1,reconnect_at_eof=1,reconnect_streamed=1,reconnect_delay_max=5,multiple_requests=1")
+               .arg("--demuxer-lavf-o=analyzeduration=3000000,probesize=3000000,fflags=+genpts+igndts")
                .arg("--ytdl=no")
-               .arg("--tls-verify=no");
+               .arg("--tls-verify=no")
+               .arg("--hwdec=auto-safe"); // Enable hardware decoding to reduce CPU stuttering
 
             if cfg!(target_os = "windows") {
                 cmd.arg("--d3d11-flip=yes")
