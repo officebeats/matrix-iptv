@@ -1,9 +1,9 @@
 #![allow(dead_code)]
+use crate::config::PlayerEngine;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
-use crate::config::PlayerEngine;
-use serde::{Deserialize, Serialize};
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::process::{Child, Command, Stdio};
@@ -12,11 +12,7 @@ use std::process::{Child, Command, Stdio};
 use tokio::time::{sleep, Duration};
 
 #[cfg(not(target_arch = "wasm32"))]
-
-
 #[cfg(not(target_arch = "wasm32"))]
-
-
 #[cfg(target_arch = "wasm32")]
 use web_sys::window;
 
@@ -97,7 +93,7 @@ impl PlaybackError {
             ),
             PlaybackErrorType::Unknown => (None, true),
         };
-        
+
         Self {
             error_type,
             message,
@@ -142,12 +138,21 @@ impl Player {
 
     /// Start the selected player engine with automatic retry and fallback
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn play(&self, url: &str, engine: PlayerEngine, use_default_mpv: bool, smooth_motion: bool) -> Result<(), anyhow::Error> {
+    pub async fn play(
+        &self,
+        url: &str,
+        engine: PlayerEngine,
+        use_default_mpv: bool,
+        smooth_motion: bool,
+    ) -> Result<(), anyhow::Error> {
         self.stop();
 
         match engine {
             PlayerEngine::Mpv => {
-                match self.play_mpv_with_retry(url, use_default_mpv, smooth_motion, 0).await {
+                match self
+                    .play_mpv_with_retry(url, use_default_mpv, smooth_motion, 0)
+                    .await
+                {
                     Ok(_) => Ok(()),
                     Err(e) => {
                         if crate::setup::get_vlc_path().is_some() {
@@ -157,16 +162,22 @@ impl Player {
                         }
                     }
                 }
-            },
+            }
             PlayerEngine::Vlc => self.play_vlc(url, smooth_motion),
         }
     }
 
     /// Try playing with different stream formats as fallback
     #[cfg(not(target_arch = "wasm32"))]
-    async fn play_mpv_with_retry(&self, url: &str, use_default_mpv: bool, smooth_motion: bool, attempt: u32) -> Result<(), anyhow::Error> {
+    async fn play_mpv_with_retry(
+        &self,
+        url: &str,
+        use_default_mpv: bool,
+        smooth_motion: bool,
+        attempt: u32,
+    ) -> Result<(), anyhow::Error> {
         let result = self.play_mpv(url, use_default_mpv, smooth_motion);
-        
+
         if result.is_err() && attempt < 3 {
             if let Some(base_url) = self.extract_stream_base_url(url) {
                 let formats: Vec<&str> = if url.contains(".m3u8") {
@@ -174,14 +185,20 @@ impl Player {
                 } else {
                     vec!["m3u8", "ts", "mp4"]
                 };
-                
+
                 if let Some(format) = formats.get(attempt as usize) {
                     let new_url = format!("{}.{}", base_url, format);
-                    return Box::pin(self.play_mpv_with_retry(&new_url, use_default_mpv, smooth_motion, attempt + 1)).await;
+                    return Box::pin(self.play_mpv_with_retry(
+                        &new_url,
+                        use_default_mpv,
+                        smooth_motion,
+                        attempt + 1,
+                    ))
+                    .await;
                 }
             }
         }
-        
+
         result
     }
 
@@ -201,53 +218,44 @@ impl Player {
     /// Diagnose playback failure and return helpful error message
     pub fn diagnose_playback_failure(&self, error: &str) -> PlaybackError {
         let error_lower = error.to_lowercase();
-        
+
         if error_lower.contains("mpv not found") || error_lower.contains("cannot find") {
-            return PlaybackError::new(
-                PlaybackErrorType::MpvNotFound,
-                error.to_string()
-            );
+            return PlaybackError::new(PlaybackErrorType::MpvNotFound, error.to_string());
         }
-        
-        if error_lower.contains("connection") || error_lower.contains("refused") || error_lower.contains("unreachable") {
-            return PlaybackError::new(
-                PlaybackErrorType::StreamUnreachable,
-                error.to_string()
-            );
+
+        if error_lower.contains("connection")
+            || error_lower.contains("refused")
+            || error_lower.contains("unreachable")
+        {
+            return PlaybackError::new(PlaybackErrorType::StreamUnreachable, error.to_string());
         }
-        
+
         if error_lower.contains("timeout") || error_lower.contains("timed out") {
-            return PlaybackError::new(
-                PlaybackErrorType::NetworkTimeout,
-                error.to_string()
-            );
+            return PlaybackError::new(PlaybackErrorType::NetworkTimeout, error.to_string());
         }
-        
-        if error_lower.contains("403") || error_lower.contains("forbidden") || error_lower.contains("blocked") {
-            return PlaybackError::new(
-                PlaybackErrorType::ProviderBlocked,
-                error.to_string()
-            );
+
+        if error_lower.contains("403")
+            || error_lower.contains("forbidden")
+            || error_lower.contains("blocked")
+        {
+            return PlaybackError::new(PlaybackErrorType::ProviderBlocked, error.to_string());
         }
-        
-        if error_lower.contains("401") || error_lower.contains("unauthorized") || error_lower.contains("expired") {
-            return PlaybackError::new(
-                PlaybackErrorType::AuthExpired,
-                error.to_string()
-            );
+
+        if error_lower.contains("401")
+            || error_lower.contains("unauthorized")
+            || error_lower.contains("expired")
+        {
+            return PlaybackError::new(PlaybackErrorType::AuthExpired, error.to_string());
         }
-        
-        if error_lower.contains("format") || error_lower.contains("invalid") || error_lower.contains("unsupported") {
-            return PlaybackError::new(
-                PlaybackErrorType::InvalidFormat,
-                error.to_string()
-            );
+
+        if error_lower.contains("format")
+            || error_lower.contains("invalid")
+            || error_lower.contains("unsupported")
+        {
+            return PlaybackError::new(PlaybackErrorType::InvalidFormat, error.to_string());
         }
-        
-        PlaybackError::new(
-            PlaybackErrorType::Unknown,
-            error.to_string()
-        )
+
+        PlaybackError::new(PlaybackErrorType::Unknown, error.to_string())
     }
 
     async fn check_stream_health(&self, url: &str) -> Result<(), anyhow::Error> {
@@ -262,7 +270,7 @@ impl Player {
         // We use a stream request but abort immediately to check connectivity/headers.
         // HEAD often fails on some IPTV servers, so a started GET is safer logic-wise.
         let mut result = client.get(url).send().await;
-        
+
         // Resilience: Fallback to DoH if DNS fails for the stream health check
         if let Err(ref e) = result {
             if crate::doh::is_dns_error(e) {
@@ -277,25 +285,35 @@ impl Player {
                 if resp.status().is_success() || resp.status().is_redirection() {
                     Ok(())
                 } else {
-                    Err(anyhow::anyhow!("Stream returned error status: {} (Server might be offline/blocking)", resp.status()))
+                    Err(anyhow::anyhow!(
+                        "Stream returned error status: {} (Server might be offline/blocking)",
+                        resp.status()
+                    ))
                 }
-            },
+            }
             Err(e) => {
                 // Provide a user-friendly error description using shared DNS detection
                 if crate::doh::is_dns_error(&e) {
-                     Err(anyhow::anyhow!("Stream Server Unreachable. The host likely does not exist or is blocked (DNS Error). Details: {}", e))
+                    Err(anyhow::anyhow!("Stream Server Unreachable. The host likely does not exist or is blocked (DNS Error). Details: {}", e))
                 } else if e.is_connect() || e.is_timeout() {
-                     Err(anyhow::anyhow!("Stream Connection Failed. Server may be slow or offline. Details: {}", e))
+                    Err(anyhow::anyhow!(
+                        "Stream Connection Failed. Server may be slow or offline. Details: {}",
+                        e
+                    ))
                 } else {
-                     Err(anyhow::anyhow!("Stream Check Failed: {}", e))
+                    Err(anyhow::anyhow!("Stream Check Failed: {}", e))
                 }
             }
         }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn play_mpv(&self, url: &str, use_default_mpv: bool, smooth_motion: bool) -> Result<(), anyhow::Error> {
-
+    fn play_mpv(
+        &self,
+        url: &str,
+        use_default_mpv: bool,
+        smooth_motion: bool,
+    ) -> Result<(), anyhow::Error> {
         // Find mpv executable, checking PATH and common installation locations
         let mpv_path = crate::setup::get_mpv_path().ok_or_else(|| {
             let hint = if cfg!(target_os = "macos") {
@@ -322,7 +340,7 @@ impl Player {
         };
 
         let mut cmd = Command::new(&mpv_path);
-        
+
         // Add Referrer validation (Common anti-scraping measure)
         if let Some(scheme_end) = url.find("://") {
             let rest = &url[scheme_end + 3..];
@@ -332,7 +350,7 @@ impl Player {
                 cmd.arg(format!("--referrer={}", base));
             }
         }
-        
+
         let _is_live = url.contains("/live/") || url.contains(".m3u8");
 
         cmd.arg(url)
@@ -344,9 +362,9 @@ impl Player {
         // Apply smooth motion interpolation if enabled
         if smooth_motion {
             cmd.arg("--video-sync=display-resample") // Smooth motion sync (required for interpolation)
-               .arg("--interpolation=yes")           // Frame generation / motion smoothing
-               .arg("--tscale=linear")               // Soap opera effect - smooth motion blending
-               .arg("--tscale-clamp=0.0");           // Allow full blending for maximum smoothness
+                .arg("--interpolation=yes") // Frame generation / motion smoothing
+                .arg("--tscale=linear") // Soap opera effect - smooth motion blending
+                .arg("--tscale-clamp=0.0"); // Allow full blending for maximum smoothness
         }
 
         // Only apply optimizations if not using default MPV settings
@@ -368,8 +386,7 @@ impl Player {
                .arg("--hwdec=auto-safe"); // Enable hardware decoding to reduce CPU stuttering
 
             if cfg!(target_os = "windows") {
-                cmd.arg("--d3d11-flip=yes")
-                   .arg("--gpu-api=d3d11");
+                cmd.arg("--d3d11-flip=yes").arg("--gpu-api=d3d11");
             } else if cfg!(target_os = "macos") {
                 // Don't force gpu-api on macOS - let mpv auto-detect
                 // Some mpv builds don't support explicit opengl
@@ -388,23 +405,25 @@ impl Player {
 
         // Disconnect from terminal input/output to prevent hotkey conflicts
         cmd.stdin(Stdio::null())
-           .stdout(Stdio::null())
-           .stderr(Stdio::null());
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
 
         let child = cmd.spawn();
 
         match child {
             Ok(child) => {
                 {
-                    let mut guard = self.process.lock().map_err(|e| {
-                        anyhow::anyhow!("Failed to lock process mutex: {}", e)
-                    })?;
+                    let mut guard = self
+                        .process
+                        .lock()
+                        .map_err(|e| anyhow::anyhow!("Failed to lock process mutex: {}", e))?;
                     *guard = Some(child);
                 }
                 {
-                    let mut ipc_guard = self.ipc_path.lock().map_err(|e| {
-                        anyhow::anyhow!("Failed to lock IPC path mutex: {}", e)
-                    })?;
+                    let mut ipc_guard = self
+                        .ipc_path
+                        .lock()
+                        .map_err(|e| anyhow::anyhow!("Failed to lock IPC path mutex: {}", e))?;
                     *ipc_guard = Some(PathBuf::from(&pipe_name));
                 }
                 Ok(())
@@ -420,10 +439,7 @@ impl Player {
                 } else {
                     String::new()
                 };
-                Err(anyhow::anyhow!(
-                    "Failed to start mpv: {}.{}",
-                    e, hint
-                ))
+                Err(anyhow::anyhow!("Failed to start mpv: {}.{}", e, hint))
             }
         }
     }
@@ -431,12 +447,11 @@ impl Player {
     #[cfg(not(target_arch = "wasm32"))]
     fn play_vlc(&self, url: &str, smooth_motion: bool) -> Result<(), anyhow::Error> {
         // Find vlc executable
-        let vlc_path = crate::setup::get_vlc_path().ok_or_else(|| {
-            anyhow::anyhow!("VLC not found. Please install VLC.")
-        })?;
+        let vlc_path = crate::setup::get_vlc_path()
+            .ok_or_else(|| anyhow::anyhow!("VLC not found. Please install VLC."))?;
 
         let mut cmd = Command::new(&vlc_path);
-        
+
         // Add Referrer validation (Common anti-scraping measure)
         // Manual parsing to avoid adding 'url' crate dependency
         if let Some(scheme_end) = url.find("://") {
@@ -460,12 +475,12 @@ impl Player {
         // Apply smooth motion (deinterlacing) if enabled
         if smooth_motion {
             cmd.arg("--video-filter=deinterlace")
-               .arg("--deinterlace-mode=bob");
+                .arg("--deinterlace-mode=bob");
         }
         // DISCONNECT from terminal
         cmd.stdin(Stdio::null())
-           .stdout(Stdio::null())
-           .stderr(Stdio::null());
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
 
         #[cfg(windows)]
         {
@@ -475,27 +490,31 @@ impl Player {
         }
 
         let child = cmd.spawn()?;
-        
+
         {
-            let mut guard = self.process.lock().map_err(|e| {
-                anyhow::anyhow!("Failed to lock process mutex: {}", e)
-            })?;
+            let mut guard = self
+                .process
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Failed to lock process mutex: {}", e))?;
             *guard = Some(child);
         }
-        
+
         Ok(())
     }
 
     /// Read the last few lines of the player logs to find errors
     pub fn get_last_error_from_log(&self) -> Option<String> {
         let logs = ["mpv_playback.log", "vlc_playback.log"];
-        
+
         for log_file in logs {
             if let Ok(content) = std::fs::read_to_string(log_file) {
                 let lines: Vec<&str> = content.lines().rev().take(15).collect();
                 for line in lines {
                     let lower = line.to_lowercase();
-                    if lower.contains("error") || lower.contains("failed") || lower.contains("fatal") {
+                    if lower.contains("error")
+                        || lower.contains("failed")
+                        || lower.contains("fatal")
+                    {
                         // Clean up common VLC/MPV prefixes for cleaner UI display
                         let cleaned = line.split("]: ").last().unwrap_or(line);
                         return Some(cleaned.to_string());
@@ -585,17 +604,25 @@ impl Player {
     /// Read from MPV IPC socket
     #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
     async fn read_ipc_socket(&self, path: &PathBuf) -> Result<String, std::io::Error> {
-        use tokio::net::UnixStream;
         use tokio::io::AsyncReadExt;
+        use tokio::net::UnixStream;
 
         let mut stream = match UnixStream::connect(path).await {
             Ok(s) => s,
-            Err(_) => return Err(std::io::Error::new(std::io::ErrorKind::NotConnected, "IPC not ready")),
+            Err(_) => {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::NotConnected,
+                    "IPC not ready",
+                ))
+            }
         };
 
         let mut buf = [0u8; 4096];
         match stream.read(&mut buf).await {
-            Ok(0) => Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "IPC closed")),
+            Ok(0) => Err(std::io::Error::new(
+                std::io::ErrorKind::UnexpectedEof,
+                "IPC closed",
+            )),
             Ok(n) => Ok(String::from_utf8_lossy(&buf[..n]).to_string()),
             Err(e) => Err(e),
         }
@@ -604,7 +631,10 @@ impl Player {
     /// Windows stub for read_ipc_socket
     #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
     async fn read_ipc_socket(&self, _path: &PathBuf) -> Result<String, std::io::Error> {
-        Err(std::io::Error::new(std::io::ErrorKind::Other, "Unix sockets not available on Windows"))
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "Unix sockets not available on Windows",
+        ))
     }
 
     /// Windows stub for monitor_ipc_errors
@@ -618,7 +648,7 @@ impl Player {
     fn parse_ipc_error(&self, data: &str) -> Option<String> {
         let error_patterns = ["error", "failed", "abort", "network"];
         let lower = data.to_lowercase();
-        
+
         for pattern in error_patterns {
             if lower.contains(pattern) {
                 if let Some(line) = data.lines().find(|l| l.to_lowercase().contains(pattern)) {
@@ -636,7 +666,10 @@ impl Player {
 
     /// Enhanced playback check with IPC error monitoring
     #[cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))]
-    pub async fn wait_for_playback_with_monitoring(&self, timeout_ms: u64) -> Result<bool, anyhow::Error> {
+    pub async fn wait_for_playback_with_monitoring(
+        &self,
+        timeout_ms: u64,
+    ) -> Result<bool, anyhow::Error> {
         let start = std::time::Instant::now();
         let timeout = Duration::from_millis(timeout_ms);
 
@@ -671,7 +704,10 @@ impl Player {
 
     /// Simplified playback check for Windows (no IPC monitoring)
     #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
-    pub async fn wait_for_playback_with_monitoring(&self, timeout_ms: u64) -> Result<bool, anyhow::Error> {
+    pub async fn wait_for_playback_with_monitoring(
+        &self,
+        timeout_ms: u64,
+    ) -> Result<bool, anyhow::Error> {
         let start = std::time::Instant::now();
         let timeout = Duration::from_millis(timeout_ms);
 
@@ -696,7 +732,13 @@ impl Player {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn play(&self, url: &str, _engine: PlayerEngine, _use_default_mpv: bool, _smooth_motion: bool) -> Result<(), anyhow::Error> {
+    pub fn play(
+        &self,
+        url: &str,
+        _engine: PlayerEngine,
+        _use_default_mpv: bool,
+        _smooth_motion: bool,
+    ) -> Result<(), anyhow::Error> {
         self.stop();
         if let Some(win) = window() {
             let _ = win.alert_with_message(&format!("Play stream: {}", url));
@@ -738,7 +780,10 @@ impl Player {
         // Check if old log files exist and are large (might indicate recurring issues)
         if let Ok(meta) = std::fs::metadata("mpv_playback.log") {
             if meta.len() > 1_000_000 {
-                suggestions.push("Large log file detected. Consider deleting mpv_playback.log to free space".to_string());
+                suggestions.push(
+                    "Large log file detected. Consider deleting mpv_playback.log to free space"
+                        .to_string(),
+                );
             }
         }
 
@@ -755,7 +800,7 @@ impl Player {
     /// Auto-detect stream URL issues and suggest fixes
     pub fn analyze_stream_url(url: &str) -> Vec<String> {
         let mut issues = Vec::new();
-        
+
         // Check for http vs https
         if url.starts_with("http://") {
             issues.push("Stream URL uses HTTP (insecure). Trying HTTPS may help".to_string());
@@ -763,7 +808,10 @@ impl Player {
 
         // Check for missing referrer
         if !url.contains("/live/") && !url.contains(".m3u8") {
-            issues.push("Non-standard URL format detected. Stream may require special player settings".to_string());
+            issues.push(
+                "Non-standard URL format detected. Stream may require special player settings"
+                    .to_string(),
+            );
         }
 
         // Check for query parameters that might indicate auth issues

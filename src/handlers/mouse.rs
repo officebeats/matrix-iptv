@@ -453,27 +453,36 @@ pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent, tx: &mpsc::Sender<As
         }
         MouseEventKind::ScrollDown => {
             if app.show_guide.is_some() {
-                app.guide_scroll = app.guide_scroll.saturating_add(1);
+                app.guide_scroll = app.guide_scroll.saturating_add(3);
             } else {
                 match app.current_screen {
                     CurrentScreen::Home => app.next_account(),
                     CurrentScreen::Categories | CurrentScreen::Streams => match app.active_pane {
-                        Pane::Categories => app.next_category(),
-                        Pane::Streams => app.next_stream(),
+                        Pane::Categories => app.half_page_down_category(),
+                        Pane::Streams => app.half_page_down_stream(),
                         _ => {}
                     },
                     CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
                         match app.active_pane {
-                            Pane::Categories => app.next_vod_category(),
-                            Pane::Streams => app.next_vod_stream(),
+                            Pane::Categories => app.half_page_down_category(),
+                            Pane::Streams => app.half_page_down_vod_stream(),
                             _ => {}
                         }
                     }
                     CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
                         match app.active_pane {
-                            Pane::Categories => app.next_series_category(),
-                            Pane::Streams => app.next_series_stream(),
-                            Pane::Episodes => app.next_series_episode(),
+                            Pane::Categories => app.half_page_down_category(),
+                            Pane::Streams => app.half_page_down_series_stream(),
+                            Pane::Episodes => {
+                                let half = app.page_size_for_pane(Pane::Episodes) / 2;
+                                crate::app::App::jump_list(
+                                    app.series_episodes.len(),
+                                    &mut app.selected_series_episode_index,
+                                    &mut app.series_episode_list_state,
+                                    half.max(1),
+                                    true,
+                                );
+                            }
                         }
                     }
                     CurrentScreen::SportsDashboard => {
@@ -505,27 +514,36 @@ pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent, tx: &mpsc::Sender<As
         }
         MouseEventKind::ScrollUp => {
             if app.show_guide.is_some() {
-                app.guide_scroll = app.guide_scroll.saturating_sub(1);
+                app.guide_scroll = app.guide_scroll.saturating_sub(3);
             } else {
                 match app.current_screen {
                     CurrentScreen::Home => app.previous_account(),
                     CurrentScreen::Categories | CurrentScreen::Streams => match app.active_pane {
-                        Pane::Categories => app.previous_category(),
-                        Pane::Streams => app.previous_stream(),
+                        Pane::Categories => app.half_page_up_category(),
+                        Pane::Streams => app.half_page_up_stream(),
                         _ => {}
                     },
                     CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
                         match app.active_pane {
-                            Pane::Categories => app.previous_vod_category(),
-                            Pane::Streams => app.previous_vod_stream(),
+                            Pane::Categories => app.half_page_up_category(),
+                            Pane::Streams => app.half_page_up_vod_stream(),
                             _ => {}
                         }
                     }
                     CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
                         match app.active_pane {
-                            Pane::Categories => app.previous_series_category(),
-                            Pane::Streams => app.previous_series_stream(),
-                            Pane::Episodes => app.previous_series_episode(),
+                            Pane::Categories => app.half_page_up_category(),
+                            Pane::Streams => app.half_page_up_series_stream(),
+                            Pane::Episodes => {
+                                let half = app.page_size_for_pane(Pane::Episodes) / 2;
+                                crate::app::App::jump_list(
+                                    app.series_episodes.len(),
+                                    &mut app.selected_series_episode_index,
+                                    &mut app.series_episode_list_state,
+                                    half.max(1),
+                                    false,
+                                );
+                            }
                         }
                     }
                     CurrentScreen::SportsDashboard => match app.active_pane {

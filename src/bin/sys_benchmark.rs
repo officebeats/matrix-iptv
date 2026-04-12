@@ -1,9 +1,9 @@
-use matrix_iptv_lib::api::{Stream, Category};
-use matrix_iptv_lib::preprocessing::{preprocess_streams, preprocess_categories};
-use matrix_iptv_lib::flex_id::FlexId;
+use matrix_iptv_lib::api::{Category, Stream};
 use matrix_iptv_lib::config::ProcessingMode;
-use std::time::Instant;
+use matrix_iptv_lib::flex_id::FlexId;
+use matrix_iptv_lib::preprocessing::{preprocess_categories, preprocess_streams};
 use std::collections::HashSet;
+use std::time::Instant;
 
 #[tokio::main]
 async fn main() {
@@ -23,7 +23,7 @@ async fn main() {
         s.category_id = Some("1".to_string());
         s.container_extension = Some("mkv".to_string());
         s.rating = Some(4.5);
-        s.stream_type = "live".to_string(); 
+        s.stream_type = "live".to_string();
         streams.push(s);
     }
 
@@ -43,20 +43,38 @@ async fn main() {
     // 2. Measure Categories Preprocessing (Zero-Latency Projection)
     println!("Running Category Pre-parsing...");
     let start_cat = Instant::now();
-    preprocess_categories(&mut categories, &favorites, &modes, true, false, "BenchmarkAccount");
+    preprocess_categories(
+        &mut categories,
+        &favorites,
+        &modes,
+        true,
+        false,
+        "BenchmarkAccount",
+    );
     let duration_cat = start_cat.elapsed();
     println!("  >> Processed 1,000 categories in: {:?}\n", duration_cat);
 
     // 3. Measure Stream Preprocessing (Multi-Core & Zero-Copy Sort)
     println!("Running Stream Preprocessing (Filter + Cleaning + Zero-Copy Sort)...");
     let start_proc = Instant::now();
-    
+
     // We pass None for tx to skip UI messages in benchmark
     // is_live = true to match mock data
-    preprocess_streams(&mut streams, &favorites, &modes, true, "BenchmarkAccount", None);
-    
+    preprocess_streams(
+        &mut streams,
+        &favorites,
+        &modes,
+        true,
+        "BenchmarkAccount",
+        None,
+    );
+
     let duration_proc = start_proc.elapsed();
-    println!("  >> Processed {} streams (remaining after filter) in: {:?}\n", streams.len(), duration_proc);
+    println!(
+        "  >> Processed {} streams (remaining after filter) in: {:?}\n",
+        streams.len(),
+        duration_proc
+    );
 
     if streams.is_empty() {
         println!("❌ ERROR: All streams filtered out! Check filter logic in preprocessing.rs");
@@ -65,8 +83,11 @@ async fn main() {
 
     println!("Verification Metrics:");
     println!("  - Cleaned Names (Sample): {}", streams[0].clean_name);
-    println!("  - Multi-Core Utilization: Detected {} logical cores", num_cpus_count());
-    
+    println!(
+        "  - Multi-Core Utilization: Detected {} logical cores",
+        num_cpus_count()
+    );
+
     // Benchmark target: < 800ms for 50k streams (including filtering, parallel cleaning, and sorting)
     if duration_proc.as_millis() < 800 {
         println!("✅ PERFORMANCE TARGET MET: Preprocessing sub-800ms at scale.");
@@ -76,5 +97,7 @@ async fn main() {
 }
 
 fn num_cpus_count() -> usize {
-    std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1)
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
 }

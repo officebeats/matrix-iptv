@@ -1,3 +1,8 @@
+use crate::app::{App, CurrentScreen, Guide, Pane};
+use crate::ui::colors::{
+    HIGHLIGHT_BG, MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
+};
+use crate::ui::utils::centered_rect;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
@@ -5,9 +10,6 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
-use crate::app::{App, CurrentScreen, Guide, Pane};
-use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
-use crate::ui::utils::centered_rect;
 
 pub fn render_help_popup(f: &mut Frame, area: Rect) {
     let area = centered_rect(60, 60, area);
@@ -16,9 +18,12 @@ pub fn render_help_popup(f: &mut Frame, area: Rect) {
     let inner_area = crate::ui::common::render_composite_block(f, area, Some("keyboard shortcuts"));
 
     let help_text = vec![
-        Line::from(vec![
-            Span::styled("  navigation", Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "  navigation",
+            Style::default()
+                .fg(TEXT_PRIMARY)
+                .add_modifier(Modifier::BOLD),
+        )]),
         Line::from(""),
         Line::from(vec![
             Span::styled("  ↑↓ / j/k   ", Style::default().fg(MATRIX_GREEN)),
@@ -27,6 +32,22 @@ pub fn render_help_popup(f: &mut Frame, area: Rect) {
         Line::from(vec![
             Span::styled("  ←→ / h/l   ", Style::default().fg(MATRIX_GREEN)),
             Span::styled("switch panes", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  PgDn/PgUp   ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("page down / page up", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  ctrl+d/u    ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("half page down / up", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Home/End    ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("jump to top / bottom", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  g/G         ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("jump to top / bottom", Style::default().fg(TEXT_SECONDARY)),
         ]),
         Line::from(vec![
             Span::styled("  enter       ", Style::default().fg(MATRIX_GREEN)),
@@ -41,9 +62,12 @@ pub fn render_help_popup(f: &mut Frame, area: Rect) {
             Span::styled("quit", Style::default().fg(TEXT_SECONDARY)),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  features", Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "  features",
+            Style::default()
+                .fg(TEXT_PRIMARY)
+                .add_modifier(Modifier::BOLD),
+        )]),
         Line::from(""),
         Line::from(vec![
             Span::styled("  ctrl+space  ", Style::default().fg(MATRIX_GREEN)),
@@ -51,7 +75,10 @@ pub fn render_help_popup(f: &mut Frame, area: Rect) {
         ]),
         Line::from(vec![
             Span::styled("  f           ", Style::default().fg(MATRIX_GREEN)),
-            Span::styled("toggle filter active/all", Style::default().fg(TEXT_SECONDARY)),
+            Span::styled(
+                "toggle filter active/all",
+                Style::default().fg(TEXT_SECONDARY),
+            ),
         ]),
         Line::from(vec![
             Span::styled("  v           ", Style::default().fg(MATRIX_GREEN)),
@@ -70,9 +97,10 @@ pub fn render_help_popup(f: &mut Frame, area: Rect) {
             Span::styled("settings", Style::default().fg(TEXT_SECONDARY)),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("  press esc to close", Style::default().fg(TEXT_DIM)),
-        ]),
+        Line::from(vec![Span::styled(
+            "  press esc to close",
+            Style::default().fg(TEXT_DIM),
+        )]),
     ];
 
     f.render_widget(
@@ -95,12 +123,16 @@ pub fn render_guide_popup(f: &mut Frame, app: &App, area: Rect) {
                 if line.starts_with("# ") {
                     Line::from(Span::styled(
                         line.trim_start_matches("# ").trim(),
-                        Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(TEXT_PRIMARY)
+                            .add_modifier(Modifier::BOLD),
                     ))
                 } else if line.starts_with("## ") {
                     Line::from(Span::styled(
                         line.trim_start_matches("## ").trim(),
-                        Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD),
+                        Style::default()
+                            .fg(MATRIX_GREEN)
+                            .add_modifier(Modifier::BOLD),
                     ))
                 } else if line.starts_with("### ") {
                     Line::from(Span::styled(
@@ -125,7 +157,10 @@ pub fn render_guide_popup(f: &mut Frame, app: &App, area: Rect) {
                         match c {
                             '*' => {
                                 if !current_text.is_empty() {
-                                    spans.push(Span::styled(current_text.clone(), Style::default().fg(TEXT_SECONDARY)));
+                                    spans.push(Span::styled(
+                                        current_text.clone(),
+                                        Style::default().fg(TEXT_SECONDARY),
+                                    ));
                                     current_text.clear();
                                 }
                                 if chars.peek() == Some(&'*') {
@@ -146,7 +181,9 @@ pub fn render_guide_popup(f: &mut Frame, app: &App, area: Rect) {
                                     }
                                     spans.push(Span::styled(
                                         bold_content,
-                                        Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
+                                        Style::default()
+                                            .fg(MATRIX_GREEN)
+                                            .add_modifier(Modifier::BOLD),
                                     ));
                                 } else {
                                     let mut italic_content = String::new();
@@ -160,13 +197,18 @@ pub fn render_guide_popup(f: &mut Frame, app: &App, area: Rect) {
                                     }
                                     spans.push(Span::styled(
                                         italic_content,
-                                        Style::default().fg(TEXT_DIM).add_modifier(Modifier::ITALIC)
+                                        Style::default()
+                                            .fg(TEXT_DIM)
+                                            .add_modifier(Modifier::ITALIC),
                                     ));
                                 }
                             }
                             '`' => {
                                 if !current_text.is_empty() {
-                                    spans.push(Span::styled(current_text.clone(), Style::default().fg(TEXT_SECONDARY)));
+                                    spans.push(Span::styled(
+                                        current_text.clone(),
+                                        Style::default().fg(TEXT_SECONDARY),
+                                    ));
                                     current_text.clear();
                                 }
                                 let mut code_content = String::new();
@@ -180,7 +222,9 @@ pub fn render_guide_popup(f: &mut Frame, app: &App, area: Rect) {
                                 }
                                 spans.push(Span::styled(
                                     code_content,
-                                    Style::default().fg(MATRIX_GREEN).bg(ratatui::style::Color::Rgb(20, 20, 20))
+                                    Style::default()
+                                        .fg(MATRIX_GREEN)
+                                        .bg(ratatui::style::Color::Rgb(20, 20, 20)),
                                 ));
                             }
                             _ => {
@@ -188,9 +232,12 @@ pub fn render_guide_popup(f: &mut Frame, app: &App, area: Rect) {
                             }
                         }
                     }
-                    
+
                     if !current_text.is_empty() {
-                        spans.push(Span::styled(current_text, Style::default().fg(TEXT_SECONDARY)));
+                        spans.push(Span::styled(
+                            current_text,
+                            Style::default().fg(TEXT_SECONDARY),
+                        ));
                     }
 
                     Line::from(spans)
@@ -230,9 +277,9 @@ pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
 
     // 3 options - Sports temporarily hidden
     let options: Vec<(usize, &str, &str, &str, &str)> = vec![
-        (0, "[1]", "►", "Live Channels",  "real-time TV broadcasts"),
-        (1, "[2]", "▸", "Movies (VOD)",   "on-demand movie library"),
-        (2, "[3]", "▸", "TV Series",      "episodic content"),
+        (0, "[1]", "►", "Live Channels", "real-time TV broadcasts"),
+        (1, "[2]", "▸", "Movies (VOD)", "on-demand movie library"),
+        (2, "[3]", "▸", "TV Series", "episodic content"),
     ];
 
     let items: Vec<ListItem> = options
@@ -240,12 +287,16 @@ pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
         .map(|(i, badge, icon, label, sub)| {
             let is_sel = *i == selected;
             let key_style = if is_sel {
-                Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(MATRIX_GREEN)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(TEXT_DIM)
             };
             let label_style = if is_sel {
-                Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(MATRIX_GREEN)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(TEXT_PRIMARY)
             };
@@ -262,7 +313,12 @@ pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
     list_state.select(Some(selected));
     f.render_stateful_widget(
         List::new(items)
-            .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
+            .highlight_style(
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(MATRIX_GREEN)
+                    .add_modifier(Modifier::BOLD),
+            )
             .highlight_symbol(""),
         layout[0],
         &mut list_state,
@@ -292,24 +348,46 @@ pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
 
     // Key hints bar
     let hints = Line::from(vec![
-        Span::styled("enter", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "enter",
+            Style::default()
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" open  ", Style::default().fg(TEXT_SECONDARY)),
-        Span::styled("↑↓", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "↑↓",
+            Style::default()
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" navigate  ", Style::default().fg(TEXT_SECONDARY)),
-        Span::styled("esc", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "esc",
+            Style::default()
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" back  ", Style::default().fg(TEXT_SECONDARY)),
-        Span::styled("R", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            "R",
+            Style::default()
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
         Span::styled(" refresh", Style::default().fg(TEXT_SECONDARY)),
     ]);
-    f.render_widget(
-        Paragraph::new(hints).alignment(Alignment::Left),
-        layout[3],
-    );
+    f.render_widget(Paragraph::new(hints).alignment(Alignment::Left), layout[3]);
 }
 
 pub fn render_error_popup(f: &mut Frame, area: Rect, error: &str) {
     let block = Block::default()
-        .title(Span::styled(" error ", Style::default().fg(ratatui::style::Color::Rgb(255, 100, 100)).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            " error ",
+            Style::default()
+                .fg(ratatui::style::Color::Rgb(255, 100, 100))
+                .add_modifier(Modifier::BOLD),
+        ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(ratatui::style::Color::Rgb(255, 100, 100)));
@@ -352,7 +430,9 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
         .split(inner);
 
     if let Some(title) = &app.pending_play_title {
-        let display_title = if app.current_screen == CurrentScreen::SeriesStreams && app.active_pane == Pane::Episodes {
+        let display_title = if app.current_screen == CurrentScreen::SeriesStreams
+            && app.active_pane == Pane::Episodes
+        {
             if let Some(stream) = app.series_streams.get(app.selected_series_stream_index) {
                 format!("{} - {}", stream.name, title)
             } else {
@@ -363,9 +443,14 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
         };
 
         f.render_widget(
-            Paragraph::new(Span::styled(&display_title, Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)))
-                .alignment(Alignment::Center),
-            chunks[0]
+            Paragraph::new(Span::styled(
+                &display_title,
+                Style::default()
+                    .fg(TEXT_PRIMARY)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Center),
+            chunks[0],
         );
     }
 
@@ -374,7 +459,9 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
 
     if app.current_screen == CurrentScreen::SeriesStreams && app.active_pane == Pane::Episodes {
         if !app.series_episodes.is_empty() {
-            let ep = &app.series_episodes[app.selected_series_episode_index.min(app.series_episodes.len() - 1)];
+            let ep = &app.series_episodes[app
+                .selected_series_episode_index
+                .min(app.series_episodes.len() - 1)];
             if let Some(info) = &ep.info {
                 if let Some(map) = info.as_object() {
                     add_metadata_lines(&mut details, map);
@@ -400,8 +487,15 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
                     add_metadata_lines(&mut details, map);
                     metadata_found = true;
                 } else {
-                    if !details.iter().any(|l| l.spans.iter().any(|s| s.content.contains("cast"))) {
-                        if let Some(cast) = map.get("cast").and_then(|v| v.as_str()).or_else(|| map.get("actors").and_then(|v| v.as_str())) {
+                    if !details
+                        .iter()
+                        .any(|l| l.spans.iter().any(|s| s.content.contains("cast")))
+                    {
+                        if let Some(cast) = map
+                            .get("cast")
+                            .and_then(|v| v.as_str())
+                            .or_else(|| map.get("actors").and_then(|v| v.as_str()))
+                        {
                             details.push(Line::from(vec![
                                 Span::styled("cast     ", Style::default().fg(TEXT_SECONDARY)),
                                 Span::styled(cast, Style::default().fg(MATRIX_GREEN)),
@@ -414,54 +508,66 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
     }
 
     if !metadata_found {
-        details.push(Line::from(vec![
-            Span::styled("No additional metadata available.", Style::default().fg(TEXT_DIM))
-        ]));
+        details.push(Line::from(vec![Span::styled(
+            "No additional metadata available.",
+            Style::default().fg(TEXT_DIM),
+        )]));
     }
 
     f.render_widget(
         Paragraph::new(details)
             .wrap(Wrap { trim: true })
             .block(Block::default().borders(Borders::NONE)),
-        chunks[1]
+        chunks[1],
     );
 
-    let controls = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("enter", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
-            Span::styled(" play   ", Style::default().fg(TEXT_PRIMARY)),
-            Span::styled("esc", Style::default().fg(ratatui::style::Color::Rgb(255, 100, 100)).add_modifier(Modifier::BOLD)),
-            Span::styled(" cancel", Style::default().fg(TEXT_PRIMARY)),
-        ])
-    ]).alignment(Alignment::Center);
+    let controls = Paragraph::new(vec![Line::from(vec![
+        Span::styled(
+            "enter",
+            Style::default()
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" play   ", Style::default().fg(TEXT_PRIMARY)),
+        Span::styled(
+            "esc",
+            Style::default()
+                .fg(ratatui::style::Color::Rgb(255, 100, 100))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" cancel", Style::default().fg(TEXT_PRIMARY)),
+    ])])
+    .alignment(Alignment::Center);
 
     f.render_widget(controls, chunks[2]);
 }
 
 fn add_metadata_lines(details: &mut Vec<Line>, info: &serde_json::Map<String, serde_json::Value>) {
-    if let Some(rating) = info.get("rating").and_then(|v| {
-        match v {
-            serde_json::Value::String(s) => Some(s.clone()),
-            serde_json::Value::Number(n) => Some(n.to_string()),
-            _ => None,
-        }
+    if let Some(rating) = info.get("rating").and_then(|v| match v {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
     }) {
         details.push(Line::from(vec![
             Span::styled("rating   ", Style::default().fg(TEXT_SECONDARY)),
-            Span::styled(format!("{} / 10", rating), Style::default().fg(MATRIX_GREEN)),
+            Span::styled(
+                format!("{} / 10", rating),
+                Style::default().fg(MATRIX_GREEN),
+            ),
         ]));
     }
 
-    if let Some(runtime) = info.get("runtime").and_then(|v| {
-        match v {
-            serde_json::Value::String(s) => Some(s.clone()),
-            serde_json::Value::Number(n) => Some(n.to_string()),
-            _ => None,
-        }
+    if let Some(runtime) = info.get("runtime").and_then(|v| match v {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
     }) {
         details.push(Line::from(vec![
             Span::styled("runtime  ", Style::default().fg(TEXT_SECONDARY)),
-            Span::styled(format!("{} min", runtime), Style::default().fg(TEXT_PRIMARY)),
+            Span::styled(
+                format!("{} min", runtime),
+                Style::default().fg(TEXT_PRIMARY),
+            ),
         ]));
     }
 
@@ -472,7 +578,11 @@ fn add_metadata_lines(details: &mut Vec<Line>, info: &serde_json::Map<String, se
         ]));
     }
 
-    if let Some(cast) = info.get("cast").and_then(|v| v.as_str()).or_else(|| info.get("actors").and_then(|v| v.as_str())) {
+    if let Some(cast) = info
+        .get("cast")
+        .and_then(|v| v.as_str())
+        .or_else(|| info.get("actors").and_then(|v| v.as_str()))
+    {
         details.push(Line::from(vec![
             Span::styled("cast     ", Style::default().fg(TEXT_SECONDARY)),
             Span::styled(cast.to_string(), Style::default().fg(MATRIX_GREEN)),
@@ -481,10 +591,15 @@ fn add_metadata_lines(details: &mut Vec<Line>, info: &serde_json::Map<String, se
 
     details.push(Line::from(""));
 
-    if let Some(plot) = info.get("plot").and_then(|v| v.as_str()).or_else(|| info.get("description").and_then(|v| v.as_str())) {
-        details.push(Line::from(vec![
-            Span::styled(plot.to_string(), Style::default().fg(TEXT_SECONDARY)),
-        ]));
+    if let Some(plot) = info
+        .get("plot")
+        .and_then(|v| v.as_str())
+        .or_else(|| info.get("description").and_then(|v| v.as_str()))
+    {
+        details.push(Line::from(vec![Span::styled(
+            plot.to_string(),
+            Style::default().fg(TEXT_SECONDARY),
+        )]));
     }
 }
 
@@ -502,9 +617,12 @@ pub fn render_update_prompt(f: &mut Frame, app: &App, area: Rect) {
     let current_version = env!("CARGO_PKG_VERSION");
 
     let text = vec![
-        Line::from(vec![
-            Span::styled("A newer version of Matrix IPTV is available!", Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
-        ]),
+        Line::from(vec![Span::styled(
+            "A newer version of Matrix IPTV is available!",
+            Style::default()
+                .fg(TEXT_PRIMARY)
+                .add_modifier(Modifier::BOLD),
+        )]),
         Line::from(""),
         Line::from(vec![
             Span::styled("  current  ", Style::default().fg(TEXT_SECONDARY)),
@@ -512,24 +630,44 @@ pub fn render_update_prompt(f: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(vec![
             Span::styled("  new      ", Style::default().fg(TEXT_SECONDARY)),
-            Span::styled(new_version, Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                new_version,
+                Style::default()
+                    .fg(MATRIX_GREEN)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(""),
-        Line::from(vec![
-            Span::styled("The update will be downloaded and installed automatically.", Style::default().fg(TEXT_SECONDARY)),
-        ]),
+        Line::from(vec![Span::styled(
+            "The update will be downloaded and installed automatically.",
+            Style::default().fg(TEXT_SECONDARY),
+        )]),
     ];
 
-    f.render_widget(Paragraph::new(text).alignment(Alignment::Center).wrap(Wrap { trim: true }), chunks[0]);
+    f.render_widget(
+        Paragraph::new(text)
+            .alignment(Alignment::Center)
+            .wrap(Wrap { trim: true }),
+        chunks[0],
+    );
 
-    let controls = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("enter/u", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
-            Span::styled(" update   ", Style::default().fg(TEXT_PRIMARY)),
-            Span::styled("esc/l", Style::default().fg(ratatui::style::Color::Rgb(255, 100, 100)).add_modifier(Modifier::BOLD)),
-            Span::styled(" later", Style::default().fg(TEXT_PRIMARY)),
-        ])
-    ]).alignment(Alignment::Center);
+    let controls = Paragraph::new(vec![Line::from(vec![
+        Span::styled(
+            "enter/u",
+            Style::default()
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" update   ", Style::default().fg(TEXT_PRIMARY)),
+        Span::styled(
+            "esc/l",
+            Style::default()
+                .fg(ratatui::style::Color::Rgb(255, 100, 100))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" later", Style::default().fg(TEXT_PRIMARY)),
+    ])])
+    .alignment(Alignment::Center);
 
     f.render_widget(controls, chunks[1]);
 }
@@ -538,7 +676,7 @@ pub fn render_cast_picker_popup(f: &mut Frame, app: &App, area: Rect) {
     let area = centered_rect(50, 50, area);
     f.render_widget(Clear, area);
     let inner = crate::ui::common::render_composite_block(f, area, Some("cast to device"));
-    
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -556,20 +694,29 @@ pub fn render_cast_picker_popup(f: &mut Frame, app: &App, area: Rect) {
     } else {
         "Select a Chromecast device:"
     };
-    
+
     let title = Paragraph::new(title_text)
         .alignment(Alignment::Center)
-        .style(Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD));
+        .style(
+            Style::default()
+                .fg(TEXT_PRIMARY)
+                .add_modifier(Modifier::BOLD),
+        );
     f.render_widget(title, chunks[0]);
 
     if app.cast_devices.is_empty() {
-        let empty_msg = if app.cast_discovering { "Please wait..." } else { "Press R to rescan or check your network" };
+        let empty_msg = if app.cast_discovering {
+            "Please wait..."
+        } else {
+            "Press R to rescan or check your network"
+        };
         let empty = Paragraph::new(empty_msg)
             .alignment(Alignment::Center)
             .style(Style::default().fg(TEXT_DIM));
         f.render_widget(empty, chunks[1]);
     } else {
-        let items: Vec<ListItem> = app.cast_devices
+        let items: Vec<ListItem> = app
+            .cast_devices
             .iter()
             .map(|device| {
                 let model_str = device.model.as_deref().unwrap_or("Chromecast");
@@ -583,21 +730,40 @@ pub fn render_cast_picker_popup(f: &mut Frame, app: &App, area: Rect) {
 
         let mut list_state = app.cast_device_list_state.clone();
         let list = List::new(items)
-            .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
+            .highlight_style(
+                Style::default()
+                    .bg(HIGHLIGHT_BG)
+                    .fg(MATRIX_GREEN)
+                    .add_modifier(Modifier::BOLD),
+            )
             .highlight_symbol(" ▎");
         f.render_stateful_widget(list, chunks[1], &mut list_state);
     }
 
-    let controls = Paragraph::new(vec![
-        Line::from(vec![
-            Span::styled("enter", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
-            Span::styled(" cast   ", Style::default().fg(TEXT_PRIMARY)),
-            Span::styled("r", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
-            Span::styled(" rescan   ", Style::default().fg(TEXT_PRIMARY)),
-            Span::styled("esc", Style::default().fg(ratatui::style::Color::Rgb(255, 100, 100)).add_modifier(Modifier::BOLD)),
-            Span::styled(" cancel", Style::default().fg(TEXT_PRIMARY)),
-        ])
-    ]).alignment(Alignment::Center);
+    let controls = Paragraph::new(vec![Line::from(vec![
+        Span::styled(
+            "enter",
+            Style::default()
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" cast   ", Style::default().fg(TEXT_PRIMARY)),
+        Span::styled(
+            "r",
+            Style::default()
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" rescan   ", Style::default().fg(TEXT_PRIMARY)),
+        Span::styled(
+            "esc",
+            Style::default()
+                .fg(ratatui::style::Color::Rgb(255, 100, 100))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" cancel", Style::default().fg(TEXT_PRIMARY)),
+    ])])
+    .alignment(Alignment::Center);
 
     f.render_widget(controls, chunks[2]);
 }

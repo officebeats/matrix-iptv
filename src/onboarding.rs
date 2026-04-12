@@ -1,3 +1,5 @@
+use crate::api::{IptvClient, M3uClient, XtreamClient};
+use crate::config::{Account, AccountType, CategorySortOrder};
 use ratatui::{
     backend::Backend,
     crossterm::event::{self, Event, KeyCode, KeyEventKind},
@@ -7,13 +9,11 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph, Wrap},
     Frame, Terminal,
 };
-use crate::api::{IptvClient, XtreamClient, M3uClient};
-use crate::config::{Account, AccountType, CategorySortOrder};
 use std::collections::HashSet;
 use std::sync::mpsc::{self, Receiver};
 use std::thread;
 use std::time::Duration;
-use tachyonfx::{Effect, fx};
+use tachyonfx::{fx, Effect};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnboardingStep {
@@ -61,24 +61,26 @@ impl Default for OnboardingState {
     }
 }
 
-pub fn run_onboarding<B: Backend>(terminal: &mut Terminal<B>) -> anyhow::Result<Option<Account>> 
-where 
-    <B as Backend>::Error: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static
+pub fn run_onboarding<B: Backend>(terminal: &mut Terminal<B>) -> anyhow::Result<Option<Account>>
+where
+    <B as Backend>::Error: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
 {
     let mut state = OnboardingState::default();
     let tick_rate = Duration::from_millis(16); // 60fps for smooth animations
 
     loop {
-        terminal.draw(|f| ui(f, &mut state)).map_err(|e| anyhow::anyhow!(e))?;
+        terminal
+            .draw(|f| ui(f, &mut state))
+            .map_err(|e| anyhow::anyhow!(e))?;
 
         if state.should_quit {
             return Ok(None);
         }
-        
+
         if let Some(_account) = state.success_account.clone() {
             // Need a slight pause for completion state to be seen
             if state.step == OnboardingStep::Success {
-                 // Wait for user to press enter in handle_key
+                // Wait for user to press enter in handle_key
             }
         }
 
@@ -102,11 +104,17 @@ where
                     match result {
                         Ok((url, username, password, name)) => {
                             state.success_account = Some(Account {
-                                name: if name.is_empty() { "My Playlist".to_string() } else { name },
+                                name: if name.is_empty() {
+                                    "My Playlist".to_string()
+                                } else {
+                                    name
+                                },
                                 base_url: url.clone(),
                                 username: username.clone(),
                                 password: password.clone(),
-                                account_type: if crate::app::App::is_m3u_url(&url, &username, &password) {
+                                account_type: if crate::app::App::is_m3u_url(
+                                    &url, &username, &password,
+                                ) {
                                     AccountType::M3uUrl
                                 } else {
                                     AccountType::Xtream
@@ -135,23 +143,19 @@ where
 
 fn handle_key(state: &mut OnboardingState, key: KeyCode) {
     match state.step {
-        OnboardingStep::Welcome => {
-            match key {
-                KeyCode::Enter => transition_to(state, OnboardingStep::HowToGet),
-                KeyCode::Esc => state.should_quit = true,
-                _ => {}
+        OnboardingStep::Welcome => match key {
+            KeyCode::Enter => transition_to(state, OnboardingStep::HowToGet),
+            KeyCode::Esc => state.should_quit = true,
+            _ => {}
+        },
+        OnboardingStep::HowToGet => match key {
+            KeyCode::Esc | KeyCode::Left => transition_to(state, OnboardingStep::Welcome),
+            KeyCode::Enter | KeyCode::Right => transition_to(state, OnboardingStep::Credentials),
+            KeyCode::Char('o') | KeyCode::Char('O') => {
+                let _ = webbrowser::open("https://g2g.to/iptv");
             }
-        }
-        OnboardingStep::HowToGet => {
-            match key {
-                KeyCode::Esc | KeyCode::Left => transition_to(state, OnboardingStep::Welcome),
-                KeyCode::Enter | KeyCode::Right => transition_to(state, OnboardingStep::Credentials),
-                KeyCode::Char('o') | KeyCode::Char('O') => {
-                    let _ = webbrowser::open("https://g2g.to/iptv");
-                },
-                _ => {}
-            }
-        }
+            _ => {}
+        },
         OnboardingStep::Credentials => {
             match key {
                 KeyCode::Esc => transition_to(state, OnboardingStep::HowToGet),
@@ -180,24 +184,31 @@ fn handle_key(state: &mut OnboardingState, key: KeyCode) {
                 KeyCode::Enter => {
                     if state.input_url.is_empty() {
                         state.error_msg = Some("Please fill in the URL field".to_string());
-                    } else if state.input_username.is_empty() && state.input_password.is_empty() && !crate::app::App::is_m3u_url(&state.input_url, &state.input_username, &state.input_password) {
+                    } else if state.input_username.is_empty()
+                        && state.input_password.is_empty()
+                        && !crate::app::App::is_m3u_url(
+                            &state.input_url,
+                            &state.input_username,
+                            &state.input_password,
+                        )
+                    {
                         state.error_msg = Some("Please fill in all fields (or leave username/password empty for M3U URL)".to_string());
                     } else {
                         state.error_msg = None;
                         state.spinner_frame = 0;
                         state.step = OnboardingStep::Validating;
-                        
+
                         // Trigger real validation task
                         let url = state.input_url.clone();
                         let username = state.input_username.clone();
                         let password = state.input_password.clone();
                         let name = state.input_name.clone();
-                    
+
                         let (tx, rx) = mpsc::channel();
                         state.validation_rx = Some(rx);
-                        
+
                         let is_m3u = crate::app::App::is_m3u_url(&url, &username, &password);
-                        
+
                         thread::spawn(move || {
                             let rt = tokio::runtime::Builder::new_current_thread()
                                 .enable_all()
@@ -211,14 +222,20 @@ fn handle_key(state: &mut OnboardingState, key: KeyCode) {
                                             let _ = tx.send(Ok((url, username, password, name)));
                                         }
                                         Ok((false, _, _, _)) => {
-                                            let _ = tx.send(Err("Invalid M3U playlist URL or format".to_string()));
+                                            let _ = tx
+                                                .send(Err("Invalid M3U playlist URL or format"
+                                                    .to_string()));
                                         }
                                         Err(e) => {
                                             let _ = tx.send(Err(e.to_string()));
                                         }
                                     }
                                 } else {
-                                    let client = IptvClient::Xtream(XtreamClient::new(url.clone(), username.clone(), password.clone()));
+                                    let client = IptvClient::Xtream(XtreamClient::new(
+                                        url.clone(),
+                                        username.clone(),
+                                        password.clone(),
+                                    ));
                                     match client.authenticate().await {
                                         Ok((true, _, _, _)) => {
                                             let _ = tx.send(Ok((url, username, password, name)));
@@ -251,12 +268,10 @@ fn handle_key(state: &mut OnboardingState, key: KeyCode) {
             }
         }
         OnboardingStep::Validating => {}
-        OnboardingStep::Failed => {
-            match key {
-                KeyCode::Esc | KeyCode::Enter => transition_to(state, OnboardingStep::Credentials),
-                _ => {}
-            }
-        }
+        OnboardingStep::Failed => match key {
+            KeyCode::Esc | KeyCode::Enter => transition_to(state, OnboardingStep::Credentials),
+            _ => {}
+        },
         OnboardingStep::Success => {}
     }
 }
@@ -279,12 +294,11 @@ fn transition_to(state: &mut OnboardingState, next_step: OnboardingStep) {
 fn ui(f: &mut Frame, state: &mut OnboardingState) {
     let area = f.area();
     f.render_widget(Clear, f.area());
-    
+
     // Explicit background fill to prevent terminal "gray" artifacting
     f.render_widget(
-        ratatui::widgets::Block::default()
-            .bg(ratatui::style::Color::Rgb(0, 0, 0)),
-        f.area()
+        ratatui::widgets::Block::default().bg(ratatui::style::Color::Rgb(0, 0, 0)),
+        f.area(),
     );
 
     let margin_v = std::cmp::max(1, area.height.saturating_mul(12) / 100);
@@ -298,7 +312,7 @@ fn ui(f: &mut Frame, state: &mut OnboardingState) {
         height: area.height.saturating_sub(margin_v * 2),
     };
     let content_area = centered_rect(78, 82, framed_area);
-    
+
     match state.step {
         OnboardingStep::Welcome => render_welcome(f, state, content_area),
         OnboardingStep::HowToGet => render_how_to_get(f, state, content_area),
@@ -311,24 +325,44 @@ fn ui(f: &mut Frame, state: &mut OnboardingState) {
     render_footer(f, state, area);
 }
 
-fn render_shell<'a>(f: &mut Frame, area: Rect, step_label: &'a str, title: &'a str, subtitle: &'a str) -> Rect {
-    let inner = crate::ui::common::render_composite_block(f, area, Some(" // FIRST-TIME PLAYLIST SETUP // "));
+fn render_shell<'a>(
+    f: &mut Frame,
+    area: Rect,
+    step_label: &'a str,
+    title: &'a str,
+    subtitle: &'a str,
+) -> Rect {
+    let inner = crate::ui::common::render_composite_block(
+        f,
+        area,
+        Some(" // FIRST-TIME PLAYLIST SETUP // "),
+    );
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(4),
-            Constraint::Min(0),
-        ])
+        .constraints([Constraint::Length(4), Constraint::Min(0)])
         .split(inner);
 
     let header = Paragraph::new(vec![
         Line::from(vec![
-            Span::styled(step_label, Style::default().fg(Color::White).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                step_label,
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled("  //  ", Style::default().fg(Color::DarkGray)),
-            Span::styled(title, Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                title,
+                Style::default()
+                    .fg(crate::ui::colors::MATRIX_GREEN)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]),
         Line::from(""),
-        Line::from(Span::styled(subtitle, Style::default().fg(crate::ui::colors::TEXT_SECONDARY))),
+        Line::from(Span::styled(
+            subtitle,
+            Style::default().fg(crate::ui::colors::TEXT_SECONDARY),
+        )),
     ]);
     f.render_widget(header, chunks[0]);
     chunks[1]
@@ -381,17 +415,34 @@ fn render_welcome(f: &mut Frame, _state: &OnboardingState, area: Rect) {
         .split(chunks[1]);
 
     let card_text = [
-        ("01 // source", "Find an IPTV provider that gives you Xtream Codes credentials."),
-        ("02 // connect", "Enter server URL, username, and password with inline guidance."),
-        ("03 // import", "Let Matrix IPTV validate the login and prepare your first library."),
+        (
+            "01 // source",
+            "Find an IPTV provider that gives you Xtream Codes credentials.",
+        ),
+        (
+            "02 // connect",
+            "Enter server URL, username, and password with inline guidance.",
+        ),
+        (
+            "03 // import",
+            "Let Matrix IPTV validate the login and prepare your first library.",
+        ),
     ];
 
     for (idx, (title, body)) in card_text.iter().enumerate() {
-        let card_inner = crate::ui::common::render_matrix_box(f, cards[idx], title, crate::ui::colors::SOFT_GREEN);
+        let card_inner = crate::ui::common::render_matrix_box(
+            f,
+            cards[idx],
+            title,
+            crate::ui::colors::SOFT_GREEN,
+        );
         f.render_widget(
             Paragraph::new(vec![
                 Line::from(""),
-                Line::from(Span::styled(*body, Style::default().fg(crate::ui::colors::TEXT_PRIMARY))),
+                Line::from(Span::styled(
+                    *body,
+                    Style::default().fg(crate::ui::colors::TEXT_PRIMARY),
+                )),
             ])
             .alignment(Alignment::Left)
             .wrap(Wrap { trim: true }),
@@ -424,41 +475,72 @@ fn render_how_to_get(f: &mut Frame, _state: &OnboardingState, area: Rect) {
 
     let columns = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(48),
-            Constraint::Percentage(52),
-        ])
+        .constraints([Constraint::Percentage(48), Constraint::Percentage(52)])
         .split(inner);
 
-    let left = crate::ui::common::render_matrix_box(f, columns[0], "what to buy", crate::ui::colors::SOFT_GREEN);
+    let left = crate::ui::common::render_matrix_box(
+        f,
+        columns[0],
+        "what to buy",
+        crate::ui::colors::SOFT_GREEN,
+    );
     let left_text = Paragraph::new(vec![
-        Line::from(Span::styled("Required format", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Required format",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
         Line::from("• Server URL"),
         Line::from("• Username"),
         Line::from("• Password"),
         Line::from(""),
-        Line::from(Span::styled("Ask specifically for Xtream Codes credentials.", Style::default().fg(crate::ui::colors::TEXT_SECONDARY))),
+        Line::from(Span::styled(
+            "Ask specifically for Xtream Codes credentials.",
+            Style::default().fg(crate::ui::colors::TEXT_SECONDARY),
+        )),
         Line::from("M3U-only access can work elsewhere, but this FTUE expects Xtream credentials."),
     ])
     .wrap(Wrap { trim: true });
     f.render_widget(left_text, left);
 
-    let right = crate::ui::common::render_matrix_box(f, columns[1], "where to look", crate::ui::colors::SOFT_GREEN);
+    let right = crate::ui::common::render_matrix_box(
+        f,
+        columns[1],
+        "where to look",
+        crate::ui::colors::SOFT_GREEN,
+    );
     let right_text = Paragraph::new(vec![
-        Line::from(Span::styled("Common marketplaces", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Common marketplaces",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
         Line::from("• G2G"),
         Line::from("• Z2U"),
         Line::from("• eBay"),
         Line::from(""),
-        Line::from(Span::styled("Frequently mentioned providers", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Frequently mentioned providers",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
         Line::from("• Strong8k"),
         Line::from("• Mega IPTV"),
         Line::from(""),
-        Line::from(Span::styled("[O] opens a browser search for you.", Style::default().fg(crate::ui::colors::TEXT_SECONDARY))),
-        Line::from(Span::styled("[Enter] continues once you already have the credentials.", Style::default().fg(crate::ui::colors::TEXT_SECONDARY))),
+        Line::from(Span::styled(
+            "[O] opens a browser search for you.",
+            Style::default().fg(crate::ui::colors::TEXT_SECONDARY),
+        )),
+        Line::from(Span::styled(
+            "[Enter] continues once you already have the credentials.",
+            Style::default().fg(crate::ui::colors::TEXT_SECONDARY),
+        )),
     ])
     .wrap(Wrap { trim: true });
     f.render_widget(right_text, right);
@@ -475,21 +557,33 @@ fn render_credentials(f: &mut Frame, state: &OnboardingState, area: Rect) {
 
     let chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(33),
-            Constraint::Percentage(67),
-        ])
+        .constraints([Constraint::Percentage(33), Constraint::Percentage(67)])
         .split(inner);
 
-    let tips = crate::ui::common::render_matrix_box(f, chunks[0], "operator notes", crate::ui::colors::SOFT_GREEN);
+    let tips = crate::ui::common::render_matrix_box(
+        f,
+        chunks[0],
+        "operator notes",
+        crate::ui::colors::SOFT_GREEN,
+    );
     let tips_text = Paragraph::new(vec![
-        Line::from(Span::styled("Expected input", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Expected input",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
         Line::from("• Playlist name is optional."),
         Line::from("• Server URL should look like http://provider.example:8080"),
         Line::from("• Username and password must match exactly."),
         Line::from(""),
-        Line::from(Span::styled("Keyboard", Style::default().fg(Color::White).add_modifier(Modifier::BOLD))),
+        Line::from(Span::styled(
+            "Keyboard",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )),
         Line::from(""),
         Line::from("• [Tab] or [Down] moves forward"),
         Line::from("• [Shift+Tab] or [Up] moves backward"),
@@ -499,7 +593,12 @@ fn render_credentials(f: &mut Frame, state: &OnboardingState, area: Rect) {
     .wrap(Wrap { trim: true });
     f.render_widget(tips_text, tips);
 
-    let form_inner = crate::ui::common::render_matrix_box(f, chunks[1], "connection form", crate::ui::colors::SOFT_GREEN);
+    let form_inner = crate::ui::common::render_matrix_box(
+        f,
+        chunks[1],
+        "connection form",
+        crate::ui::colors::SOFT_GREEN,
+    );
     let form_chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(1)
@@ -512,51 +611,99 @@ fn render_credentials(f: &mut Frame, state: &OnboardingState, area: Rect) {
         ])
         .split(form_inner);
 
-    let active_style = Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::BOLD);
+    let active_style = Style::default()
+        .fg(crate::ui::colors::MATRIX_GREEN)
+        .add_modifier(Modifier::BOLD);
     let inactive_style = Style::default().fg(Color::DarkGray);
 
     f.render_widget(
-        Paragraph::new(state.input_name.as_str())
-            .block(Block::default().borders(Borders::ALL).title(" Playlist Name (Optional) ").border_style(if state.active_field==0 {active_style} else {inactive_style})),
-        form_chunks[0]
+        Paragraph::new(state.input_name.as_str()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Playlist Name (Optional) ")
+                .border_style(if state.active_field == 0 {
+                    active_style
+                } else {
+                    inactive_style
+                }),
+        ),
+        form_chunks[0],
     );
 
     f.render_widget(
-        Paragraph::new(state.input_url.as_str())
-            .block(Block::default().borders(Borders::ALL).title(" Server URL (http://...) ").border_style(if state.active_field==1 {active_style} else {inactive_style})),
-        form_chunks[1]
+        Paragraph::new(state.input_url.as_str()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Server URL (http://...) ")
+                .border_style(if state.active_field == 1 {
+                    active_style
+                } else {
+                    inactive_style
+                }),
+        ),
+        form_chunks[1],
     );
 
     f.render_widget(
-        Paragraph::new(state.input_username.as_str())
-            .block(Block::default().borders(Borders::ALL).title(" Username ").border_style(if state.active_field==2 {active_style} else {inactive_style})),
-        form_chunks[2]
+        Paragraph::new(state.input_username.as_str()).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Username ")
+                .border_style(if state.active_field == 2 {
+                    active_style
+                } else {
+                    inactive_style
+                }),
+        ),
+        form_chunks[2],
     );
 
-    let pass_display = if state.show_password { state.input_password.clone() } else { "*".repeat(state.input_password.len()) };
+    let pass_display = if state.show_password {
+        state.input_password.clone()
+    } else {
+        "*".repeat(state.input_password.len())
+    };
     f.render_widget(
-        Paragraph::new(pass_display)
-            .block(Block::default().borders(Borders::ALL).title(" Password ").border_style(if state.active_field==3 {active_style} else {inactive_style})),
-        form_chunks[3]
+        Paragraph::new(pass_display).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title(" Password ")
+                .border_style(if state.active_field == 3 {
+                    active_style
+                } else {
+                    inactive_style
+                }),
+        ),
+        form_chunks[3],
     );
 
-    let mut hints = vec![
-        Line::from(vec![
-            Span::styled("[Tab]", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(" next field   "),
-            Span::styled("[T]", Style::default().add_modifier(Modifier::BOLD)),
-            Span::raw(" reveal password   "),
-            Span::styled("[Enter]", Style::default().add_modifier(Modifier::BOLD)),
-            Span::styled(" validate connection", Style::default().fg(crate::ui::colors::MATRIX_GREEN)),
-        ])
-    ];
+    let mut hints = vec![Line::from(vec![
+        Span::styled("[Tab]", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" next field   "),
+        Span::styled("[T]", Style::default().add_modifier(Modifier::BOLD)),
+        Span::raw(" reveal password   "),
+        Span::styled("[Enter]", Style::default().add_modifier(Modifier::BOLD)),
+        Span::styled(
+            " validate connection",
+            Style::default().fg(crate::ui::colors::MATRIX_GREEN),
+        ),
+    ])];
 
     if let Some(err) = &state.error_msg {
         hints.push(Line::from(""));
-        hints.push(Line::from(Span::styled(format!(" ERROR: {} ", err), Style::default().bg(Color::Red).fg(Color::White).add_modifier(Modifier::BOLD))));
+        hints.push(Line::from(Span::styled(
+            format!(" ERROR: {} ", err),
+            Style::default()
+                .bg(Color::Red)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )));
     }
 
-    f.render_widget(Paragraph::new(hints).alignment(Alignment::Center), form_chunks[4]);
+    f.render_widget(
+        Paragraph::new(hints).alignment(Alignment::Center),
+        form_chunks[4],
+    );
 }
 
 fn render_validating(f: &mut Frame, state: &OnboardingState, area: Rect) {
@@ -580,25 +727,48 @@ fn render_validating(f: &mut Frame, state: &OnboardingState, area: Rect) {
         ])
         .split(inner);
 
-    let status = crate::ui::common::render_matrix_box(f, chunks[0], "live connection test", crate::ui::colors::MATRIX_GREEN);
+    let status = crate::ui::common::render_matrix_box(
+        f,
+        chunks[0],
+        "live connection test",
+        crate::ui::colors::MATRIX_GREEN,
+    );
     f.render_widget(
         Paragraph::new(vec![
             Line::from(""),
-            Line::from(Span::styled(format!("{} Validating server connection...", spinner), Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::BOLD))).alignment(Alignment::Center),
+            Line::from(Span::styled(
+                format!("{} Validating server connection...", spinner),
+                Style::default()
+                    .fg(crate::ui::colors::MATRIX_GREEN)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Center),
             Line::from(""),
-            Line::from(Span::styled("Checking credentials and downloading only the minimum handshake data.", Style::default().fg(Color::White))).alignment(Alignment::Center),
+            Line::from(Span::styled(
+                "Checking credentials and downloading only the minimum handshake data.",
+                Style::default().fg(Color::White),
+            ))
+            .alignment(Alignment::Center),
         ]),
         status,
     );
 
-    let checklist = crate::ui::common::render_matrix_box(f, chunks[1], "what is happening right now", crate::ui::colors::SOFT_GREEN);
+    let checklist = crate::ui::common::render_matrix_box(
+        f,
+        chunks[1],
+        "what is happening right now",
+        crate::ui::colors::SOFT_GREEN,
+    );
     f.render_widget(
         Paragraph::new(vec![
             Line::from("• resolving the provider endpoint"),
             Line::from("• verifying username/password"),
             Line::from("• confirming the server replies with valid IPTV metadata"),
             Line::from(""),
-            Line::from(Span::styled("Typical completion time: 3 to 10 seconds.", Style::default().fg(crate::ui::colors::TEXT_SECONDARY))),
+            Line::from(Span::styled(
+                "Typical completion time: 3 to 10 seconds.",
+                Style::default().fg(crate::ui::colors::TEXT_SECONDARY),
+            )),
         ])
         .wrap(Wrap { trim: true }),
         checklist,
@@ -617,11 +787,17 @@ fn render_failed(f: &mut Frame, state: &OnboardingState, area: Rect) {
     let status = crate::ui::common::render_matrix_box(f, inner, "validation report", Color::Red);
     f.render_widget(
         Paragraph::new(vec![
-            Line::from(Span::styled("X Failed to authenticate with the server.", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "X Failed to authenticate with the server.",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )),
             Line::from(""),
             Line::from(state.error_msg.as_deref().unwrap_or("Unknown error")),
             Line::from(""),
-            Line::from(Span::styled("Press [Enter] to go back and edit the credential set.", Style::default().fg(Color::White))),
+            Line::from(Span::styled(
+                "Press [Enter] to go back and edit the credential set.",
+                Style::default().fg(Color::White),
+            )),
         ])
         .wrap(Wrap { trim: true }),
         status,
@@ -646,18 +822,35 @@ fn render_success(f: &mut Frame, _state: &OnboardingState, area: Rect) {
         ])
         .split(inner);
 
-    let status = crate::ui::common::render_matrix_box(f, chunks[0], "link established", crate::ui::colors::MATRIX_GREEN);
+    let status = crate::ui::common::render_matrix_box(
+        f,
+        chunks[0],
+        "link established",
+        crate::ui::colors::MATRIX_GREEN,
+    );
     f.render_widget(
         Paragraph::new(vec![
             Line::from(""),
-            Line::from(Span::styled("✓ Connected successfully.", Style::default().fg(crate::ui::colors::MATRIX_GREEN).add_modifier(Modifier::BOLD))).alignment(Alignment::Center),
+            Line::from(Span::styled(
+                "✓ Connected successfully.",
+                Style::default()
+                    .fg(crate::ui::colors::MATRIX_GREEN)
+                    .add_modifier(Modifier::BOLD),
+            ))
+            .alignment(Alignment::Center),
             Line::from(""),
-            Line::from("Your first playlist source has been stored and is ready for import.").alignment(Alignment::Center),
+            Line::from("Your first playlist source has been stored and is ready for import.")
+                .alignment(Alignment::Center),
         ]),
         status,
     );
 
-    let next = crate::ui::common::render_matrix_box(f, chunks[1], "what happens next", crate::ui::colors::SOFT_GREEN);
+    let next = crate::ui::common::render_matrix_box(
+        f,
+        chunks[1],
+        "what happens next",
+        crate::ui::colors::SOFT_GREEN,
+    );
     f.render_widget(
         Paragraph::new(vec![
             Line::from("• You will enter the main app."),
@@ -678,15 +871,26 @@ fn render_footer(f: &mut Frame, state: &OnboardingState, area: Rect) {
         OnboardingStep::Credentials | OnboardingStep::Validating | OnboardingStep::Failed => 3,
         OnboardingStep::Success => 4,
     };
-    let dots = (1..=4).map(|i| if i == current { "●" } else { "○" }).collect::<Vec<_>>().join(" ");
-    let footer_text = format!(" first-time setup  //  step {} of 4  //  {} ", current, dots);
+    let dots = (1..=4)
+        .map(|i| if i == current { "●" } else { "○" })
+        .collect::<Vec<_>>()
+        .join(" ");
+    let footer_text = format!(
+        " first-time setup  //  step {} of 4  //  {} ",
+        current, dots
+    );
     let area = Rect {
         x: area.x,
         y: area.y + area.height - 1,
         width: area.width,
         height: 1,
     };
-    f.render_widget(Paragraph::new(footer_text).fg(crate::ui::colors::TEXT_SECONDARY).alignment(Alignment::Center), area);
+    f.render_widget(
+        Paragraph::new(footer_text)
+            .fg(crate::ui::colors::TEXT_SECONDARY)
+            .alignment(Alignment::Center),
+        area,
+    );
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, r: Rect) -> Rect {

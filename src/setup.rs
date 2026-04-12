@@ -1,17 +1,17 @@
 #[cfg(not(target_arch = "wasm32"))]
 use std::io::{self, Write};
 #[cfg(not(target_arch = "wasm32"))]
-use std::process::Command;
-#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
+use std::process::Command;
 
 /// Common locations where mpv might be installed on macOS/Linux
 #[cfg(not(target_arch = "wasm32"))]
 const MPV_CANDIDATE_PATHS: &[&str] = &[
-    "/opt/homebrew/bin/mpv",    // macOS Apple Silicon Homebrew
-    "/usr/local/bin/mpv",       // macOS Intel Homebrew / some Linux
-    "/usr/bin/mpv",             // Common system path (Linux)
-    "/snap/bin/mpv",            // Snap on Linux
+    "/opt/homebrew/bin/mpv", // macOS Apple Silicon Homebrew
+    "/usr/local/bin/mpv",    // macOS Intel Homebrew / some Linux
+    "/usr/bin/mpv",          // Common system path (Linux)
+    "/snap/bin/mpv",         // Snap on Linux
 ];
 
 /// Common locations where vlc might be installed on macOS/Linux
@@ -30,7 +30,7 @@ fn is_valid_mpv_at_path(path: &str) -> bool {
     if !p.exists() || !p.is_file() {
         return false;
     }
-    
+
     // On Unix, check if it's executable
     #[cfg(unix)]
     {
@@ -42,7 +42,7 @@ fn is_valid_mpv_at_path(path: &str) -> bool {
             }
         }
     }
-    
+
     // Verify it actually runs
     Command::new(path)
         .arg("--version")
@@ -64,14 +64,14 @@ pub fn get_mpv_path() -> Option<String> {
     {
         return Some("mpv".to_string());
     }
-    
+
     // Fallback: search common installation paths (primarily for macOS Homebrew)
     for candidate in MPV_CANDIDATE_PATHS {
         if is_valid_mpv_at_path(candidate) {
             return Some(candidate.to_string());
         }
     }
-    
+
     None
 }
 
@@ -87,7 +87,7 @@ pub fn get_vlc_path() -> Option<String> {
     {
         return Some("vlc".to_string());
     }
-    
+
     // Windows specific common paths
     if cfg!(windows) {
         let win_paths = [
@@ -100,7 +100,7 @@ pub fn get_vlc_path() -> Option<String> {
             }
         }
     }
-    
+
     // Fallback: search common installation paths
     for candidate in VLC_CANDIDATE_PATHS {
         let p = Path::new(candidate);
@@ -108,7 +108,7 @@ pub fn get_vlc_path() -> Option<String> {
             return Some(candidate.to_string());
         }
     }
-    
+
     None
 }
 
@@ -182,14 +182,14 @@ fn find_brew() -> Option<String> {
     {
         return Some("brew".to_string());
     }
-    
+
     // Check common Homebrew locations
     let candidates = [
-        "/opt/homebrew/bin/brew",    // Apple Silicon
-        "/usr/local/bin/brew",       // Intel Mac
+        "/opt/homebrew/bin/brew",              // Apple Silicon
+        "/usr/local/bin/brew",                 // Intel Mac
         "/home/linuxbrew/.linuxbrew/bin/brew", // Linux Homebrew
     ];
-    
+
     for candidate in candidates {
         let path = Path::new(candidate);
         if path.exists() && path.is_file() {
@@ -203,7 +203,7 @@ fn find_brew() -> Option<String> {
             }
         }
     }
-    
+
     None
 }
 
@@ -212,7 +212,7 @@ fn find_brew() -> Option<String> {
 fn install_homebrew() -> Result<String, anyhow::Error> {
     println!("Installing Homebrew...");
     println!("This may take a few minutes. Please wait...");
-    
+
     // Run the official Homebrew installer script with NONINTERACTIVE flag
     let status = Command::new("/bin/bash")
         .args(&[
@@ -220,13 +220,13 @@ fn install_homebrew() -> Result<String, anyhow::Error> {
             "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
         ])
         .status()?;
-    
+
     if !status.success() {
         return Err(anyhow::anyhow!(
             "Failed to install Homebrew. Please install manually from https://brew.sh/"
         ));
     }
-    
+
     // Find brew after installation
     if let Some(brew_path) = find_brew() {
         println!("✓ Homebrew installed successfully.");
@@ -252,10 +252,10 @@ fn install_mpv_macos() -> Result<(), anyhow::Error> {
             install_homebrew()?
         }
     };
-    
+
     println!("Installing mpv via Homebrew...");
     println!("Running: {} install mpv", brew_path);
-    
+
     let status = Command::new(&brew_path)
         .args(&["install", "mpv"])
         .status()?;
@@ -264,13 +264,13 @@ fn install_mpv_macos() -> Result<(), anyhow::Error> {
         println!("✓ mpv installed successfully via Homebrew.");
         return Ok(());
     }
-    
+
     // Try cask as fallback
     println!("Formula install failed, trying cask...");
     let status_cask = Command::new(&brew_path)
         .args(&["install", "--cask", "mpv"])
         .status()?;
-    
+
     if status_cask.success() {
         println!("✓ mpv installed successfully via Homebrew Cask.");
         Ok(())
@@ -329,7 +329,7 @@ fn install_vlc_macos() -> Result<(), anyhow::Error> {
         Some(path) => path,
         None => install_homebrew()?,
     };
-    
+
     println!("Installing vlc via Homebrew Cask...");
     let status = Command::new(&brew_path)
         .args(&["install", "--cask", "vlc"])
@@ -367,11 +367,8 @@ fn install_vlc_windows() -> Result<(), anyhow::Error> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn is_newer_version(current: &str, tag: &str) -> bool {
-    let parse_version = |s: &str| -> Vec<u32> {
-        s.split('.')
-            .filter_map(|p| p.parse::<u32>().ok())
-            .collect()
-    };
+    let parse_version =
+        |s: &str| -> Vec<u32> { s.split('.').filter_map(|p| p.parse::<u32>().ok()).collect() };
 
     let cur_parts = parse_version(current);
     let tag_parts = parse_version(tag);
@@ -379,7 +376,7 @@ fn is_newer_version(current: &str, tag: &str) -> bool {
     for i in 0..std::cmp::max(cur_parts.len(), tag_parts.len()) {
         let cur = cur_parts.get(i).unwrap_or(&0);
         let tgt = tag_parts.get(i).unwrap_or(&0);
-        
+
         if tgt > cur {
             return true;
         } else if tgt < cur {
@@ -440,7 +437,10 @@ pub fn dismiss_update(version: &str) {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn check_for_updates(tx: tokio::sync::mpsc::Sender<crate::app::AsyncAction>, manual: bool) {
+pub async fn check_for_updates(
+    tx: tokio::sync::mpsc::Sender<crate::app::AsyncAction>,
+    manual: bool,
+) {
     let current_version = env!("CARGO_PKG_VERSION");
     let client = reqwest::Client::builder()
         .user_agent("matrix-iptv-cli-updater")
@@ -450,9 +450,10 @@ pub async fn check_for_updates(tx: tokio::sync::mpsc::Sender<crate::app::AsyncAc
 
     // Use a GET request to the latest release to check the tag
     // GitHub redirects /latest to the specific tag URL
-    if let Ok(resp) = client.get("https://github.com/officebeats/matrix-iptv/releases/latest")
+    if let Ok(resp) = client
+        .get("https://github.com/officebeats/matrix-iptv/releases/latest")
         .send()
-        .await 
+        .await
     {
         let final_url = resp.url().to_string();
         // URL is likely https://github.com/officebeats/matrix-iptv/releases/tag/v3.0.9
@@ -463,13 +464,19 @@ pub async fn check_for_updates(tx: tokio::sync::mpsc::Sender<crate::app::AsyncAc
                 if !manual && is_update_dismissed(tag, 24) {
                     return; // User dismissed this version within the last 24 hours
                 }
-                let _ = tx.send(crate::app::AsyncAction::UpdateAvailable(tag.to_string())).await;
+                let _ = tx
+                    .send(crate::app::AsyncAction::UpdateAvailable(tag.to_string()))
+                    .await;
             } else if manual {
                 let _ = tx.send(crate::app::AsyncAction::NoUpdateFound).await;
             }
         }
     } else if manual {
-        let _ = tx.send(crate::app::AsyncAction::Error("Failed to check for updates. Please check your connection.".to_string())).await;
+        let _ = tx
+            .send(crate::app::AsyncAction::Error(
+                "Failed to check for updates. Please check your connection.".to_string(),
+            ))
+            .await;
     }
 }
 
@@ -481,8 +488,9 @@ pub fn perform_windows_self_update() -> Result<(), anyhow::Error> {
     let current_exe = std::env::current_exe()?;
     let exe_path = current_exe.to_string_lossy().replace('\\', "\\\\");
     let download_url = "https://github.com/officebeats/matrix-iptv/releases/latest/download/matrix-iptv-windows.exe";
-    
-    let ps_script = format!(r#"
+
+    let ps_script = format!(
+        r#"
 # Matrix IPTV Self-Update Script
 $ErrorActionPreference = 'Stop'
 Start-Sleep -Seconds 2
@@ -535,7 +543,8 @@ try {{
 
 # Clean up this script
 Remove-Item -Path $MyInvocation.MyCommand.Source -Force -ErrorAction SilentlyContinue
-"#);
+"#
+    );
 
     let temp_dir = std::env::temp_dir();
     let script_path = temp_dir.join("matrix-iptv-update.ps1");
@@ -543,9 +552,12 @@ Remove-Item -Path $MyInvocation.MyCommand.Source -Force -ErrorAction SilentlyCon
 
     Command::new("powershell.exe")
         .args([
-            "-ExecutionPolicy", "Bypass",
-            "-WindowStyle", "Hidden",
-            "-File", &script_path.to_string_lossy(),
+            "-ExecutionPolicy",
+            "Bypass",
+            "-WindowStyle",
+            "Hidden",
+            "-File",
+            &script_path.to_string_lossy(),
         ])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())

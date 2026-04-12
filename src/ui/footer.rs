@@ -1,3 +1,5 @@
+use crate::app::{App, CurrentScreen, InputMode, SettingsState};
+use crate::ui::colors::{MATRIX_GREEN, MODERN_BG, SOFT_GREEN, TEXT_DIM, TEXT_SECONDARY};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Style, Stylize},
@@ -5,8 +7,6 @@ use ratatui::{
     widgets::Paragraph,
     Frame,
 };
-use crate::app::{App, CurrentScreen, InputMode, SettingsState};
-use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_SECONDARY, MODERN_BG};
 
 pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     let key_style = Style::default().fg(MATRIX_GREEN);
@@ -50,9 +50,12 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 hint!("enter", "edit");
             }
         }
-        CurrentScreen::Categories | CurrentScreen::Streams |
-        CurrentScreen::VodCategories | CurrentScreen::VodStreams |
-        CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
+        CurrentScreen::Categories
+        | CurrentScreen::Streams
+        | CurrentScreen::VodCategories
+        | CurrentScreen::VodStreams
+        | CurrentScreen::SeriesCategories
+        | CurrentScreen::SeriesStreams => {
             if app.search_mode {
                 hint!("esc", "cancel");
                 hint!("enter", "done");
@@ -63,12 +66,14 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                         hint!("enter", "select");
                         hint!("/", "search");
                         hint!("tab", "streams");
+                        hint!("PgDn", "page");
                         hint!("g", "grid/list");
                     }
                     crate::app::Pane::Streams => {
                         hint!("esc", "back");
                         hint!("enter", "play");
                         hint!("/", "search");
+                        hint!("PgDn", "page");
                         hint!("v", "fav");
                         hint!("i", "info");
                         hint!("g", "groups");
@@ -77,25 +82,24 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                     crate::app::Pane::Episodes => {
                         hint!("esc", "back");
                         hint!("enter", "play");
+                        hint!("PgDn", "page");
                         hint!("tab", "series");
                     }
                 }
             }
         }
-        CurrentScreen::Settings => {
-            match app.settings_state {
-                SettingsState::ManageAccounts => {
-                    hint!("esc", "back");
-                    hint!("a", "add");
-                    hint!("d", "del");
-                    hint!("enter", "edit");
-                }
-                _ => {
-                    hint!("esc", "back");
-                    hint!("enter", "select");
-                }
+        CurrentScreen::Settings => match app.settings_state {
+            SettingsState::ManageAccounts => {
+                hint!("esc", "back");
+                hint!("a", "add");
+                hint!("d", "del");
+                hint!("enter", "edit");
             }
-        }
+            _ => {
+                hint!("esc", "back");
+                hint!("enter", "select");
+            }
+        },
         CurrentScreen::TimezoneSettings => {
             hint!("esc", "back");
             hint!("enter", "select");
@@ -130,9 +134,12 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     // Right-aligned page info (JiraTUI-style)
     let mut right_spans: Vec<Span> = Vec::new();
     match app.current_screen {
-        CurrentScreen::Categories | CurrentScreen::Streams |
-        CurrentScreen::VodCategories | CurrentScreen::VodStreams |
-        CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
+        CurrentScreen::Categories
+        | CurrentScreen::Streams
+        | CurrentScreen::VodCategories
+        | CurrentScreen::VodStreams
+        | CurrentScreen::SeriesCategories
+        | CurrentScreen::SeriesStreams => {
             if !app.streams.is_empty() && app.active_pane == crate::app::Pane::Streams {
                 let page = app.selected_stream_index + 1;
                 let total = app.streams.len();
@@ -146,9 +153,9 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     }
 
     // Use bordered bottom bar
-    use ratatui::widgets::{Block, Borders};
     use ratatui::symbols::border;
-    
+    use ratatui::widgets::{Block, Borders};
+
     let bar_block = Block::default()
         .borders(Borders::TOP)
         .border_set(border::ROUNDED)
@@ -160,10 +167,7 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     // Split inner area: left for key hints, right for page indicator
     let bar_chunks = Layout::default()
         .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Min(0),
-            Constraint::Length(20),
-        ])
+        .constraints([Constraint::Min(0), Constraint::Length(20)])
         .split(bar_inner);
 
     let p = Paragraph::new(Line::from(spans)).alignment(Alignment::Left);

@@ -1,3 +1,5 @@
+use crate::app::App;
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -5,8 +7,6 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
-use crate::app::App;
-use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 
 struct LoadingPanel {
     title: String,
@@ -26,8 +26,8 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
     // Subtle overlay across the background
     let row = "░".repeat(area.width as usize);
     let lines = vec![Line::from(row.as_str()); area.height as usize];
-    let dim_paragraph = Paragraph::new(lines)
-        .style(Style::default().fg(Color::DarkGray).bg(Color::Rgb(0, 0, 0)));
+    let dim_paragraph =
+        Paragraph::new(lines).style(Style::default().fg(Color::DarkGray).bg(Color::Rgb(0, 0, 0)));
     f.render_widget(dim_paragraph, area);
 
     let panel = derive_loading_panel(app);
@@ -40,7 +40,12 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_set(border::ROUNDED)
         .border_style(Style::default().fg(MATRIX_GREEN))
-        .title(Span::styled(panel.title.clone(), Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            panel.title.clone(),
+            Style::default()
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ))
         .title_alignment(Alignment::Center)
         .style(Style::default().bg(Color::Rgb(0, 0, 0)));
 
@@ -63,7 +68,12 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
     let tick = app.session.loading_tick;
 
     // Matrix style Katakana spinner and decoding effect
-    let katakana = ['ｦ', 'ｧ', 'ｨ', 'ｩ', 'ｪ', 'ｫ', 'ｬ', 'ｭ', 'ｮ', 'ｯ', 'ｰ', 'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ｶ', 'ｷ', 'ｸ', 'ｹ', 'ｺ', 'ｻ', 'ｼ', 'ｽ', 'ｾ', 'ｿ', 'ﾀ', 'ﾁ', 'ﾂ', 'ﾃ', 'ﾄ', 'ﾅ', 'ﾆ', 'ﾇ', 'ﾈ', 'ﾉ', 'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ', 'ﾎ', 'ﾏ', 'ﾐ', 'ﾑ', 'ﾒ', 'ﾓ', 'ﾔ', 'ﾕ', 'ﾖ', 'ﾗ', 'ﾘ', 'ﾙ', 'ﾚ', 'ﾛ', 'ﾜ', 'ﾝ'];
+    let katakana = [
+        'ｦ', 'ｧ', 'ｨ', 'ｩ', 'ｪ', 'ｫ', 'ｬ', 'ｭ', 'ｮ', 'ｯ', 'ｰ', 'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ｶ', 'ｷ',
+        'ｸ', 'ｹ', 'ｺ', 'ｻ', 'ｼ', 'ｽ', 'ｾ', 'ｿ', 'ﾀ', 'ﾁ', 'ﾂ', 'ﾃ', 'ﾄ', 'ﾅ', 'ﾆ', 'ﾇ', 'ﾈ', 'ﾉ',
+        'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ', 'ﾎ', 'ﾏ', 'ﾐ', 'ﾑ', 'ﾒ', 'ﾓ', 'ﾔ', 'ﾕ', 'ﾖ', 'ﾗ', 'ﾘ', 'ﾙ', 'ﾚ', 'ﾛ',
+        'ﾜ', 'ﾝ',
+    ];
     let spinner = katakana[(tick as usize) % katakana.len()];
 
     let glitch_len = 8;
@@ -74,33 +84,69 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
     }
 
     let hero = Paragraph::new(Line::from(vec![
-        Span::styled(format!("{} ", spinner), Style::default().fg(Color::Rgb(200, 255, 200)).add_modifier(Modifier::BOLD)),
-        Span::styled(panel.headline.as_str(), Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
-        Span::styled(format!(" [{}]", glitch_str), Style::default().fg(MATRIX_GREEN)),
+        Span::styled(
+            format!("{} ", spinner),
+            Style::default()
+                .fg(Color::Rgb(200, 255, 200))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            panel.headline.as_str(),
+            Style::default()
+                .fg(TEXT_PRIMARY)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" [{}]", glitch_str),
+            Style::default().fg(MATRIX_GREEN),
+        ),
     ]))
     .alignment(Alignment::Left);
     f.render_widget(hero, chunks[0]);
 
     let detail = Paragraph::new(vec![
-        Line::from(Span::styled(panel.detail.as_str(), Style::default().fg(TEXT_SECONDARY))),
-        Line::from(Span::styled(format!("raw status: {}", panel.raw_status), Style::default().fg(TEXT_DIM))),
+        Line::from(Span::styled(
+            panel.detail.as_str(),
+            Style::default().fg(TEXT_SECONDARY),
+        )),
+        Line::from(Span::styled(
+            format!("raw status: {}", panel.raw_status),
+            Style::default().fg(TEXT_DIM),
+        )),
     ])
     .wrap(ratatui::widgets::Wrap { trim: true });
     f.render_widget(detail, chunks[1]);
 
     if let Some(pct) = panel.percent {
-        let bar_width = (popup_area.width as usize).saturating_sub(24).max(12).min(48);
+        let bar_width = (popup_area.width as usize)
+            .saturating_sub(24)
+            .max(12)
+            .min(48);
         let filled = (pct * bar_width) / 100;
         let empty = bar_width.saturating_sub(filled);
         let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
-        let ratio = panel.counts.map(|(current, total)| format!("{}/{}", current, total)).unwrap_or_else(|| "sync".to_string());
-        let eta = panel.eta.clone().unwrap_or_else(|| "estimating...".to_string());
+        let ratio = panel
+            .counts
+            .map(|(current, total)| format!("{}/{}", current, total))
+            .unwrap_or_else(|| "sync".to_string());
+        let eta = panel
+            .eta
+            .clone()
+            .unwrap_or_else(|| "estimating...".to_string());
 
         let bar_line = Paragraph::new(Line::from(vec![
             Span::styled(format!("[{}]", bar), Style::default().fg(SOFT_GREEN)),
-            Span::styled(format!("  {:>3}%", pct), Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("  {:>3}%", pct),
+                Style::default()
+                    .fg(TEXT_PRIMARY)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(format!("  {}", ratio), Style::default().fg(TEXT_SECONDARY)),
-            Span::styled(format!("  time left {}", eta), Style::default().fg(SOFT_GREEN)),
+            Span::styled(
+                format!("  time left {}", eta),
+                Style::default().fg(SOFT_GREEN),
+            ),
         ]))
         .alignment(Alignment::Left);
         f.render_widget(bar_line, chunks[2]);
@@ -120,7 +166,13 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(status_line, chunks[3]);
 
     let eta_hint = Paragraph::new(Line::from(Span::styled(
-        panel.eta.clone().map(|eta| format!("Estimated remaining time: {}", eta)).unwrap_or_else(|| "Estimated remaining time: calculating from live progress...".to_string()),
+        panel
+            .eta
+            .clone()
+            .map(|eta| format!("Estimated remaining time: {}", eta))
+            .unwrap_or_else(|| {
+                "Estimated remaining time: calculating from live progress...".to_string()
+            }),
         Style::default().fg(MATRIX_GREEN),
     )));
     f.render_widget(eta_hint, chunks[4]);
@@ -156,20 +208,35 @@ fn centered_rect(percent_x: u16, height: u16, r: Rect) -> Rect {
 }
 
 fn derive_loading_panel(app: &App) -> LoadingPanel {
-    let raw_status = app.session.loading_message.clone().unwrap_or_else(|| "Initializing system...".to_string());
-    let progress_pct = app.session.loading_progress.as_ref().and_then(|progress| {
-        if progress.total > 0 {
-            Some((progress.current * 100) / progress.total)
-        } else {
-            None
-        }
-    }).or_else(|| extract_percent(&raw_status));
+    let raw_status = app
+        .session
+        .loading_message
+        .clone()
+        .unwrap_or_else(|| "Initializing system...".to_string());
+    let progress_pct = app
+        .session
+        .loading_progress
+        .as_ref()
+        .and_then(|progress| {
+            if progress.total > 0 {
+                Some((progress.current * 100) / progress.total)
+            } else {
+                None
+            }
+        })
+        .or_else(|| extract_percent(&raw_status));
 
-    let counts = app.session.loading_progress.as_ref()
+    let counts = app
+        .session
+        .loading_progress
+        .as_ref()
         .map(|progress| (progress.current, progress.total))
         .or_else(|| extract_ratio(&raw_status));
 
-    let eta = app.session.loading_progress.as_ref()
+    let eta = app
+        .session
+        .loading_progress
+        .as_ref()
         .and_then(|progress| progress.eta.as_ref().map(|d| format_duration(d.as_secs())))
         .or_else(|| extract_eta_seconds(&raw_status).map(format_duration));
 
@@ -181,24 +248,34 @@ fn derive_loading_panel(app: &App) -> LoadingPanel {
     } else if raw_status.contains("Preparing memory mapping") || raw_status.contains("Received") {
         (
             "Staging playlist data in memory".to_string(),
-            "The payload is fully downloaded. Matrix IPTV is preparing it for fast decoding.".to_string(),
+            "The payload is fully downloaded. Matrix IPTV is preparing it for fast decoding."
+                .to_string(),
         )
     } else if raw_status.contains("Deserializing JSON") {
         (
             "Decoding provider response".to_string(),
             "Turning the raw server payload into structured stream records.".to_string(),
         )
-    } else if raw_status.contains("Preprocessing") || raw_status.contains("Optimizing") || raw_status.contains("Refining metadata") {
+    } else if raw_status.contains("Preprocessing")
+        || raw_status.contains("Optimizing")
+        || raw_status.contains("Refining metadata")
+    {
         (
             "Cleaning and organizing channels".to_string(),
             "Removing duplicates, applying playlist mode filters, and preparing metadata for browsing.".to_string(),
         )
-    } else if raw_status.contains("Sorting") || raw_status.contains("Linking UI") || raw_status.contains("Finalized") {
+    } else if raw_status.contains("Sorting")
+        || raw_status.contains("Linking UI")
+        || raw_status.contains("Finalized")
+    {
         (
             "Building the interactive index".to_string(),
-            "Final pass: sorting channels, wiring categories, and making the browser responsive.".to_string(),
+            "Final pass: sorting channels, wiring categories, and making the browser responsive."
+                .to_string(),
         )
-    } else if raw_status.contains("Loading all channels") || raw_status.contains("Fetching all channels") {
+    } else if raw_status.contains("Loading all channels")
+        || raw_status.contains("Fetching all channels")
+    {
         (
             "Starting the first full channel sync".to_string(),
             "The first import is the slow one because every live channel has to be fetched and indexed.".to_string(),
@@ -206,9 +283,13 @@ fn derive_loading_panel(app: &App) -> LoadingPanel {
     } else if raw_status.contains("Loading categories") {
         (
             "Loading provider categories".to_string(),
-            "Fetching the live category list so Matrix IPTV knows what it needs to scan next.".to_string(),
+            "Fetching the live category list so Matrix IPTV knows what it needs to scan next."
+                .to_string(),
         )
-    } else if raw_status.contains("Connecting to server") || raw_status.contains("Authenticating") || raw_status.contains("Processing Playlist") {
+    } else if raw_status.contains("Connecting to server")
+        || raw_status.contains("Authenticating")
+        || raw_status.contains("Processing Playlist")
+    {
         (
             "Opening the provider session".to_string(),
             "Connecting, authenticating, and preparing the first import pipeline.".to_string(),
@@ -246,14 +327,22 @@ fn extract_percent(input: &str) -> Option<usize> {
     if digits_rev.is_empty() {
         None
     } else {
-        digits_rev.chars().rev().collect::<String>().parse::<usize>().ok()
+        digits_rev
+            .chars()
+            .rev()
+            .collect::<String>()
+            .parse::<usize>()
+            .ok()
     }
 }
 
 fn extract_eta_seconds(input: &str) -> Option<u64> {
     let lower = input.to_lowercase();
     let start = lower.find("eta ")? + 4;
-    let digits: String = lower[start..].chars().take_while(|c| c.is_ascii_digit()).collect();
+    let digits: String = lower[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
     if digits.is_empty() {
         None
     } else {

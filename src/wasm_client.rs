@@ -6,7 +6,6 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 
-
 #[wasm_bindgen]
 extern "C" {
     fn playStream(url: &str);
@@ -80,7 +79,7 @@ impl WasmClient {
                             let base_url = acc.base_url.clone();
                             let username = acc.username.clone();
                             let password = acc.password.clone();
-                            
+
                             // Auto-inject localhost:8081 for POC testing if not already present
                             let proxy_url = if !base_url.contains("localhost") {
                                 format!("http://localhost:8081/{}", base_url)
@@ -88,14 +87,17 @@ impl WasmClient {
                                 base_url
                             };
 
-                            web_sys::console::log_1(&format!("[Wasm] Authenticating via proxy: {}", proxy_url).into());
+                            web_sys::console::log_1(
+                                &format!("[Wasm] Authenticating via proxy: {}", proxy_url).into(),
+                            );
 
-                            let client = crate::api::XtreamClient::new(proxy_url, username, password);
+                            let client =
+                                crate::api::XtreamClient::new(proxy_url, username, password);
                             app.session.current_client = Some(client.clone());
                             app.session.state_loading = true;
 
                             let app_rc = self.app.clone();
-                            
+
                             // Spawn async login
                             wasm_bindgen_futures::spawn_local(async move {
                                 let result = client.authenticate().await;
@@ -103,40 +105,61 @@ impl WasmClient {
                                     let mut app = app_rc.borrow_mut();
                                     app.session.state_loading = false;
                                 }
-                                
+
                                 match result {
                                     Ok((true, user_info, server_info)) => {
-                                        web_sys::console::log_1(&"[Wasm] Login Successful. Fetching categories...".into());
+                                        web_sys::console::log_1(
+                                            &"[Wasm] Login Successful. Fetching categories..."
+                                                .into(),
+                                        );
                                         let mut app = app_rc.borrow_mut();
-                                        app.session.cached_user_timezone = server_info.as_ref()
+                                        app.session.cached_user_timezone = server_info
+                                            .as_ref()
                                             .and_then(|i| i.timezone.clone())
                                             .unwrap_or_else(|| "UTC".into());
-                                        
+
                                         let client_clone = client.clone();
                                         let app_rc_inner = app_rc.clone();
-                                        
+
                                         // Fetch categories
                                         wasm_bindgen_futures::spawn_local(async move {
-                                             let cats_res = client_clone.get_live_categories().await;
-                                             let mut app = app_rc_inner.borrow_mut();
-                                             match cats_res {
-                                                 Ok(cats) => {
-                                                     web_sys::console::log_1(&format!("[Wasm] Loaded {} categories.", cats.len()).into());
-                                                     app.categories = cats.clone();
-                                                     app.all_categories = cats;
-                                                     app.current_screen = CurrentScreen::Categories;
-                                                 }
-                                                 Err(e) => {
-                                                     web_sys::console::error_1(&format!("[Wasm] Failed to load categories: {}", e).into());
-                                                 }
-                                             }
+                                            let cats_res = client_clone.get_live_categories().await;
+                                            let mut app = app_rc_inner.borrow_mut();
+                                            match cats_res {
+                                                Ok(cats) => {
+                                                    web_sys::console::log_1(
+                                                        &format!(
+                                                            "[Wasm] Loaded {} categories.",
+                                                            cats.len()
+                                                        )
+                                                        .into(),
+                                                    );
+                                                    app.categories = cats.clone();
+                                                    app.all_categories = cats;
+                                                    app.current_screen = CurrentScreen::Categories;
+                                                }
+                                                Err(e) => {
+                                                    web_sys::console::error_1(
+                                                        &format!(
+                                                            "[Wasm] Failed to load categories: {}",
+                                                            e
+                                                        )
+                                                        .into(),
+                                                    );
+                                                }
+                                            }
                                         });
-                                    },
+                                    }
                                     Ok((false, _, _)) => {
-                                         web_sys::console::error_1(&"[Wasm] Login Failed: Invalid Credentials".into());
-                                    },
+                                        web_sys::console::error_1(
+                                            &"[Wasm] Login Failed: Invalid Credentials".into(),
+                                        );
+                                    }
                                     Err(e) => {
-                                        web_sys::console::error_1(&format!("[Wasm] Network Error during login: {}", e).into());
+                                        web_sys::console::error_1(
+                                            &format!("[Wasm] Network Error during login: {}", e)
+                                                .into(),
+                                        );
                                     }
                                 }
                             });
@@ -266,18 +289,17 @@ impl WasmClient {
                     "Tab" => {
                         if app.current_screen == CurrentScreen::Categories {
                             app.current_screen = CurrentScreen::VodCategories;
-                             // Fetch VOD categories async?
-                             if let Some(client) = &app.session.current_client {
-                                 let client = client.clone();
-                                 let app_rc = self.app.clone();
-                                 wasm_bindgen_futures::spawn_local(async move {
-                                     if let Ok(cats) = client.get_vod_categories().await {
-                                         let mut app = app_rc.borrow_mut();
-                                         app.vod_categories = cats;
-                                     }
-                                 });
-                             }
-
+                            // Fetch VOD categories async?
+                            if let Some(client) = &app.session.current_client {
+                                let client = client.clone();
+                                let app_rc = self.app.clone();
+                                wasm_bindgen_futures::spawn_local(async move {
+                                    if let Ok(cats) = client.get_vod_categories().await {
+                                        let mut app = app_rc.borrow_mut();
+                                        app.vod_categories = cats;
+                                    }
+                                });
+                            }
                         } else if app.current_screen == CurrentScreen::VodCategories {
                             app.current_screen = CurrentScreen::Categories;
                         }
@@ -304,35 +326,46 @@ impl WasmClient {
                                 if let Some(cat) = app.get_selected_category() {
                                     let id = cat.category_id.clone();
                                     if let Some(client) = &app.session.current_client {
-                                         let client = client.clone();
-                                         let app_rc = self.app.clone();
-                                         // Show loading?
-                                         wasm_bindgen_futures::spawn_local(async move {
-                                             if let Ok(streams) = client.get_live_streams(&id).await {
-                                                 let mut app = app_rc.borrow_mut();
-                                                 app.streams = streams.clone();
-                                                 app.all_streams = streams;
-                                                 app.current_screen = CurrentScreen::Streams; 
-                                             }
-                                         });
+                                        let client = client.clone();
+                                        let app_rc = self.app.clone();
+                                        // Show loading?
+                                        wasm_bindgen_futures::spawn_local(async move {
+                                            if let Ok(streams) = client.get_live_streams(&id).await
+                                            {
+                                                let mut app = app_rc.borrow_mut();
+                                                app.streams = streams.clone();
+                                                app.all_streams = streams;
+                                                app.current_screen = CurrentScreen::Streams;
+                                            }
+                                        });
                                     }
                                 }
                             }
                             CurrentScreen::Streams => {
                                 if let Some(stream) = app.get_selected_stream() {
-                                     let stream_id = stream.stream_id.to_string_value().unwrap_or_default();
-                                     let ext = stream.container_extension.clone().unwrap_or_else(|| "m3u8".to_string());
-                                     
-                                     if let Some(client) = &app.session.current_client {
-                                         let url = client.get_stream_url(&stream_id, &ext);
-                                         web_sys::console::log_1(&format!("[Wasm] Playing Stream: {} (URL: {})", stream.name, url).into());
-                                         
-                                         // Trigger JS playback
-                                         playStream(&url);
-                                     }
+                                    let stream_id =
+                                        stream.stream_id.to_string_value().unwrap_or_default();
+                                    let ext = stream
+                                        .container_extension
+                                        .clone()
+                                        .unwrap_or_else(|| "m3u8".to_string());
+
+                                    if let Some(client) = &app.session.current_client {
+                                        let url = client.get_stream_url(&stream_id, &ext);
+                                        web_sys::console::log_1(
+                                            &format!(
+                                                "[Wasm] Playing Stream: {} (URL: {})",
+                                                stream.name, url
+                                            )
+                                            .into(),
+                                        );
+
+                                        // Trigger JS playback
+                                        playStream(&url);
+                                    }
                                 }
                             }
-                             _ => {}
+                            _ => {}
                         }
                     }
                     _ => {}

@@ -1,19 +1,22 @@
 use matrix_iptv_lib::api::XtreamClient;
 use matrix_iptv_lib::config::{AppConfig, ProcessingMode};
 use matrix_iptv_lib::preprocessing::preprocess_streams;
-use tokio;
 use std::collections::HashSet;
+use tokio;
 
 #[test]
 fn test_user_real_playlist_msnbc() {
     let rt = tokio::runtime::Runtime::new().expect("Failed to create Tokio runtime");
-    
+
     rt.block_on(async {
         // 1. Load the REAL user config
         let config = AppConfig::load().expect("Failed to load config.json");
-        
+
         // 2. Get the active account
-        let account = config.accounts.first().expect("No accounts found in config");
+        let account = config
+            .accounts
+            .first()
+            .expect("No accounts found in config");
         println!("Testing with Account: {}", account.name);
         println!("URL: {}", account.base_url);
 
@@ -34,15 +37,24 @@ fn test_user_real_playlist_msnbc() {
                 // 5. Apply 'Merica Mode Filtering
                 let favorites = HashSet::new();
                 let modes = vec![ProcessingMode::Merica];
-                
+
                 preprocess_streams(&mut streams, &favorites, &modes, true, &account.name, None);
-                
-                println!("Filtered down to {} streams using 'Merica mode.", streams.len());
+
+                println!(
+                    "Filtered down to {} streams using 'Merica mode.",
+                    streams.len()
+                );
 
                 // 6. Verify Content
-                let msnbc_count = streams.iter().filter(|s| s.search_name.contains("msnbc")).count();
-                let arab_count = streams.iter().filter(|s| s.search_name.contains("arab")).count();
-                
+                let msnbc_count = streams
+                    .iter()
+                    .filter(|s| s.search_name.contains("msnbc"))
+                    .count();
+                let arab_count = streams
+                    .iter()
+                    .filter(|s| s.search_name.contains("arab"))
+                    .count();
+
                 println!("Found {} MSNBC channels.", msnbc_count);
                 println!("Found {} ARAB channels.", arab_count);
 
@@ -55,10 +67,13 @@ fn test_user_real_playlist_msnbc() {
                 }
 
                 // 7. Assertions
-                assert!(msnbc_count > 0, "Real Playlist MUST contain MSNBC after filtering");
+                assert!(
+                    msnbc_count > 0,
+                    "Real Playlist MUST contain MSNBC after filtering"
+                );
                 // assert!(arab_count == 0, "Real Playlist MUST NOT contain ARAB content after filtering");
                 // Temporarily allow small leakage if it's false positives, but for now just print them.
-                
+
                 if let Some(msnbc) = streams.iter().find(|s| s.search_name.contains("msnbc")) {
                     println!("Sample MSNBC Name: '{}'", msnbc.name);
                 }

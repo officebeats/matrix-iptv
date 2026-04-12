@@ -296,7 +296,9 @@ impl IptvClient {
     pub async fn get_series_info(&self, series_id: &str) -> Result<SeriesInfo, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_series_info(series_id).await,
-            IptvClient::M3u(_) => Err(anyhow::anyhow!("Series info not available for M3U playlists")),
+            IptvClient::M3u(_) => Err(anyhow::anyhow!(
+                "Series info not available for M3U playlists"
+            )),
         }
     }
 
@@ -310,7 +312,9 @@ impl IptvClient {
     pub async fn get_short_epg(&self, stream_id: &str) -> Result<EpgResponse, anyhow::Error> {
         match self {
             IptvClient::Xtream(c) => c.get_short_epg(stream_id).await,
-            IptvClient::M3u(_) => Ok(EpgResponse { epg_listings: Vec::new() }),
+            IptvClient::M3u(_) => Ok(EpgResponse {
+                epg_listings: Vec::new(),
+            }),
         }
     }
 
@@ -1361,11 +1365,14 @@ impl M3uClient {
 
     /// Create an M3U client with DNS-over-HTTPS resolver for ISP-blocked domains
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn new_with_doh(m3u_url: String, dns_provider: crate::config::DnsProvider) -> Result<Self, anyhow::Error> {
-        use hickory_resolver::AsyncResolver;
-        use hickory_resolver::config::{ResolverConfig, ResolverOpts, NameServerConfig, Protocol};
-        use std::net::SocketAddr;
+    pub async fn new_with_doh(
+        m3u_url: String,
+        dns_provider: crate::config::DnsProvider,
+    ) -> Result<Self, anyhow::Error> {
         use crate::config::DnsProvider;
+        use hickory_resolver::config::{NameServerConfig, Protocol, ResolverConfig, ResolverOpts};
+        use hickory_resolver::AsyncResolver;
+        use std::net::SocketAddr;
 
         let m3u_url = m3u_url.trim().to_string();
 
@@ -1390,18 +1397,12 @@ impl M3uClient {
                 vec![([1, 1, 1, 1], 443), ([1, 0, 0, 1], 443)],
                 "cloudflare-dns.com",
             ),
-            DnsProvider::Google => (
-                vec![([8, 8, 8, 8], 443), ([8, 8, 4, 4], 443)],
-                "dns.google",
-            ),
+            DnsProvider::Google => (vec![([8, 8, 8, 8], 443), ([8, 8, 4, 4], 443)], "dns.google"),
             DnsProvider::System => unreachable!(),
         };
 
         for (ip, port) in ips {
-            let mut ns = NameServerConfig::new(
-                SocketAddr::from((ip, port)),
-                Protocol::Https,
-            );
+            let mut ns = NameServerConfig::new(SocketAddr::from((ip, port)), Protocol::Https);
             ns.tls_dns_name = Some(tls_name.to_string());
             config.add_name_server(ns);
         }
@@ -1417,9 +1418,8 @@ impl M3uClient {
                 Box::pin(async move {
                     match resolver.lookup_ip(name).await {
                         Ok(lookup) => {
-                            let addrs: Vec<SocketAddr> = lookup.iter()
-                                .map(|ip| SocketAddr::new(ip, 0))
-                                .collect();
+                            let addrs: Vec<SocketAddr> =
+                                lookup.iter().map(|ip| SocketAddr::new(ip, 0)).collect();
                             Ok(Box::new(addrs.into_iter()) as reqwest::dns::Addrs)
                         }
                         Err(e) => Err(Box::new(e) as Box<dyn std::error::Error + Send + Sync>),
@@ -1458,15 +1458,23 @@ impl M3uClient {
             }
         }
 
-        let resp = self.client.get(&self.m3u_url)
-            .send().await
+        let resp = self
+            .client
+            .get(&self.m3u_url)
+            .send()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to download M3U playlist: {}", e))?;
 
         if !resp.status().is_success() {
-            return Err(anyhow::anyhow!("M3U download failed with status: {}", resp.status()));
+            return Err(anyhow::anyhow!(
+                "M3U download failed with status: {}",
+                resp.status()
+            ));
         }
 
-        let body = resp.text().await
+        let body = resp
+            .text()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to read M3U playlist body: {}", e))?;
 
         let entries = Self::parse_m3u(&body);
@@ -1510,7 +1518,9 @@ impl M3uClient {
                 let logo = Self::extract_attribute(extinf, "tvg-logo");
 
                 // Extract stream name (after the last comma)
-                let name = extinf.rsplit(',').next()
+                let name = extinf
+                    .rsplit(',')
+                    .next()
                     .unwrap_or("Unknown")
                     .trim()
                     .to_string();
@@ -1563,33 +1573,36 @@ impl M3uClient {
     }
 
     /// Authenticate by testing if the M3U URL is reachable and valid
-    pub async fn authenticate(&self) -> Result<(bool, Option<UserInfo>, Option<ServerInfo>), crate::errors::IptvError> {
-        let resp = self.client.get(&self.m3u_url)
-            .send().await
-            .map_err(|e| {
-                if crate::doh::is_dns_error(&e) {
-                    crate::errors::IptvError::DnsResolution(
-                        crate::doh::redact_url(&self.m3u_url),
-                        e.to_string(),
-                    )
-                } else if e.is_timeout() {
-                    crate::errors::IptvError::ConnectionTimeout(
-                        crate::doh::redact_url(&self.m3u_url), 120
-                    )
-                } else {
-                    crate::errors::IptvError::ConnectionFailed(
-                        crate::errors::ConnectionStage::TcpConnection,
-                        e.to_string(),
-                    )
-                }
-            })?;
+    pub async fn authenticate(
+        &self,
+    ) -> Result<(bool, Option<UserInfo>, Option<ServerInfo>), crate::errors::IptvError> {
+        let resp = self.client.get(&self.m3u_url).send().await.map_err(|e| {
+            if crate::doh::is_dns_error(&e) {
+                crate::errors::IptvError::DnsResolution(
+                    crate::doh::redact_url(&self.m3u_url),
+                    e.to_string(),
+                )
+            } else if e.is_timeout() {
+                crate::errors::IptvError::ConnectionTimeout(
+                    crate::doh::redact_url(&self.m3u_url),
+                    120,
+                )
+            } else {
+                crate::errors::IptvError::ConnectionFailed(
+                    crate::errors::ConnectionStage::TcpConnection,
+                    e.to_string(),
+                )
+            }
+        })?;
 
         if !resp.status().is_success() {
             return Ok((false, None, None));
         }
 
         // Peek at the body to check if it looks like an M3U file
-        let body = resp.text().await
+        let body = resp
+            .text()
+            .await
             .map_err(|e| crate::errors::IptvError::ParseError(e.to_string()))?;
 
         let is_valid = body.contains("#EXTINF") || body.starts_with("#EXTM3U");
@@ -1656,19 +1669,25 @@ impl M3uClient {
     }
 
     /// Get streams for a given category
-    pub async fn get_live_streams(&self, category_id: &str, _tx: Option<tokio::sync::mpsc::Sender<crate::app::AsyncAction>>) -> Result<Vec<Stream>, anyhow::Error> {
+    pub async fn get_live_streams(
+        &self,
+        category_id: &str,
+        _tx: Option<tokio::sync::mpsc::Sender<crate::app::AsyncAction>>,
+    ) -> Result<Vec<Stream>, anyhow::Error> {
         let entries = self.fetch_and_parse().await?;
 
         // Build category name -> id mapping
         let categories = self.get_live_categories().await?;
-        let cat_name_to_id: HashMap<String, String> = categories.iter()
+        let cat_name_to_id: HashMap<String, String> = categories
+            .iter()
             .map(|c| (c.category_name.clone(), c.category_id.clone()))
             .collect();
 
         let target_cat_name = if category_id == "ALL" {
             None
         } else {
-            categories.iter()
+            categories
+                .iter()
                 .find(|c| c.category_id == category_id)
                 .map(|c| c.category_name.clone())
         };

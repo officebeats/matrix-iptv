@@ -8,10 +8,7 @@
 /// Returns `Some(Response)` if a DoH provider resolves and the retry succeeds.
 /// Returns `None` if DNS resolution fails, URL is HTTPS, or the retry fails.
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn try_doh_fallback(
-    client: &reqwest::Client,
-    url: &str,
-) -> Option<reqwest::Response> {
+pub async fn try_doh_fallback(client: &reqwest::Client, url: &str) -> Option<reqwest::Response> {
     // Only attempt IP substitution for plain HTTP endpoints.
     // HTTPS requires TLS SNI to match the hostname — substituting an IP will
     // cause a certificate mismatch and the handshake will always fail.

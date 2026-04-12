@@ -81,7 +81,8 @@ pub async fn handle_key_event(
                             }
                         }
                         _ => {
-                            let client = crate::api::XtreamClient::new(base_url, username, password);
+                            let client =
+                                crate::api::XtreamClient::new(base_url, username, password);
                             if let Ok((true, _, _)) = client.authenticate().await {
                                 let iptv_client = crate::api::IptvClient::Xtream(client.clone());
                                 let _ = tx
@@ -514,33 +515,44 @@ pub async fn handle_key_event(
                                                 "Downloading M3U playlist...".to_string(),
                                             ))
                                             .await;
-                                        match crate::api::M3uClient::new_with_doh(base_url, dns_provider).await {
-                                            Ok(client) => {
-                                                match client.authenticate().await {
-                                                    Ok((true, ui, si)) => {
-                                                        let _ = tx.send(AsyncAction::LoadingMessage("Processing M3U Playlist...".to_string())).await;
-                                                        let _ = tx
-                                                            .send(AsyncAction::LoginSuccess(
-                                                                crate::api::IptvClient::M3u(client),
-                                                                ui,
-                                                                si,
-                                                            ))
-                                                            .await;
-                                                    }
-                                                    Ok((false, _, _)) => {
-                                                        let _ = tx
-                                                            .send(AsyncAction::LoginFailed(
-                                                                "Invalid M3U playlist URL or format".to_string(),
-                                                            ))
-                                                            .await;
-                                                    }
-                                                    Err(e) => {
-                                                        let _ = tx
-                                                            .send(AsyncAction::LoginFailed(e.to_string()))
-                                                            .await;
-                                                    }
+                                        match crate::api::M3uClient::new_with_doh(
+                                            base_url,
+                                            dns_provider,
+                                        )
+                                        .await
+                                        {
+                                            Ok(client) => match client.authenticate().await {
+                                                Ok((true, ui, si)) => {
+                                                    let _ = tx
+                                                        .send(AsyncAction::LoadingMessage(
+                                                            "Processing M3U Playlist..."
+                                                                .to_string(),
+                                                        ))
+                                                        .await;
+                                                    let _ = tx
+                                                        .send(AsyncAction::LoginSuccess(
+                                                            crate::api::IptvClient::M3u(client),
+                                                            ui,
+                                                            si,
+                                                        ))
+                                                        .await;
                                                 }
-                                            }
+                                                Ok((false, _, _)) => {
+                                                    let _ = tx
+                                                        .send(AsyncAction::LoginFailed(
+                                                            "Invalid M3U playlist URL or format"
+                                                                .to_string(),
+                                                        ))
+                                                        .await;
+                                                }
+                                                Err(e) => {
+                                                    let _ = tx
+                                                        .send(AsyncAction::LoginFailed(
+                                                            e.to_string(),
+                                                        ))
+                                                        .await;
+                                                }
+                                            },
                                             Err(e) => {
                                                 let _ = tx
                                                     .send(AsyncAction::LoginFailed(format!(
@@ -568,7 +580,8 @@ pub async fn handle_key_event(
                                             Ok(client) => {
                                                 let _ = tx
                                                     .send(AsyncAction::LoadingMessage(
-                                                        "Authenticating with provider...".to_string(),
+                                                        "Authenticating with provider..."
+                                                            .to_string(),
                                                     ))
                                                     .await;
                                                 match client.authenticate().await {
@@ -576,7 +589,9 @@ pub async fn handle_key_event(
                                                         let _ = tx.send(AsyncAction::LoadingMessage("Provider accepted the login. Preparing the first playlist sync...".to_string())).await;
                                                         let _ = tx
                                                             .send(AsyncAction::LoginSuccess(
-                                                                crate::api::IptvClient::Xtream(client),
+                                                                crate::api::IptvClient::Xtream(
+                                                                    client,
+                                                                ),
                                                                 ui,
                                                                 si,
                                                             ))
@@ -591,7 +606,9 @@ pub async fn handle_key_event(
                                                     }
                                                     Err(e) => {
                                                         let _ = tx
-                                                            .send(AsyncAction::LoginFailed(e.to_string()))
+                                                            .send(AsyncAction::LoginFailed(
+                                                                e.to_string(),
+                                                            ))
                                                             .await;
                                                     }
                                                 }
@@ -888,11 +905,12 @@ pub async fn handle_key_event(
                                     let epg_opt = if epg.is_empty() { None } else { Some(epg) };
 
                                     if !name.is_empty() && !url.is_empty() {
-                                        let detected_type = if crate::app::App::is_m3u_url(&url, &user, &pass) {
-                                            crate::config::AccountType::M3uUrl
-                                        } else {
-                                            crate::config::AccountType::Xtream
-                                        };
+                                        let detected_type =
+                                            if crate::app::App::is_m3u_url(&url, &user, &pass) {
+                                                crate::config::AccountType::M3uUrl
+                                            } else {
+                                                crate::config::AccountType::Xtream
+                                            };
                                         let acc = Account {
                                             name,
                                             base_url: url,
@@ -1098,6 +1116,40 @@ pub async fn handle_key_event(
                         Pane::Streams => app.previous_stream(),
                         _ => {}
                     },
+                    KeyCode::PageDown => match app.active_pane {
+                        Pane::Categories => app.page_down_category(),
+                        Pane::Streams => app.page_down_stream(),
+                        _ => {}
+                    },
+                    KeyCode::PageUp => match app.active_pane {
+                        Pane::Categories => app.page_up_category(),
+                        Pane::Streams => app.page_up_stream(),
+                        _ => {}
+                    },
+                    KeyCode::Home => match app.active_pane {
+                        Pane::Categories => app.jump_to_category_top(),
+                        Pane::Streams => app.jump_to_top(),
+                        _ => {}
+                    },
+                    KeyCode::End => match app.active_pane {
+                        Pane::Categories => app.jump_to_category_bottom(),
+                        Pane::Streams => app.jump_to_bottom(),
+                        _ => {}
+                    },
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        match app.active_pane {
+                            Pane::Categories => app.half_page_down_category(),
+                            Pane::Streams => app.half_page_down_stream(),
+                            _ => {}
+                        }
+                    }
+                    KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        match app.active_pane {
+                            Pane::Categories => app.half_page_up_category(),
+                            Pane::Streams => app.half_page_up_stream(),
+                            _ => {}
+                        }
+                    }
                     KeyCode::Char('h') | KeyCode::Left => match app.active_pane {
                         Pane::Categories => app.move_category_x(false),
                         Pane::Streams => {
@@ -1588,6 +1640,16 @@ pub async fn handle_key_event(
                     }
                     KeyCode::Char('j') | KeyCode::Down => app.move_category_y(true),
                     KeyCode::Char('k') | KeyCode::Up => app.move_category_y(false),
+                    KeyCode::PageDown => app.page_down_category(),
+                    KeyCode::PageUp => app.page_up_category(),
+                    KeyCode::Home => app.jump_to_category_top(),
+                    KeyCode::End => app.jump_to_category_bottom(),
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.half_page_down_category()
+                    }
+                    KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.half_page_up_category()
+                    }
                     KeyCode::Char('h') | KeyCode::Left => {
                         let (_, before) = app.get_current_category_indices();
                         app.move_category_x(false);
@@ -1614,17 +1676,10 @@ pub async fn handle_key_event(
                         app.category_grid_view = !app.category_grid_view;
                     }
                     KeyCode::Char('G') => {
-                        if !app.vod_categories.is_empty() {
-                            app.selected_vod_category_index = app.vod_categories.len() - 1;
-                            app.vod_category_list_state
-                                .select(Some(app.vod_categories.len() - 1));
-                        }
+                        app.jump_to_category_bottom();
                     }
                     KeyCode::Char('0') => {
-                        if !app.vod_categories.is_empty() {
-                            app.selected_vod_category_index = 0;
-                            app.vod_category_list_state.select(Some(0));
-                        }
+                        app.jump_to_category_top();
                     }
                     KeyCode::Char('1') => {
                         if app.vod_categories.len() > 0 {
@@ -1811,6 +1866,16 @@ pub async fn handle_key_event(
                     }
                     KeyCode::Char('j') | KeyCode::Down => app.next_vod_stream(),
                     KeyCode::Char('k') | KeyCode::Up => app.previous_vod_stream(),
+                    KeyCode::PageDown => app.page_down_vod_stream(),
+                    KeyCode::PageUp => app.page_up_vod_stream(),
+                    KeyCode::Home => app.jump_to_vod_top(),
+                    KeyCode::End => app.jump_to_vod_bottom(),
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.half_page_down_vod_stream()
+                    }
+                    KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.half_page_up_vod_stream()
+                    }
                     KeyCode::Char('h') | KeyCode::Left => {
                         app.vod_streams.clear();
                         app.all_vod_streams.clear();
@@ -1834,23 +1899,13 @@ pub async fn handle_key_event(
                         }
                     }
                     KeyCode::Char('g') => {
-                        if !app.vod_streams.is_empty() {
-                            app.selected_vod_stream_index = app.vod_streams.len() - 1;
-                            app.vod_stream_list_state
-                                .select(Some(app.vod_streams.len() - 1));
-                        }
+                        app.jump_to_vod_top();
                     }
                     KeyCode::Char('G') => {
-                        if !app.vod_streams.is_empty() {
-                            app.selected_vod_stream_index = 0;
-                            app.vod_stream_list_state.select(Some(0));
-                        }
+                        app.jump_to_vod_bottom();
                     }
                     KeyCode::Char('0') => {
-                        if !app.vod_streams.is_empty() {
-                            app.selected_vod_stream_index = 0;
-                            app.vod_stream_list_state.select(Some(0));
-                        }
+                        app.jump_to_vod_top();
                     }
                     KeyCode::Char('1') => {
                         if app.vod_streams.len() > 0 {
@@ -1971,6 +2026,16 @@ pub async fn handle_key_event(
                     }
                     KeyCode::Char('j') | KeyCode::Down => app.move_category_y(true),
                     KeyCode::Char('k') | KeyCode::Up => app.move_category_y(false),
+                    KeyCode::PageDown => app.page_down_category(),
+                    KeyCode::PageUp => app.page_up_category(),
+                    KeyCode::Home => app.jump_to_category_top(),
+                    KeyCode::End => app.jump_to_category_bottom(),
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.half_page_down_category()
+                    }
+                    KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        app.half_page_up_category()
+                    }
                     KeyCode::Char('h') | KeyCode::Left => {
                         let (_, before) = app.get_current_category_indices();
                         app.move_category_x(false);
@@ -1996,16 +2061,10 @@ pub async fn handle_key_event(
                         app.category_grid_view = !app.category_grid_view;
                     }
                     KeyCode::Char('G') => {
-                        if !app.series_categories.is_empty() {
-                            app.selected_series_category_index = 0;
-                            app.series_category_list_state.select(Some(0));
-                        }
+                        app.jump_to_category_bottom();
                     }
                     KeyCode::Char('0') => {
-                        if !app.series_categories.is_empty() {
-                            app.selected_series_category_index = 0;
-                            app.series_category_list_state.select(Some(0));
-                        }
+                        app.jump_to_category_top();
                     }
                     KeyCode::Char('1') => {
                         if app.series_categories.len() > 0 {
@@ -2187,6 +2246,69 @@ pub async fn handle_key_event(
                         Pane::Streams => app.previous_series_stream(),
                         Pane::Episodes => app.previous_series_episode(),
                     },
+                    KeyCode::PageDown => match app.active_pane {
+                        Pane::Categories => app.page_down_category(),
+                        Pane::Streams => app.page_down_series_stream(),
+                        Pane::Episodes => app.page_down_series_episode(),
+                    },
+                    KeyCode::PageUp => match app.active_pane {
+                        Pane::Categories => app.page_up_category(),
+                        Pane::Streams => app.page_up_series_stream(),
+                        Pane::Episodes => app.page_up_series_episode(),
+                    },
+                    KeyCode::Home => match app.active_pane {
+                        Pane::Categories => app.jump_to_category_top(),
+                        Pane::Streams => app.jump_to_series_top(),
+                        Pane::Episodes => {
+                            if !app.series_episodes.is_empty() {
+                                app.selected_series_episode_index = 0;
+                                app.series_episode_list_state.select(Some(0));
+                            }
+                        }
+                    },
+                    KeyCode::End => match app.active_pane {
+                        Pane::Categories => app.jump_to_category_bottom(),
+                        Pane::Streams => app.jump_to_series_bottom(),
+                        Pane::Episodes => {
+                            if !app.series_episodes.is_empty() {
+                                app.selected_series_episode_index = app.series_episodes.len() - 1;
+                                app.series_episode_list_state
+                                    .select(Some(app.series_episodes.len() - 1));
+                            }
+                        }
+                    },
+                    KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        match app.active_pane {
+                            Pane::Categories => app.half_page_down_category(),
+                            Pane::Streams => app.half_page_down_series_stream(),
+                            Pane::Episodes => {
+                                let half = app.page_size_for_pane(Pane::Episodes) / 2;
+                                crate::app::App::jump_list(
+                                    app.series_episodes.len(),
+                                    &mut app.selected_series_episode_index,
+                                    &mut app.series_episode_list_state,
+                                    half.max(1),
+                                    true,
+                                );
+                            }
+                        }
+                    }
+                    KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        match app.active_pane {
+                            Pane::Categories => app.half_page_up_category(),
+                            Pane::Streams => app.half_page_up_series_stream(),
+                            Pane::Episodes => {
+                                let half = app.page_size_for_pane(Pane::Episodes) / 2;
+                                crate::app::App::jump_list(
+                                    app.series_episodes.len(),
+                                    &mut app.selected_series_episode_index,
+                                    &mut app.series_episode_list_state,
+                                    half.max(1),
+                                    false,
+                                );
+                            }
+                        }
+                    }
                     KeyCode::Char('l') | KeyCode::Right => match app.active_pane {
                         Pane::Categories => {
                             if !app.series_categories.is_empty() {
@@ -2431,6 +2553,10 @@ pub async fn handle_key_event(
                     }
                     KeyCode::Char('j') | KeyCode::Down => app.next_global_search_result(),
                     KeyCode::Char('k') | KeyCode::Up => app.previous_global_search_result(),
+                    KeyCode::PageDown => app.page_down_global_search(),
+                    KeyCode::PageUp => app.page_up_global_search(),
+                    KeyCode::Home => app.jump_to_global_search_top(),
+                    KeyCode::End => app.jump_to_global_search_bottom(),
                     KeyCode::Enter => {
                         if !app.global_search_results.is_empty() {
                             let stream = &app.global_search_results[app.selected_stream_index];

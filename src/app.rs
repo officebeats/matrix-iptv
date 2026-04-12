@@ -1002,6 +1002,51 @@ impl App {
         list_state.select(Some(i));
     }
 
+    pub fn jump_list(
+        len: usize,
+        current_index: &mut usize,
+        list_state: &mut ListState,
+        amount: usize,
+        forward: bool,
+    ) {
+        if len == 0 {
+            return;
+        }
+        let current = list_state.selected().unwrap_or(0);
+        let new_idx = if forward {
+            (current + amount).min(len - 1)
+        } else {
+            current.saturating_sub(amount)
+        };
+        *current_index = new_idx;
+        list_state.select(Some(new_idx));
+    }
+
+    fn jump_list_top(len: usize, current_index: &mut usize, list_state: &mut ListState) {
+        if len == 0 {
+            return;
+        }
+        *current_index = 0;
+        list_state.select(Some(0));
+    }
+
+    fn jump_list_bottom(len: usize, current_index: &mut usize, list_state: &mut ListState) {
+        if len == 0 {
+            return;
+        }
+        *current_index = len - 1;
+        list_state.select(Some(len - 1));
+    }
+
+    pub fn page_size_for_pane(&self, pane: Pane) -> usize {
+        let area = match pane {
+            Pane::Categories => self.area_categories,
+            Pane::Streams => self.area_streams,
+            Pane::Episodes => self.area_episodes,
+        };
+        (area.height.saturating_sub(2) as usize).max(1)
+    }
+
     pub fn next_account(&mut self) {
         let prev = self.session.selected_account_index;
         Self::navigate_list(
@@ -1148,6 +1193,40 @@ impl App {
         self.apply_category_move(next + r);
     }
 
+    pub fn page_down_category(&mut self) {
+        let page = self.page_size_for_pane(Pane::Categories);
+        let (len, cur) = self.get_current_category_indices();
+        let new_idx = (cur + page).min(len.saturating_sub(1));
+        self.apply_category_move(new_idx);
+    }
+
+    pub fn page_up_category(&mut self) {
+        let page = self.page_size_for_pane(Pane::Categories);
+        let (len, cur) = self.get_current_category_indices();
+        if len == 0 {
+            return;
+        }
+        let new_idx = cur.saturating_sub(page);
+        self.apply_category_move(new_idx);
+    }
+
+    pub fn half_page_down_category(&mut self) {
+        let half = self.page_size_for_pane(Pane::Categories) / 2;
+        let (len, cur) = self.get_current_category_indices();
+        let new_idx = (cur + half.max(1)).min(len.saturating_sub(1));
+        self.apply_category_move(new_idx);
+    }
+
+    pub fn half_page_up_category(&mut self) {
+        let half = self.page_size_for_pane(Pane::Categories) / 2;
+        let (len, cur) = self.get_current_category_indices();
+        if len == 0 {
+            return;
+        }
+        let new_idx = cur.saturating_sub(half.max(1));
+        self.apply_category_move(new_idx);
+    }
+
     pub fn jump_to_category(&mut self, index: usize) {
         if index < self.categories.len() {
             self.select_category(index);
@@ -1155,14 +1234,16 @@ impl App {
     }
 
     pub fn jump_to_category_bottom(&mut self) {
-        if !self.categories.is_empty() {
-            self.select_category(self.categories.len() - 1);
+        let (len, _) = self.get_current_category_indices();
+        if len > 0 {
+            self.apply_category_move(len - 1);
         }
     }
 
     pub fn jump_to_category_top(&mut self) {
-        if !self.categories.is_empty() {
-            self.select_category(0);
+        let (len, _) = self.get_current_category_indices();
+        if len > 0 {
+            self.apply_category_move(0);
         }
     }
 
@@ -1322,6 +1403,50 @@ impl App {
         );
     }
 
+    pub fn page_down_stream(&mut self) {
+        let page = self.page_size_for_pane(Pane::Streams);
+        Self::jump_list(
+            self.streams.len(),
+            &mut self.selected_stream_index,
+            &mut self.stream_list_state,
+            page,
+            true,
+        );
+    }
+
+    pub fn page_up_stream(&mut self) {
+        let page = self.page_size_for_pane(Pane::Streams);
+        Self::jump_list(
+            self.streams.len(),
+            &mut self.selected_stream_index,
+            &mut self.stream_list_state,
+            page,
+            false,
+        );
+    }
+
+    pub fn half_page_down_stream(&mut self) {
+        let half = self.page_size_for_pane(Pane::Streams) / 2;
+        Self::jump_list(
+            self.streams.len(),
+            &mut self.selected_stream_index,
+            &mut self.stream_list_state,
+            half.max(1),
+            true,
+        );
+    }
+
+    pub fn half_page_up_stream(&mut self) {
+        let half = self.page_size_for_pane(Pane::Streams) / 2;
+        Self::jump_list(
+            self.streams.len(),
+            &mut self.selected_stream_index,
+            &mut self.stream_list_state,
+            half.max(1),
+            false,
+        );
+    }
+
     pub fn jump_to_stream(&mut self, index: usize) {
         if index < self.streams.len() {
             self.selected_stream_index = index;
@@ -1330,17 +1455,19 @@ impl App {
     }
 
     pub fn jump_to_bottom(&mut self) {
-        if !self.streams.is_empty() {
-            self.selected_stream_index = self.streams.len() - 1;
-            self.stream_list_state.select(Some(self.streams.len() - 1));
-        }
+        Self::jump_list_bottom(
+            self.streams.len(),
+            &mut self.selected_stream_index,
+            &mut self.stream_list_state,
+        );
     }
 
     pub fn jump_to_top(&mut self) {
-        if !self.streams.is_empty() {
-            self.selected_stream_index = 0;
-            self.stream_list_state.select(Some(0));
-        }
+        Self::jump_list_top(
+            self.streams.len(),
+            &mut self.selected_stream_index,
+            &mut self.stream_list_state,
+        );
     }
 
     pub fn previous_stream(&mut self) {
@@ -1372,6 +1499,50 @@ impl App {
         );
     }
 
+    pub fn page_down_vod_stream(&mut self) {
+        let page = self.page_size_for_pane(Pane::Streams);
+        Self::jump_list(
+            self.vod_streams.len(),
+            &mut self.selected_vod_stream_index,
+            &mut self.vod_stream_list_state,
+            page,
+            true,
+        );
+    }
+
+    pub fn page_up_vod_stream(&mut self) {
+        let page = self.page_size_for_pane(Pane::Streams);
+        Self::jump_list(
+            self.vod_streams.len(),
+            &mut self.selected_vod_stream_index,
+            &mut self.vod_stream_list_state,
+            page,
+            false,
+        );
+    }
+
+    pub fn half_page_down_vod_stream(&mut self) {
+        let half = self.page_size_for_pane(Pane::Streams) / 2;
+        Self::jump_list(
+            self.vod_streams.len(),
+            &mut self.selected_vod_stream_index,
+            &mut self.vod_stream_list_state,
+            half.max(1),
+            true,
+        );
+    }
+
+    pub fn half_page_up_vod_stream(&mut self) {
+        let half = self.page_size_for_pane(Pane::Streams) / 2;
+        Self::jump_list(
+            self.vod_streams.len(),
+            &mut self.selected_vod_stream_index,
+            &mut self.vod_stream_list_state,
+            half.max(1),
+            false,
+        );
+    }
+
     pub fn jump_to_vod_stream(&mut self, index: usize) {
         if index < self.vod_streams.len() {
             self.selected_vod_stream_index = index;
@@ -1380,18 +1551,19 @@ impl App {
     }
 
     pub fn jump_to_vod_bottom(&mut self) {
-        if !self.vod_streams.is_empty() {
-            self.selected_vod_stream_index = self.vod_streams.len() - 1;
-            self.vod_stream_list_state
-                .select(Some(self.vod_streams.len() - 1));
-        }
+        Self::jump_list_bottom(
+            self.vod_streams.len(),
+            &mut self.selected_vod_stream_index,
+            &mut self.vod_stream_list_state,
+        );
     }
 
     pub fn jump_to_vod_top(&mut self) {
-        if !self.vod_streams.is_empty() {
-            self.selected_vod_stream_index = 0;
-            self.vod_stream_list_state.select(Some(0));
-        }
+        Self::jump_list_top(
+            self.vod_streams.len(),
+            &mut self.selected_vod_stream_index,
+            &mut self.vod_stream_list_state,
+        );
     }
 
     pub fn previous_vod_stream(&mut self) {
@@ -1430,6 +1602,28 @@ impl App {
         );
     }
 
+    pub fn page_down_global_search(&mut self) {
+        let page = self.page_size_for_pane(Pane::Streams);
+        Self::jump_list(
+            self.global_search_results.len(),
+            &mut self.selected_stream_index,
+            &mut self.global_search_list_state,
+            page,
+            true,
+        );
+    }
+
+    pub fn page_up_global_search(&mut self) {
+        let page = self.page_size_for_pane(Pane::Streams);
+        Self::jump_list(
+            self.global_search_results.len(),
+            &mut self.selected_stream_index,
+            &mut self.global_search_list_state,
+            page,
+            false,
+        );
+    }
+
     pub fn jump_to_global_search_result(&mut self, index: usize) {
         if index < self.global_search_results.len() {
             self.selected_stream_index = index;
@@ -1438,18 +1632,19 @@ impl App {
     }
 
     pub fn jump_to_global_search_bottom(&mut self) {
-        if !self.global_search_results.is_empty() {
-            self.selected_stream_index = self.global_search_results.len() - 1;
-            self.global_search_list_state
-                .select(Some(self.global_search_results.len() - 1));
-        }
+        Self::jump_list_bottom(
+            self.global_search_results.len(),
+            &mut self.selected_stream_index,
+            &mut self.global_search_list_state,
+        );
     }
 
     pub fn jump_to_global_search_top(&mut self) {
-        if !self.global_search_results.is_empty() {
-            self.selected_stream_index = 0;
-            self.global_search_list_state.select(Some(0));
-        }
+        Self::jump_list_top(
+            self.global_search_results.len(),
+            &mut self.selected_stream_index,
+            &mut self.global_search_list_state,
+        );
     }
 
     pub fn previous_global_search_result(&mut self) {
@@ -2050,6 +2245,72 @@ impl App {
         );
     }
 
+    pub fn page_down_series_stream(&mut self) {
+        let page = self.page_size_for_pane(Pane::Streams);
+        Self::jump_list(
+            self.series_streams.len(),
+            &mut self.selected_series_stream_index,
+            &mut self.series_stream_list_state,
+            page,
+            true,
+        );
+    }
+
+    pub fn page_up_series_stream(&mut self) {
+        let page = self.page_size_for_pane(Pane::Streams);
+        Self::jump_list(
+            self.series_streams.len(),
+            &mut self.selected_series_stream_index,
+            &mut self.series_stream_list_state,
+            page,
+            false,
+        );
+    }
+
+    pub fn half_page_down_series_stream(&mut self) {
+        let half = self.page_size_for_pane(Pane::Streams) / 2;
+        Self::jump_list(
+            self.series_streams.len(),
+            &mut self.selected_series_stream_index,
+            &mut self.series_stream_list_state,
+            half.max(1),
+            true,
+        );
+    }
+
+    pub fn half_page_up_series_stream(&mut self) {
+        let half = self.page_size_for_pane(Pane::Streams) / 2;
+        Self::jump_list(
+            self.series_streams.len(),
+            &mut self.selected_series_stream_index,
+            &mut self.series_stream_list_state,
+            half.max(1),
+            false,
+        );
+    }
+
+    pub fn page_down_series_episode(&mut self) {
+        let page = self.page_size_for_pane(Pane::Episodes);
+        Self::jump_list(
+            self.series_episodes.len(),
+            &mut self.selected_series_episode_index,
+            &mut self.series_episode_list_state,
+            page,
+            true,
+        );
+    }
+
+    pub fn page_up_series_episode(&mut self) {
+        let page = self.page_size_for_pane(Pane::Episodes);
+        Self::jump_list(
+            self.series_episodes.len(),
+            &mut self.selected_series_episode_index,
+            &mut self.series_episode_list_state,
+            page,
+            false,
+        );
+    }
+
     pub fn jump_to_series_stream(&mut self, index: usize) {
         if index < self.series_streams.len() {
             self.selected_series_stream_index = index;
@@ -2058,18 +2319,19 @@ impl App {
     }
 
     pub fn jump_to_series_bottom(&mut self) {
-        if !self.series_streams.is_empty() {
-            self.selected_series_stream_index = self.series_streams.len() - 1;
-            self.series_stream_list_state
-                .select(Some(self.series_streams.len() - 1));
-        }
+        Self::jump_list_bottom(
+            self.series_streams.len(),
+            &mut self.selected_series_stream_index,
+            &mut self.series_stream_list_state,
+        );
     }
 
     pub fn jump_to_series_top(&mut self) {
-        if !self.series_streams.is_empty() {
-            self.selected_series_stream_index = 0;
-            self.series_stream_list_state.select(Some(0));
-        }
+        Self::jump_list_top(
+            self.series_streams.len(),
+            &mut self.selected_series_stream_index,
+            &mut self.series_stream_list_state,
+        );
     }
 
     pub fn previous_series_stream(&mut self) {
@@ -2186,14 +2448,18 @@ impl App {
         }
 
         // Check for common M3U URL patterns in query string
-        if url_lower.contains("type=m3u") || url_lower.contains("output=m3u")
-            || url_lower.contains("type=m3u_plus") || url_lower.contains("output=ts")
+        if url_lower.contains("type=m3u")
+            || url_lower.contains("output=m3u")
+            || url_lower.contains("type=m3u_plus")
+            || url_lower.contains("output=ts")
         {
             return true;
         }
 
         // Check for get.php pattern (common M3U CDN pattern)
-        if url_lower.contains("/get.php") && (url_lower.contains("type=m3u") || url_lower.contains("output=")) {
+        if url_lower.contains("/get.php")
+            && (url_lower.contains("type=m3u") || url_lower.contains("output="))
+        {
             return true;
         }
 
@@ -2892,5 +3158,340 @@ mod tests {
         app.move_category_x(true); // Right to Col 2 -> Col 2 only has 2 rows!
                                    // So it snaps to Col 2 Row 1 (index 7)
         assert_eq!(app.selected_category_index, 7);
+    }
+
+    #[test]
+    fn test_page_navigation_live_streams() {
+        let mut app = App::new();
+        app.area_streams = Rect::new(0, 0, 50, 22);
+
+        for i in 0..100 {
+            app.streams.push(Arc::new(Stream {
+                name: format!("Stream {}", i),
+                search_name: format!("stream {}", i),
+                stream_id: FlexId::from_number(i as i64),
+                ..Default::default()
+            }));
+        }
+        app.selected_stream_index = 0;
+        app.stream_list_state.select(Some(0));
+
+        let page = app.page_size_for_pane(Pane::Streams);
+        assert_eq!(page, 20, "Page size should be height - 2");
+
+        app.page_down_stream();
+        assert_eq!(
+            app.selected_stream_index, page,
+            "PageDown should jump by page size"
+        );
+
+        app.page_up_stream();
+        assert_eq!(
+            app.selected_stream_index, 0,
+            "PageUp should jump back to top"
+        );
+
+        app.half_page_down_stream();
+        assert_eq!(
+            app.selected_stream_index,
+            page / 2,
+            "Ctrl+D should jump by half page"
+        );
+
+        app.half_page_up_stream();
+        assert_eq!(
+            app.selected_stream_index, 0,
+            "Ctrl+U should jump back to top"
+        );
+
+        app.jump_to_bottom();
+        assert_eq!(
+            app.selected_stream_index, 99,
+            "End should jump to last item"
+        );
+
+        app.jump_to_top();
+        assert_eq!(
+            app.selected_stream_index, 0,
+            "Home should jump to first item"
+        );
+
+        app.page_down_stream();
+        app.page_down_stream();
+        app.page_down_stream();
+        app.page_down_stream();
+        app.page_down_stream();
+        assert_eq!(
+            app.selected_stream_index, 99,
+            "PageDown should clamp at last item, not wrap"
+        );
+
+        app.page_up_stream();
+        assert_eq!(
+            app.selected_stream_index,
+            99 - page,
+            "PageUp from bottom should go back by page"
+        );
+    }
+
+    #[test]
+    fn test_page_navigation_vod_streams() {
+        let mut app = App::new();
+        app.area_streams = Rect::new(0, 0, 50, 22);
+
+        for i in 0..50 {
+            app.vod_streams.push(Arc::new(Stream {
+                name: format!("Movie {}", i),
+                search_name: format!("movie {}", i),
+                stream_id: FlexId::from_number(i as i64),
+                stream_type: "movie".to_string(),
+                ..Default::default()
+            }));
+        }
+        app.selected_vod_stream_index = 0;
+        app.vod_stream_list_state.select(Some(0));
+
+        app.page_down_vod_stream();
+        let page = app.page_size_for_pane(Pane::Streams);
+        assert_eq!(app.selected_vod_stream_index, page);
+
+        app.jump_to_vod_bottom();
+        assert_eq!(app.selected_vod_stream_index, 49);
+
+        app.jump_to_vod_top();
+        assert_eq!(app.selected_vod_stream_index, 0);
+
+        app.half_page_down_vod_stream();
+        assert_eq!(app.selected_vod_stream_index, page / 2);
+    }
+
+    #[test]
+    fn test_page_navigation_series_streams() {
+        let mut app = App::new();
+        app.area_streams = Rect::new(0, 0, 50, 22);
+
+        for i in 0..50 {
+            app.series_streams.push(Arc::new(Stream {
+                name: format!("Series {}", i),
+                search_name: format!("series {}", i),
+                stream_id: FlexId::from_number(i as i64),
+                stream_type: "series".to_string(),
+                ..Default::default()
+            }));
+        }
+        app.selected_series_stream_index = 0;
+        app.series_stream_list_state.select(Some(0));
+
+        app.page_down_series_stream();
+        let page = app.page_size_for_pane(Pane::Streams);
+        assert_eq!(app.selected_series_stream_index, page);
+
+        app.jump_to_series_bottom();
+        assert_eq!(app.selected_series_stream_index, 49);
+
+        app.jump_to_series_top();
+        assert_eq!(app.selected_series_stream_index, 0);
+    }
+
+    #[test]
+    fn test_page_navigation_series_episodes() {
+        let mut app = App::new();
+        app.area_episodes = Rect::new(0, 0, 30, 22);
+
+        for i in 0..30 {
+            app.series_episodes.push(crate::api::SeriesEpisode {
+                id: Some(FlexId::from_number(i as i64)),
+                episode_num: i,
+                title: Some(format!("Episode {}", i)),
+                container_extension: Some("mp4".to_string()),
+                info: None,
+                season: 1,
+                direct_source: String::new(),
+            });
+        }
+        app.selected_series_episode_index = 0;
+        app.series_episode_list_state.select(Some(0));
+
+        let page = app.page_size_for_pane(Pane::Episodes);
+        assert_eq!(page, 20);
+
+        app.page_down_series_episode();
+        assert_eq!(app.selected_series_episode_index, page);
+
+        app.page_up_series_episode();
+        assert_eq!(app.selected_series_episode_index, 0);
+    }
+
+    #[test]
+    fn test_page_navigation_categories() {
+        let mut app = App::new();
+        app.area_categories = Rect::new(0, 0, 30, 22);
+        app.grid_cols = 1;
+
+        for i in 0..40 {
+            app.categories.push(Arc::new(Category {
+                category_id: i.to_string(),
+                category_name: format!("Category {}", i),
+                parent_id: FlexId::Null,
+                ..Default::default()
+            }));
+        }
+        app.selected_category_index = 0;
+        app.category_list_state.select(Some(0));
+
+        app.page_down_category();
+        let page = app.page_size_for_pane(Pane::Categories);
+        assert_eq!(app.selected_category_index, page);
+
+        app.page_up_category();
+        assert_eq!(app.selected_category_index, 0);
+
+        app.jump_to_category_bottom();
+        assert_eq!(app.selected_category_index, 39);
+
+        app.jump_to_category_top();
+        assert_eq!(app.selected_category_index, 0);
+
+        app.half_page_down_category();
+        assert_eq!(app.selected_category_index, page / 2);
+    }
+
+    #[test]
+    fn test_page_navigation_global_search() {
+        let mut app = App::new();
+        app.area_streams = Rect::new(0, 0, 50, 22);
+
+        for i in 0..80 {
+            app.global_search_results.push(Arc::new(Stream {
+                name: format!("Result {}", i),
+                search_name: format!("result {}", i),
+                stream_id: FlexId::from_number(i as i64),
+                ..Default::default()
+            }));
+        }
+        app.selected_stream_index = 0;
+        app.global_search_list_state.select(Some(0));
+
+        app.page_down_global_search();
+        let page = app.page_size_for_pane(Pane::Streams);
+        assert_eq!(app.selected_stream_index, page);
+
+        app.jump_to_global_search_bottom();
+        assert_eq!(app.selected_stream_index, 79);
+
+        app.jump_to_global_search_top();
+        assert_eq!(app.selected_stream_index, 0);
+    }
+
+    #[test]
+    fn test_page_size_dynamic_viewport() {
+        let mut app = App::new();
+
+        app.area_categories = Rect::new(0, 0, 30, 10);
+        app.area_streams = Rect::new(0, 0, 50, 22);
+        app.area_episodes = Rect::new(0, 0, 30, 5);
+
+        assert_eq!(app.page_size_for_pane(Pane::Categories), 8);
+        assert_eq!(app.page_size_for_pane(Pane::Streams), 20);
+        assert_eq!(app.page_size_for_pane(Pane::Episodes), 3);
+    }
+
+    #[test]
+    fn test_jump_list_clamps_at_boundaries() {
+        let mut app = App::new();
+
+        app.streams.push(Arc::new(Stream {
+            name: "Only".to_string(),
+            search_name: "only".to_string(),
+            stream_id: FlexId::from_number(1),
+            ..Default::default()
+        }));
+        app.selected_stream_index = 0;
+        app.stream_list_state.select(Some(0));
+
+        app.page_down_stream();
+        assert_eq!(
+            app.selected_stream_index, 0,
+            "PageDown on single item should stay at 0"
+        );
+
+        app.page_up_stream();
+        assert_eq!(
+            app.selected_stream_index, 0,
+            "PageUp on single item should stay at 0"
+        );
+
+        app.jump_to_bottom();
+        assert_eq!(app.selected_stream_index, 0);
+
+        app.jump_to_top();
+        assert_eq!(app.selected_stream_index, 0);
+    }
+
+    #[test]
+    fn test_jump_list_empty_lists() {
+        let mut app = App::new();
+        app.area_streams = Rect::new(0, 0, 50, 22);
+
+        app.page_down_stream();
+        assert_eq!(app.selected_stream_index, 0);
+
+        app.page_up_stream();
+        assert_eq!(app.selected_stream_index, 0);
+
+        app.jump_to_bottom();
+        assert_eq!(app.selected_stream_index, 0);
+
+        app.jump_to_top();
+        assert_eq!(app.selected_stream_index, 0);
+    }
+
+    #[test]
+    fn test_category_page_navigation_multi_screen() {
+        let mut app = App::new();
+        app.area_categories = Rect::new(0, 0, 30, 22);
+        app.grid_cols = 1;
+
+        for i in 0..30 {
+            app.vod_categories.push(Arc::new(Category {
+                category_id: i.to_string(),
+                category_name: format!("VOD Cat {}", i),
+                parent_id: FlexId::Null,
+                ..Default::default()
+            }));
+            app.series_categories.push(Arc::new(Category {
+                category_id: i.to_string(),
+                category_name: format!("Series Cat {}", i),
+                parent_id: FlexId::Null,
+                ..Default::default()
+            }));
+        }
+
+        app.current_screen = CurrentScreen::VodCategories;
+        app.selected_vod_category_index = 0;
+        app.vod_category_list_state.select(Some(0));
+
+        app.page_down_category();
+        let page = app.page_size_for_pane(Pane::Categories);
+        assert_eq!(app.selected_vod_category_index, page);
+
+        app.jump_to_category_bottom();
+        assert_eq!(app.selected_vod_category_index, 29);
+
+        app.jump_to_category_top();
+        assert_eq!(app.selected_vod_category_index, 0);
+
+        app.current_screen = CurrentScreen::SeriesCategories;
+        app.selected_series_category_index = 0;
+        app.series_category_list_state.select(Some(0));
+
+        app.page_down_category();
+        assert_eq!(app.selected_series_category_index, page);
+
+        app.jump_to_category_bottom();
+        assert_eq!(app.selected_series_category_index, 29);
+
+        app.jump_to_category_top();
+        assert_eq!(app.selected_series_category_index, 0);
     }
 }

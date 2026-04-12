@@ -1,7 +1,6 @@
+use anyhow::Result;
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
-
 
 /// Returns the primary color for a team based on its name or abbreviation.
 pub fn get_team_color(name: &str) -> Color {
@@ -299,7 +298,7 @@ fn lighten_color(color: Color) -> Color {
         Color::Rgb(r, g, b) => {
             // Calculate luminance (using rough approximation)
             let luminance = (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) / 255.0;
-            
+
             // If color is too dark (luminance < 0.5), lighten it (increased from 0.4)
             if luminance < 0.5 {
                 let boost = 1.7 + (0.5 - luminance); // Increased boost by ~15%
@@ -334,11 +333,33 @@ use std::sync::OnceLock;
 pub fn is_generic_label(name: &str) -> bool {
     let name = name.to_uppercase();
     let generics = [
-        "MNF", "SNF", "TNF", "NFL LIVE", "NFL MEDIA", "NFL NETWORK", "NFL PACKAGE",
-        "NBA TV", "NBA PACKAGE", "NBA GAMETIME", "MLB TV", "MLB PACKAGE",
-        "EVENT ONLY", "LIVE NOW", "REPLAY", "FULL REPLAY", "DIRECT TV",
-        "SPORTS", "FOOTBALL", "BASKETBALL", "BASEBALL", "HOCKEY", "SOCCER",
-        "LIVE SPORTS", "GAME PASS", "REDZONE", "NFL REDZONE"
+        "MNF",
+        "SNF",
+        "TNF",
+        "NFL LIVE",
+        "NFL MEDIA",
+        "NFL NETWORK",
+        "NFL PACKAGE",
+        "NBA TV",
+        "NBA PACKAGE",
+        "NBA GAMETIME",
+        "MLB TV",
+        "MLB PACKAGE",
+        "EVENT ONLY",
+        "LIVE NOW",
+        "REPLAY",
+        "FULL REPLAY",
+        "DIRECT TV",
+        "SPORTS",
+        "FOOTBALL",
+        "BASKETBALL",
+        "BASEBALL",
+        "HOCKEY",
+        "SOCCER",
+        "LIVE SPORTS",
+        "GAME PASS",
+        "REDZONE",
+        "NFL REDZONE",
     ];
 
     for g in generics {
@@ -349,7 +370,9 @@ pub fn is_generic_label(name: &str) -> bool {
 
     // Check for "PACKAGE 01", "LIVE 05" etc.
     static RE_GENERIC: OnceLock<regex::Regex> = OnceLock::new();
-    let re_generic = RE_GENERIC.get_or_init(|| regex::Regex::new(r"(?i)^(LIVE|PACKAGE|NETWORK|TV|STREAM)\s+\d+$").unwrap());
+    let re_generic = RE_GENERIC.get_or_init(|| {
+        regex::Regex::new(r"(?i)^(LIVE|PACKAGE|NETWORK|TV|STREAM)\s+\d+$").unwrap()
+    });
     if re_generic.is_match(&name) {
         return true;
     }
@@ -378,7 +401,6 @@ pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
         let team2 = caps.get(3)?.as_str().trim().to_string();
         let team2_abbr = caps.get(4).map(|m| m.as_str().trim().to_string());
 
-
         // Scrub prefixes from team1
         let mut team1 = team1;
 
@@ -405,7 +427,10 @@ pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
                 r"(?i)^######",
                 r"(?i)^======",
             ];
-            prefixes.iter().map(|p| regex::Regex::new(p).unwrap()).collect()
+            prefixes
+                .iter()
+                .map(|p| regex::Regex::new(p).unwrap())
+                .collect()
         });
 
         for re_p in prefixes_re {
@@ -422,9 +447,12 @@ pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
         // Try to extract start time if present in the rest of the string
         static RE_START: OnceLock<regex::Regex> = OnceLock::new();
         static RE_AMPM: OnceLock<regex::Regex> = OnceLock::new();
-        
-        let start_time_re = RE_START.get_or_init(|| regex::Regex::new(r"(?i)start:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").unwrap());
-        let am_pm_re = RE_AMPM.get_or_init(|| regex::Regex::new(r"(?i)(\d{1,2}:\d{2})\s*(am|pm)").unwrap());
+
+        let start_time_re = RE_START.get_or_init(|| {
+            regex::Regex::new(r"(?i)start:\s*(\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}:\d{2})").unwrap()
+        });
+        let am_pm_re =
+            RE_AMPM.get_or_init(|| regex::Regex::new(r"(?i)(\d{1,2}:\d{2})\s*(am|pm)").unwrap());
 
         let start_time_raw = if let Some(time_caps) = start_time_re.captures(display_name) {
             time_caps

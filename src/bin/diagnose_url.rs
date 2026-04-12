@@ -1,4 +1,4 @@
-use reqwest::{Client, redirect};
+use reqwest::{redirect, Client};
 use std::time::Duration;
 
 #[tokio::main]
@@ -16,7 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for (name, ua, referer) in scenarios {
         println!("\n--- Testing Scenario: {} ---", name);
-        
+
         let client = Client::builder()
             .timeout(Duration::from_secs(10))
             .redirect(redirect::Policy::none()) // We want to see the 302, not follow it blindly yet
@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for (k, v) in resp.headers() {
                     println!("  {}: {:?}", k, v);
                 }
-                
+
                 if resp.status().is_redirection() {
                     if let Some(loc) = resp.headers().get("location") {
                         if let Ok(loc_str) = loc.to_str() {
@@ -50,11 +50,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 } else if resp.status().is_success() {
                     println!("SUCCESS: Stream reachable directly!");
                 }
-            },
+            }
             Err(e) => println!("Request Failed: {}", e),
         }
     }
-    
+
     Ok(())
 }
 
@@ -81,14 +81,17 @@ async fn verify_host(url: &str) {
     let client = Client::new();
     match client.get(&doh_url).send().await {
         Ok(resp) => {
-                if let Ok(text) = resp.text().await {
-                    if text.contains("\"Status\": 0") {
-                        println!("  [✓] Host ({}) exists (Google DoH).", host);
-                    } else {
-                        println!("  [X] Host ({}) returned error/NXDOMAIN from Google DoH: {}", host, text);
-                    }
+            if let Ok(text) = resp.text().await {
+                if text.contains("\"Status\": 0") {
+                    println!("  [✓] Host ({}) exists (Google DoH).", host);
+                } else {
+                    println!(
+                        "  [X] Host ({}) returned error/NXDOMAIN from Google DoH: {}",
+                        host, text
+                    );
                 }
-        },
+            }
+        }
         Err(_) => println!("  [?] Could not check DoH for host."),
     }
 }
