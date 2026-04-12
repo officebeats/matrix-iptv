@@ -98,21 +98,138 @@ pub async fn handle_key_event(
         return Ok(InputResult::Continue);
     }
 
-    // Priority 0: Loading State Handling (Cancellation)
+    // Global Ctrl+Key Bindings (Claude Code style)
+    let is_ctrl_c = key.code == KeyCode::Char('c') && key.modifiers.contains(KeyModifiers::CONTROL);
+    let is_ctrl_l = key.code == KeyCode::Char('l') && key.modifiers.contains(KeyModifiers::CONTROL);
+    let is_ctrl_r = key.code == KeyCode::Char('r') && key.modifiers.contains(KeyModifiers::CONTROL);
+    let is_ctrl_g = key.code == KeyCode::Char('g') && key.modifiers.contains(KeyModifiers::CONTROL);
+    let is_ctrl_b = key.code == KeyCode::Char('b') && key.modifiers.contains(KeyModifiers::CONTROL);
+
+    // Ctrl+C: Cancel loading or quit confirmation
+    if is_ctrl_c {
+        if app.session.state_loading {
+            app.session.state_loading = false;
+            app.session.loading_message = None;
+            app.session.loading_cancelled = true;
+            app.login_error = None;
+            return Ok(InputResult::Continue);
+        } else {
+            app.should_quit = true;
+            return Ok(InputResult::Quit);
+        }
+    }
+
+    // Ctrl+L: Force redraw/clear screen
+    if is_ctrl_l {
+        app.needs_clear = true;
+        return Ok(InputResult::Continue);
+    }
+
+    // Ctrl+R: Reverse search (alias for Ctrl+Space)
+    if is_ctrl_r {
+        let on_home = app.current_screen == CurrentScreen::Home;
+        app.previous_screen = Some(app.current_screen.clone());
+        app.current_screen = CurrentScreen::GlobalSearch;
+        app.search_mode = true;
+        app.search_state.query.clear();
+        app.last_search_query.clear();
+        app.update_search();
+        app.show_matrix_rain = false;
+        app.matrix_rain_screensaver_mode = false;
+        if on_home && app.global_all_streams.is_empty() {
+            if let Some(acc) = app.config.accounts.get(app.session.selected_account_index) {
+                let tx = tx.clone();
+                let base_url = acc.base_url.clone();
+                let username = acc.username.clone();
+                let password = acc.password.clone();
+                let account_type = acc.account_type;
+                tokio::spawn(async move {
+                    match account_type {
+                        crate::config::AccountType::M3uUrl => {
+                            let client = crate::api::M3uClient::new(base_url);
+                            if let Ok((true, _, _)) = client.authenticate().await {
+                                let iptv_client = crate::api::IptvClient::M3u(client);
+                                let _ = tx
+                                    .send(AsyncAction::LoginSuccess(iptv_client, None, None))
+                                    .await;
+                            }
+                        }
+                        _ => {
+                            let client =
+                                crate::api::XtreamClient::new(base_url, username, password);
+                            if let Ok((true, _, _)) = client.authenticate().await {
+                                let iptv_client = crate::api::IptvClient::Xtream(client.clone());
+                                let _ = tx
+                                    .send(AsyncAction::LoginSuccess(iptv_client, None, None))
+                                    .await;
+                            }
+                        }
+                    }
+                });
+            }
+        }
+        return Ok(InputResult::Continue);
+    }
+
+    // Ctrl+G: Toggle guide popup
+    if is_ctrl_g {
+        if app.show_guide.is_some() {
+            app.show_guide = None;
+        } else {
+            app.show_guide = Some(Guide::WhatIsApp);
+            app.guide_scroll = 0;
+        }
+        return Ok(InputResult::Continue);
+    }
+
+    // Ctrl+B: Background operation (stub - shows a subtle hint)
+    if is_ctrl_b {
+        // Stub: could be used for background loading in the future
+        return Ok(InputResult::Continue);
+    }
+
+    // Priority 0: Loading State Handling (Allow navigation while loading)
     if app.session.state_loading {
-        // While loading, we trap input. Allow Esc to cancel.
+        // Allow Esc to cancel loading
         if key.code == KeyCode::Esc {
             app.session.state_loading = false;
             app.session.loading_message = None;
-            app.login_error = None; // clear any previous error
-                                    // If we were connecting, we just stop waiting for the result.
-                                    // The background task will still complete but its result will be ignored
-                                    // because state_loading is false (async actions check this or we just overwrite)
-                                    // But to be safe, let's just let the user regain control.
+            app.session.loading_cancelled = true;
+            app.login_error = None;
             return Ok(InputResult::Continue);
         }
-        // ignore other keys while loading
-        return Ok(InputResult::Continue);
+
+        // Allow navigation keys while loading (j/k/h/l, arrows, PgUp/PgDn, Home/End, g/G, Ctrl+D/U)
+        // Block action keys that would trigger operations (Enter, /, v, i, etc.)
+        let is_navigation = matches!(
+            key.code,
+            KeyCode::Char('j')
+                | KeyCode::Char('k')
+                | KeyCode::Char('h')
+                | KeyCode::Char('l')
+                | KeyCode::Char('g')
+                | KeyCode::Char('G')
+                | KeyCode::Up
+                | KeyCode::Down
+                | KeyCode::Left
+                | KeyCode::Right
+                | KeyCode::PageUp
+                | KeyCode::PageDown
+                | KeyCode::Home
+                | KeyCode::End
+        );
+        let is_ctrl_nav = key.modifiers.contains(KeyModifiers::CONTROL)
+            && matches!(
+                key.code,
+                KeyCode::Char('d') | KeyCode::Char('u') | KeyCode::Char('D') | KeyCode::Char('U')
+            );
+
+        if is_navigation || is_ctrl_nav {
+            // Let the navigation through to the screen-specific handlers
+        } else {
+            // Block action keys during loading
+            return Ok(InputResult::Continue);
+        }
     }
 
     // Priority 1: Help Popup

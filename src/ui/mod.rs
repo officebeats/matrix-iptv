@@ -98,12 +98,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         }
     }
 
-    // Overlays
-    if app.session.loading_message.is_some() {
-        loading::render_loading(f, app, area);
-    }
-
-    // Matrix Rain Overlay (Draws on top of everything except Help/Guide/Error if they need focus, but effectively screensaver covers all)
+    // Base Screens (Draws on top of everything except Help/Guide/Error if they need focus, but effectively screensaver covers all)
     // Actually screensaver should be on top of everything.
     if app.show_matrix_rain {
         #[cfg(not(target_arch = "wasm32"))]

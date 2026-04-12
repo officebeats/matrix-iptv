@@ -69,6 +69,8 @@ pub struct SessionState {
     pub loading_progress: Option<LoadingProgress>,
     /// Loading animation tick
     pub loading_tick: u64,
+    /// Flag indicating user cancelled loading
+    pub loading_cancelled: bool,
     /// Selected account index
     pub selected_account_index: usize,
     /// Max category name length for UI alignment
