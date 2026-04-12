@@ -63,6 +63,34 @@ pub fn render_help_popup(f: &mut Frame, area: Rect) {
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
+            "  global shortcuts",
+            Style::default()
+                .fg(TEXT_PRIMARY)
+                .add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  ctrl+c      ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("cancel / quit", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  ctrl+l      ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("clear screen", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  ctrl+r      ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("search", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  ctrl+g      ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("toggle guide", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  ctrl+space  ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("search", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(""),
+        Line::from(vec![Span::styled(
             "  features",
             Style::default()
                 .fg(TEXT_PRIMARY)

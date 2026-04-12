@@ -1,14 +1,41 @@
 use crate::app::{App, CurrentScreen, InputMode, SettingsState};
 use crate::ui::colors::{MATRIX_GREEN, MODERN_BG, SOFT_GREEN, TEXT_DIM, TEXT_SECONDARY};
+use crate::ui::loading::get_loading_status_line;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Style, Stylize},
+    style::{Color, Style, Stylize},
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
 };
 
 pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
+    // If loading, render inline loading status instead of normal hints
+    if let Some(loading_line) = get_loading_status_line(app) {
+        render_loading_footer(f, app, area, loading_line);
+        return;
+    }
+
+    render_normal_footer(f, app, area);
+}
+
+fn render_loading_footer(f: &mut Frame, _app: &App, area: Rect, loading_line: Line<'static>) {
+    use ratatui::symbols::border;
+    use ratatui::widgets::{Block, Borders};
+
+    let bar_block = Block::default()
+        .borders(Borders::TOP)
+        .border_set(border::ROUNDED)
+        .border_style(Style::default().fg(SOFT_GREEN))
+        .bg(MODERN_BG);
+    let bar_inner = bar_block.inner(area);
+    f.render_widget(bar_block, area);
+
+    let p = Paragraph::new(loading_line).alignment(Alignment::Left);
+    f.render_widget(p, bar_inner);
+}
+
+fn render_normal_footer(f: &mut Frame, app: &App, area: Rect) {
     let key_style = Style::default().fg(MATRIX_GREEN);
     let label_style = Style::default().fg(TEXT_SECONDARY);
     let sep_style = Style::default().fg(TEXT_DIM);
@@ -32,6 +59,8 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
     match app.current_screen {
         CurrentScreen::Home => {
             hint!("q", "quit");
+            hint!("ctrl+c", "quit");
+            hint!("ctrl+l", "redraw");
             hint!("enter", "load");
             hint!("n", "add");
             hint!("e", "edit");
@@ -127,6 +156,7 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         }
         _ => {
             hint!("q", "quit");
+            hint!("ctrl+c", "quit");
             hint!("esc", "back");
         }
     }
@@ -151,6 +181,16 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
         }
         _ => {}
     }
+
+    // Add connection status indicator
+    let status_indicator = if app.session.is_connected() {
+        Span::styled(" ● ", Style::default().fg(Color::Rgb(0, 255, 65)))
+    } else if app.session.state_loading {
+        Span::styled(" ◐ ", Style::default().fg(Color::Rgb(255, 200, 80)))
+    } else {
+        Span::styled(" ○ ", Style::default().fg(TEXT_DIM))
+    };
+    right_spans.insert(0, status_indicator);
 
     // Use bordered bottom bar
     use ratatui::symbols::border;

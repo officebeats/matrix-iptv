@@ -138,6 +138,7 @@ pub struct App {
     pub current_screen: CurrentScreen,
     pub input_mode: InputMode,
     pub should_quit: bool,
+    pub needs_clear: bool,
 
     // Home / Accounts
     pub account_list_state: ListState,
@@ -409,6 +410,7 @@ impl App {
             current_screen: CurrentScreen::Home,
             input_mode: InputMode::Normal,
             should_quit: false,
+            needs_clear: false,
             session: SessionState {
                 cached_user_timezone: cached_tz,
                 selected_account_index: 0,

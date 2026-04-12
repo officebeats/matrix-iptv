@@ -213,6 +213,12 @@ async fn run_app<B: ratatui::backend::Backend>(
                 .draw(|f| ui::ui(f, app))
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
             needs_redraw = false;
+
+            // Handle Ctrl+L clear request
+            if app.needs_clear {
+                let _ = terminal.clear();
+                app.needs_clear = false;
+            }
         }
 
         // 1. Check for Async Actions (Non-blocking)
