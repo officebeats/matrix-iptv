@@ -163,7 +163,8 @@ fn render_categories_list(f: &mut Frame, app: &mut App, area: Rect, border_color
 
     let max_name_len = app.session.max_category_name_len as u16;
     let min_col_width = (max_name_len + 15).max(30);
-    let cols = (inner_area.width / min_col_width).max(1).min(4) as usize;
+    let cols = (inner_area.width / min_col_width).max(1) as usize;
+
     app.grid_cols = cols; // UPDATE BEFORE BORROWING categories_ref
 
     let (categories_ref, selected, list_state_ref) = get_category_data(app);

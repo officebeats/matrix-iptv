@@ -465,9 +465,8 @@ impl ContentType {
 /// Get color for country/region code
 pub fn country_color(country: &str) -> Color {
     match country.to_uppercase().as_str() {
-        "US" | "USA" | "AM" | "NBA" | "NFL" | "MLB" | "NHL" | "UFC" | "SPORTS" | "PPV" => {
-            Color::Rgb(0, 255, 255)
-        }
+        "US" | "USA" | "AM" | "NBA" | "NFL" | "MLB" | "NHL" | "UFC" | "MLS" | "NCAAF" | "NCAAB"
+        | "SPORTS" | "PPV" => Color::Rgb(0, 255, 255),
         "UK" | "GB" | "EU" => Color::Rgb(57, 255, 20),
         _ => Color::White,
     }
@@ -476,7 +475,8 @@ pub fn country_color(country: &str) -> Color {
 /// Get flag emoji for country
 pub fn country_flag(country: &str) -> &'static str {
     match country.to_uppercase().as_str() {
-        "US" | "USA" | "AM" | "NBA" | "NFL" | "MLB" | "NHL" | "UFC" | "SPORTS" | "PPV" => "🇺🇸",
+        "US" | "USA" | "AM" | "NBA" | "NFL" | "MLB" | "NHL" | "UFC" | "MLS" | "NCAAF" | "NCAAB"
+        | "SPORTS" | "PPV" => "🇺🇸",
         "UK" | "GB" => "🇬🇧",
         "EU" => "🇪🇺",
         "FR" | "FRANCE" => "🇫🇷",
@@ -529,7 +529,7 @@ pub fn is_american_live(name: &str) -> bool {
             // Whitelist strict US/Sports/Quality prefixes
             let allowed_prefixes = [
                 "US", "USA", "VIP", "4K", "3D", "XXX", "PPV", "NBA", "NFL", "UFC", "MLB", "NHL",
-                "F1", "UHD", "FHD", "RAW",
+                "MLS", "F1", "UHD", "FHD", "RAW",
             ];
 
             if !allowed_prefixes.contains(&p) {
@@ -564,6 +564,7 @@ pub fn is_american_live(name: &str) -> bool {
         "MLB",
         "NHL",
         "NCAA",
+        "MLS",
         "ESPN",
         "BALLY",
         "YES NETWORK",
@@ -777,6 +778,7 @@ pub fn is_sports_content(name: &str) -> bool {
         || n.contains("MLB")
         || n.contains("NHL")
         || n.contains("UFC")
+        || n.contains("MLS")
         || n.contains("BOXING")
         || n.contains("WRESTLING")
         || n.contains("WWE")
@@ -819,7 +821,8 @@ pub fn parse_category(name: &str) -> ParsedCategory {
         let code = caps.get(1).unwrap().as_str();
         let allowed = [
             "S", "US", "USA", "AM", "UK", "GB", "CA", "EU", "FR", "DE", "ES", "IT", "VIP", "NBA",
-            "NFL", "MLB", "NHL", "UFC", "PPV", "EN", "4K", "UHD", "FHD", "HD", "SD",
+            "NFL", "MLB", "NHL", "UFC", "MLS", "NCAAF", "NCAAB", "PPV", "EN", "4K", "UHD", "FHD",
+            "HD", "SD",
         ];
         if allowed.contains(&code) {
             // If it's just a single char category marker like 'S |', we just strip it and don't set country
@@ -840,10 +843,17 @@ pub fn parse_category(name: &str) -> ParsedCategory {
                 country = Some(code.to_string());
             }
 
-            if let Some(pos) = display_name.find(|c| c == '|' || c == ':' || c == '-') {
-                display_name = display_name[pos + 1..].trim().to_string();
-            } else if let Some(pos) = display_name.find(' ') {
-                display_name = display_name[pos + 1..].trim().to_string();
+            // Only strip if it's NOT a major league/sports marker OR if it has a real separator
+            let is_league = ["NBA", "NFL", "MLB", "NHL", "UFC", "MLS", "NCAAF", "NCAAB", "PPV"]
+                .contains(&code);
+            let has_separator = display_name.find(|c| c == '|' || c == ':' || c == '-').is_some();
+
+            if !is_league || has_separator {
+                if let Some(pos) = display_name.find(|c| c == '|' || c == ':' || c == '-') {
+                    display_name = display_name[pos + 1..].trim().to_string();
+                } else if let Some(pos) = display_name.find(' ') {
+                    display_name = display_name[pos + 1..].trim().to_string();
+                }
             }
 
             // Handle case where we still have a ▎ separator after prefix handling
@@ -918,8 +928,8 @@ pub fn parse_category(name: &str) -> ParsedCategory {
     // Aggressive cleaning for display_name
     let mut cleaned = display_name;
     let suffixes = [
-        "(PPV)", "[PPV]", "PPV", "(USA)", "[USA]", "USA", "(UK)", "[UK]", "UK", "(CA)", "[CA]",
-        "CA", "(VIP)", "[VIP]", "VIP", "(4K)", "[4K]", "4K", " - ", " | ", " : ",
+        "(PPV)", "[PPV]", "(USA)", "[USA]", "(UK)", "[UK]", "(CA)", "[CA]", "(VIP)", "[VIP]",
+        "(4K)", "[4K]", " - ", " | ", " : ",
     ];
     for s in suffixes {
         let upper_c = cleaned.to_uppercase();
