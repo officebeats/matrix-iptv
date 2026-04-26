@@ -1967,15 +1967,15 @@ pub async fn handle_key_event(
                     }
                     KeyCode::Char('g') => {
                         if !app.vod_streams.is_empty() {
-                            app.selected_vod_stream_index = app.vod_streams.len() - 1;
-                            app.vod_stream_list_state
-                                .select(Some(app.vod_streams.len() - 1));
+                            app.selected_vod_stream_index = 0;
+                            app.vod_stream_list_state.select(Some(0));
                         }
                     }
                     KeyCode::Char('G') => {
                         if !app.vod_streams.is_empty() {
-                            app.selected_vod_stream_index = 0;
-                            app.vod_stream_list_state.select(Some(0));
+                            app.selected_vod_stream_index = app.vod_streams.len() - 1;
+                            app.vod_stream_list_state
+                                .select(Some(app.vod_streams.len() - 1));
                         }
                     }
                     KeyCode::Char('0') => {
@@ -2129,8 +2129,9 @@ pub async fn handle_key_event(
                     }
                     KeyCode::Char('G') => {
                         if !app.series_categories.is_empty() {
-                            app.selected_series_category_index = 0;
-                            app.series_category_list_state.select(Some(0));
+                            app.selected_series_category_index = app.series_categories.len() - 1;
+                            app.series_category_list_state
+                                .select(Some(app.series_categories.len() - 1));
                         }
                     }
                     KeyCode::Char('0') => {
@@ -2397,6 +2398,59 @@ pub async fn handle_key_event(
                                         app.show_play_details = true;
                                     }
                                 }
+                            }
+                        }
+                    },
+                    KeyCode::Char('g') if app.active_pane == Pane::Categories => {
+                        app.category_grid_view = !app.category_grid_view;
+                    }
+                    KeyCode::Char('G') if app.active_pane == Pane::Categories => {
+                        if !app.series_categories.is_empty() {
+                            app.selected_series_category_index = app.series_categories.len() - 1;
+                            app.series_category_list_state
+                                .select(Some(app.series_categories.len() - 1));
+                        }
+                    }
+                    KeyCode::Home => match app.active_pane {
+                        Pane::Categories => {
+                            if !app.series_categories.is_empty() {
+                                app.selected_series_category_index = 0;
+                                app.series_category_list_state.select(Some(0));
+                            }
+                        }
+                        Pane::Streams => {
+                            if !app.series_streams.is_empty() {
+                                app.selected_series_stream_index = 0;
+                                app.series_stream_list_state.select(Some(0));
+                            }
+                        }
+                        Pane::Episodes => {
+                            if !app.series_episodes.is_empty() {
+                                app.selected_series_episode_index = 0;
+                                app.series_episode_list_state.select(Some(0));
+                            }
+                        }
+                    },
+                    KeyCode::End => match app.active_pane {
+                        Pane::Categories => {
+                            if !app.series_categories.is_empty() {
+                                app.selected_series_category_index = app.series_categories.len() - 1;
+                                app.series_category_list_state
+                                    .select(Some(app.series_categories.len() - 1));
+                            }
+                        }
+                        Pane::Streams => {
+                            if !app.series_streams.is_empty() {
+                                app.selected_series_stream_index = app.series_streams.len() - 1;
+                                app.series_stream_list_state
+                                    .select(Some(app.series_streams.len() - 1));
+                            }
+                        }
+                        Pane::Episodes => {
+                            if !app.series_episodes.is_empty() {
+                                app.selected_series_episode_index = app.series_episodes.len() - 1;
+                                app.series_episode_list_state
+                                    .select(Some(app.series_episodes.len() - 1));
                             }
                         }
                     },
