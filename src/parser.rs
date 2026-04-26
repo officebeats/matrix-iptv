@@ -961,7 +961,7 @@ pub fn parse_category(name: &str) -> ParsedCategory {
         let upper_c = cleaned.to_uppercase();
         if upper_c.ends_with(s) {
             cleaned = cleaned[..cleaned.len() - s.len()].trim().to_string();
-        } else if upper_c.starts_with(s) {
+        } else if s != "PPV" && upper_c.starts_with(s) {
             cleaned = cleaned[s.len()..].trim().to_string();
         }
     }
