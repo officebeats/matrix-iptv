@@ -283,7 +283,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         .enumerate()
         .skip(adjusted_start)
         .take(end - adjusted_start)
-        .map(|(idx, s)| {
+        .map(|(_idx, s)| {
             let _s_id = crate::api::get_id_str(&s.stream_id);
             let display_name = &s.name;
             

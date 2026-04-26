@@ -55,6 +55,7 @@ impl Player {
         }
     }
 
+    #[allow(dead_code)]
     async fn check_stream_health(&self, url: &str) -> Result<(), anyhow::Error> {
         // Build a client that mimics the player's behavior (Chrome UA)
         let client = reqwest::Client::builder()
