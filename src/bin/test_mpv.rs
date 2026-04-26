@@ -89,12 +89,10 @@ async fn main() -> Result<(), anyhow::Error> {
             println!("STDOUT:\n{}", stdout);
             println!("STDERR:\n{}", stderr);
             return Ok(());
-        } else {
-            if start_time.elapsed().as_secs() % 5 == 0 {
-                print!(".");
-                use std::io::Write;
-                std::io::stdout().flush().unwrap();
-            }
+        } else if start_time.elapsed().as_secs().is_multiple_of(5) {
+            print!(".");
+            use std::io::Write;
+            std::io::stdout().flush().unwrap();
         }
     }
     

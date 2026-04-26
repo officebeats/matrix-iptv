@@ -415,6 +415,12 @@ pub enum SettingsState {
     About,
 }
 
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl App {
     pub fn new() -> App {
         let config = AppConfig::load().unwrap_or_default();
@@ -723,10 +729,10 @@ impl App {
                         if !crate::parser::is_american_live(&c.category_name) {
                             return false;
                         }
-                    } else if use_all_english {
-                        if !crate::parser::is_english_live(&c.category_name) {
-                            return false;
-                        }
+                    } else if use_all_english
+                        && !crate::parser::is_english_live(&c.category_name)
+                    {
+                        return false;
                     }
 
                     true
@@ -1929,20 +1935,13 @@ impl App {
 
         match self.current_screen {
             CurrentScreen::Home => {
-                match key.code {
-                    KeyCode::Char('x') => {
-                        // Logic for Series Entry
-                        if !self.config.accounts.is_empty() {
-                            // We can't easily spawn the async task here without the client credential details
-                            // For testing purposes, we might just return a "signal" or set loading state.
-                            // In a real refactor, we would return an Action enum like `Action::FetchSeries(account_index)`
-                            // key-handling logic should primarily update synchronous state.
-                            self.state_loading = true;
-                            // For testing: we can assert that state_loading became true.
-                        }
+                if let KeyCode::Char('x') = key.code {
+                    // Logic for Series Entry
+                    if !self.config.accounts.is_empty() {
+                        // We can't easily spawn the async task here without the client credential details.
+                        // In a real refactor, we would return an Action enum like `Action::FetchSeries(account_index)`.
+                        self.state_loading = true;
                     }
-                    // ... other Home keys
-                    _ => {}
                 }
             }
             CurrentScreen::ContentTypeSelection => match key.code {
@@ -1971,12 +1970,9 @@ impl App {
             },
             CurrentScreen::Categories | CurrentScreen::Streams => {
                 if self.search_mode {
-                    match key.code {
-                        KeyCode::Esc => {
-                            self.search_mode = false;
-                            self.search_state.query.clear();
-                        }
-                        _ => {}
+                    if key.code == KeyCode::Esc {
+                        self.search_mode = false;
+                        self.search_state.query.clear();
                     }
                 } else {
                     match key.code {
