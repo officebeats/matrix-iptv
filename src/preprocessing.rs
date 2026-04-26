@@ -7,7 +7,7 @@ pub fn preprocess_categories(
     modes: &[crate::config::ProcessingMode],
     is_live: bool,
     is_vod: bool,
-    account_name: &str,
+    _account_name: &str,
 ) {
     if !cats.iter().any(|c| c.category_id == "ALL") {
         cats.insert(0, Category {
@@ -19,7 +19,6 @@ pub fn preprocess_categories(
         });
     }
 
-    let account_lower = account_name.to_lowercase();
     let use_merica = modes.contains(&crate::config::ProcessingMode::Merica);
     let use_sports = modes.contains(&crate::config::ProcessingMode::Sports);
     let use_all_english = modes.contains(&crate::config::ProcessingMode::AllEnglish);
@@ -35,26 +34,10 @@ pub fn preprocess_categories(
             // Merica Mode Logic
             if use_merica {
                 c.is_american = crate::parser::is_american_live(&c.category_name);
-                
-                // Strong Playlist overrides
-                if account_lower.contains("strong") {
-                     let name = c.category_name.to_uppercase();
-                     if name.starts_with("AR |") || name.starts_with("AR|") || name.starts_with("AR :") {
-                         c.is_american = false;
-                     }
-                     if name.contains("NBA PASS") || name.contains("NBA REAL") || name.contains("NHL REAL") {
-                         c.is_american = false;
-                     }
+
+                if !c.is_american {
+                    keep = false;
                 }
-                // Trex Playlist overrides
-                if account_lower.contains("trex") {
-                     let name = c.category_name.to_uppercase();
-                     if name.contains("NBA NETWORK") || name.contains("NBA LEAGUE PASS") {
-                         c.is_american = false;
-                     }
-                }
-                
-                if !c.is_american { keep = false; }
             }
 
             // All English Logic (if Merica not active, or additive?)
@@ -259,4 +242,59 @@ pub fn preprocess_streams(
         // Tier 3: Lexicographical fallback (O(1) reference comparison)
         a.name.cmp(&b.name)
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::Category;
+    use crate::config::ProcessingMode;
+
+    fn category(id: &str, name: &str) -> Category {
+        Category {
+            category_id: id.to_string(),
+            category_name: name.to_string(),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn test_merica_category_filter_keeps_us_packages_ppv_and_247() {
+        let mut categories = vec![
+            category("1", "NBA Package"),
+            category("2", "NBA League Pass"),
+            category("3", "NHL Real"),
+            category("4", "PPV Events"),
+            category("5", "24/7 Channels"),
+            category("6", "UK PPV"),
+            category("7", "CA 24/7"),
+            category("8", "IN | 24/7 Cricket"),
+            category("9", "International PPV"),
+        ];
+
+        preprocess_categories(
+            &mut categories,
+            &HashSet::new(),
+            &[ProcessingMode::Merica],
+            true,
+            false,
+            "Trex",
+        );
+
+        let names: Vec<_> = categories
+            .iter()
+            .map(|c| c.category_name.as_str())
+            .collect();
+
+        assert!(names.contains(&"All Channels"));
+        assert!(names.contains(&"NBA Package"));
+        assert!(names.contains(&"NBA League Pass"));
+        assert!(names.contains(&"NHL Real"));
+        assert!(names.contains(&"PPV Events"));
+        assert!(names.contains(&"24/7 Channels"));
+        assert!(!names.contains(&"UK PPV"));
+        assert!(!names.contains(&"CA 24/7"));
+        assert!(!names.contains(&"IN | 24/7 Cricket"));
+        assert!(!names.contains(&"International PPV"));
+    }
 }
