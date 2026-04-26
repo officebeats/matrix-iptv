@@ -93,7 +93,7 @@ async fn main() -> Result<(), anyhow::Error> {
     if app.config.accounts.is_empty() {
         if let Ok(Some(new_account)) = matrix_iptv_lib::onboarding::run_onboarding(&mut terminal) {
             app.config.accounts.push(new_account);
-            if let Err(_) = app.config.save() {
+            if app.config.save().is_err() {
                 // Ignore save error here, it will be handled when main loop starts
             }
             // re-init app state now that we have an account
@@ -196,50 +196,35 @@ async fn run_app<B: ratatui::backend::Backend>(
     tx: mpsc::Sender<AsyncAction>,
     rx: &mut mpsc::Receiver<AsyncAction>,
 ) -> io::Result<Option<i32>> {
-    #[allow(unused_assignments)]
-    let mut needs_redraw = true;
-
     loop {
         if app.needs_stream_refresh {
             app.refresh_streams_from_cache();
             app.needs_stream_refresh = false;
-            needs_redraw = true;
         }
 
         // Debounce expired: the full UI projection is now zero-cost and renders immediately.
 
-        if needs_redraw {
-            terminal
-                .draw(|f| ui::ui(f, app))
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
-            needs_redraw = false;
+        terminal
+            .draw(|f| ui::ui(f, app))
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
 
-            // Handle Ctrl+L clear request
-            if app.needs_clear {
-                let _ = terminal.clear();
-                app.needs_clear = false;
-            }
+        // Handle Ctrl+L clear request
+        if app.needs_clear {
+            let _ = terminal.clear();
+            app.needs_clear = false;
         }
 
         // 1. Check for Async Actions (Non-blocking)
         while let Ok(action) = rx.try_recv() {
             handlers::async_actions::handle_async_action(app, action, &tx).await;
-            needs_redraw = true;
         }
 
         // 1.1 Process lazy category loads
         while let Some(action) = app.pending_lazy_loads.pop_front() {
             handlers::async_actions::handle_async_action(app, action, &tx).await;
-            needs_redraw = true;
         }
 
         app.session.loading_tick = app.session.loading_tick.wrapping_add(1);
-        if app.session.state_loading || app.show_matrix_rain {
-            needs_redraw = true;
-        }
-
-        // Force continuous redraw to drive the animated lava-lamp typographic borders
-        needs_redraw = true;
 
         // 1.5 Batch EPG Fetching — prefetch for all visible streams, not just the focused one
         if app.current_screen == CurrentScreen::Streams
@@ -283,7 +268,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                                 // Fetch EPG sequentially (avoids server hammering)
                                 for sid in uncached_ids {
                                     if let Ok(epg) = client.get_short_epg(&sid).await {
-                                        if let Some(now_playing) = epg.epg_listings.get(0) {
+                                        if let Some(now_playing) = epg.epg_listings.first() {
                                             results.push((sid, now_playing.title.clone()));
                                         }
                                     }
@@ -432,10 +417,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     if let Ok(info) = client.get_series_info(&fid).await {
                                         let _ = tx.send(AsyncAction::SeriesInfoLoaded(info)).await;
                                     }
-                                } else {
-                                    if let Ok(info) = client.get_vod_info(&fid).await {
-                                        let _ = tx.send(AsyncAction::VodInfoLoaded(info)).await;
-                                    }
+                                } else if let Ok(info) = client.get_vod_info(&fid).await {
+                                    let _ = tx.send(AsyncAction::VodInfoLoaded(info)).await;
                                 }
                             });
                         }
@@ -584,9 +567,6 @@ async fn run_app<B: ratatui::backend::Backend>(
                     !app.matrix_rain_screensaver_mode,
                 );
 
-                // Force continuous terminal redraws during animation sequences
-                needs_redraw = true;
-
                 // Only end startup animation after 3 seconds (screensaver runs indefinitely)
                 if !app.matrix_rain_screensaver_mode {
                     if let Some(start_time) = app.matrix_rain_start_time {
@@ -620,12 +600,9 @@ async fn run_app<B: ratatui::backend::Backend>(
                         handlers::input::InputResult::Quit => return Ok(None),
                         handlers::input::InputResult::UpdateRequested => return Ok(Some(42)),
                         handlers::input::InputResult::Continue => {
-                            needs_redraw = true;
                             continue;
                         }
-                        handlers::input::InputResult::Ok => {
-                            needs_redraw = true;
-                        }
+                        handlers::input::InputResult::Ok => {}
                     }
                     // ── Input Coalescing: drain queued keys without redrawing ──
                     // When scrolling fast, multiple key events queue up. Process them
@@ -640,12 +617,9 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     return Ok(Some(42))
                                 }
                                 handlers::input::InputResult::Continue => {
-                                    needs_redraw = true;
                                     continue;
                                 }
-                                handlers::input::InputResult::Ok => {
-                                    needs_redraw = true;
-                                }
+                                handlers::input::InputResult::Ok => {}
                             }
                         }
                     }
@@ -653,12 +627,9 @@ async fn run_app<B: ratatui::backend::Backend>(
 
                 Event::Mouse(mouse) => {
                     handlers::mouse::handle_mouse_event(app, mouse, &tx);
-                    needs_redraw = true;
                 }
 
-                Event::Resize(_, _) => {
-                    needs_redraw = true;
-                }
+                Event::Resize(_, _) => {}
 
                 _ => {} // Other events
             }

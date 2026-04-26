@@ -2566,16 +2566,16 @@ impl App {
                         }
                         KeyCode::Char('g') => {
                             if self.active_pane == Pane::Categories {
-                                self.jump_to_category_bottom();
+                                self.jump_to_category_top();
                             } else {
-                                self.jump_to_bottom();
+                                self.jump_to_top();
                             }
                         }
                         KeyCode::Char('G') => {
                             if self.active_pane == Pane::Categories {
-                                self.jump_to_category_top();
+                                self.jump_to_category_bottom();
                             } else {
-                                self.jump_to_top();
+                                self.jump_to_bottom();
                             }
                         }
                         KeyCode::Char('0') => {
@@ -2666,15 +2666,15 @@ impl App {
                 KeyCode::Char('k') | KeyCode::Up => self.previous_series_category(),
                 KeyCode::Char('g') => {
                     if !self.series_categories.is_empty() {
-                        self.selected_series_category_index = self.series_categories.len() - 1;
-                        self.series_category_list_state
-                            .select(Some(self.series_categories.len() - 1));
+                        self.selected_series_category_index = 0;
+                        self.series_category_list_state.select(Some(0));
                     }
                 }
                 KeyCode::Char('G') => {
                     if !self.series_categories.is_empty() {
-                        self.selected_series_category_index = 0;
-                        self.series_category_list_state.select(Some(0));
+                        self.selected_series_category_index = self.series_categories.len() - 1;
+                        self.series_category_list_state
+                            .select(Some(self.series_categories.len() - 1));
                     }
                 }
                 KeyCode::Char('0') => {
@@ -2684,7 +2684,7 @@ impl App {
                     }
                 }
                 KeyCode::Char('1') => {
-                    if self.series_categories.len() > 0 {
+                    if !self.series_categories.is_empty() {
                         self.selected_series_category_index = 0;
                         self.series_category_list_state.select(Some(0));
                     }
@@ -2751,8 +2751,8 @@ impl App {
                 }
                 KeyCode::Char('j') | KeyCode::Down => self.next_series_stream(),
                 KeyCode::Char('k') | KeyCode::Up => self.previous_series_stream(),
-                KeyCode::Char('g') => self.jump_to_series_bottom(),
-                KeyCode::Char('G') => self.jump_to_series_top(),
+                KeyCode::Char('g') => self.jump_to_series_top(),
+                KeyCode::Char('G') => self.jump_to_series_bottom(),
                 KeyCode::Char('0') => self.jump_to_series_top(),
                 KeyCode::Char('1') => self.jump_to_series_stream(0),
                 KeyCode::Char('2') => self.jump_to_series_stream(1),

@@ -66,7 +66,7 @@ fn render_normal_footer(f: &mut Frame, app: &App, area: Rect) {
             hint!("e", "edit");
             hint!("d", "del");
             hint!("s", "sports");
-            hint!("m", "filter");
+            hint!("m", "mode");
             hint!("x", "settings");
             hint!("?", "help");
         }
@@ -79,12 +79,7 @@ fn render_normal_footer(f: &mut Frame, app: &App, area: Rect) {
                 hint!("enter", "edit");
             }
         }
-        CurrentScreen::Categories
-        | CurrentScreen::Streams
-        | CurrentScreen::VodCategories
-        | CurrentScreen::VodStreams
-        | CurrentScreen::SeriesCategories
-        | CurrentScreen::SeriesStreams => {
+        CurrentScreen::Categories | CurrentScreen::Streams => {
             if app.search_mode {
                 hint!("esc", "cancel");
                 hint!("enter", "done");
@@ -95,8 +90,10 @@ fn render_normal_footer(f: &mut Frame, app: &App, area: Rect) {
                         hint!("enter", "select");
                         hint!("/", "search");
                         hint!("tab", "streams");
+                        hint!("v", "fav");
                         hint!("PgDn", "page");
                         hint!("g", "grid/list");
+                        hint!("G", "groups");
                     }
                     crate::app::Pane::Streams => {
                         hint!("esc", "back");
@@ -104,15 +101,81 @@ fn render_normal_footer(f: &mut Frame, app: &App, area: Rect) {
                         hint!("/", "search");
                         hint!("PgDn", "page");
                         hint!("v", "fav");
-                        hint!("i", "info");
-                        hint!("g", "groups");
+                        hint!("g", "add group");
+                        hint!("G", "groups");
                         hint!("?", "help");
+                    }
+                    crate::app::Pane::Episodes => {}
+                }
+            }
+        }
+        CurrentScreen::VodCategories => {
+            if app.search_mode {
+                hint!("esc", "cancel");
+                hint!("enter", "done");
+            } else {
+                hint!("esc", "back");
+                hint!("enter", "select");
+                hint!("/", "search");
+                hint!("PgDn", "page");
+                hint!("g", "grid/list");
+                hint!("G", "bottom");
+            }
+        }
+        CurrentScreen::VodStreams => {
+            if app.search_mode {
+                hint!("esc", "cancel");
+                hint!("enter", "done");
+            } else {
+                hint!("esc", "back");
+                hint!("enter", "play");
+                hint!("/", "search");
+                hint!("PgDn", "page");
+                hint!("g", "top");
+                hint!("G", "bottom");
+            }
+        }
+        CurrentScreen::SeriesCategories => {
+            if app.search_mode {
+                hint!("esc", "cancel");
+                hint!("enter", "done");
+            } else {
+                hint!("esc", "back");
+                hint!("enter", "select");
+                hint!("/", "search");
+                hint!("PgDn", "page");
+                hint!("g", "grid/list");
+                hint!("G", "bottom");
+            }
+        }
+        CurrentScreen::SeriesStreams => {
+            if app.search_mode {
+                hint!("esc", "cancel");
+                hint!("enter", "done");
+            } else {
+                match app.active_pane {
+                    crate::app::Pane::Categories => {
+                        hint!("esc", "back");
+                        hint!("enter", "select");
+                        hint!("/", "search");
+                        hint!("PgDn", "page");
+                        hint!("g", "grid/list");
+                        hint!("G", "bottom");
+                    }
+                    crate::app::Pane::Streams => {
+                        hint!("esc", "back");
+                        hint!("enter", "episodes");
+                        hint!("/", "search");
+                        hint!("PgDn", "page");
+                        hint!("Home", "top");
+                        hint!("End", "bottom");
                     }
                     crate::app::Pane::Episodes => {
                         hint!("esc", "back");
                         hint!("enter", "play");
                         hint!("PgDn", "page");
-                        hint!("tab", "series");
+                        hint!("Home", "top");
+                        hint!("End", "bottom");
                     }
                 }
             }
@@ -152,7 +215,7 @@ fn render_normal_footer(f: &mut Frame, app: &App, area: Rect) {
             hint!("esc", "back");
             hint!("n", "new");
             hint!("d", "del");
-            hint!("enter", "view");
+            hint!("enter", "back");
         }
         _ => {
             hint!("q", "quit");
