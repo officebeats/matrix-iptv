@@ -1,6 +1,9 @@
-use matrix_iptv_lib::api::{Category, Stream};
-use matrix_iptv_lib::flex_id::FlexId;
 use matrix_iptv_lib::app::{App, CurrentScreen, Pane};
+use matrix_iptv_lib::api::{Category, SeriesEpisode, Stream};
+use matrix_iptv_lib::flex_id::FlexId;
+use matrix_iptv_lib::handlers::input::handle_key_event;
+use matrix_iptv_lib::player::Player;
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 use std::sync::Arc;
@@ -39,6 +42,18 @@ fn make_series_stream(id: u64, name: &str) -> Arc<Stream> {
     })
 }
 
+fn make_episode(id: i64, title: &str) -> SeriesEpisode {
+    SeriesEpisode {
+        id: Some(FlexId::Number(id)),
+        episode_num: id as i32,
+        title: Some(title.to_string()),
+        container_extension: Some("mp4".to_string()),
+        info: None,
+        season: 1,
+        direct_source: String::new(),
+    }
+}
+
 fn make_category(id: &str, name: &str) -> Arc<Category> {
     Arc::new(Category {
         category_id: id.to_string(),
@@ -47,6 +62,19 @@ fn make_category(id: &str, name: &str) -> Arc<Category> {
         parent_id: FlexId::Number(0),
         ..Default::default()
     })
+}
+
+async fn press_runtime_key(app: &mut App, code: KeyCode) {
+    let (tx, _rx) = tokio::sync::mpsc::channel(1);
+    let player = Player::new();
+    let key = KeyEvent {
+        code,
+        modifiers: KeyModifiers::NONE,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    };
+
+    handle_key_event(app, key, &tx, &player).await.unwrap();
 }
 
 /// Render one frame of the UI — panics on crash
@@ -167,6 +195,70 @@ fn test_footer_hints_match_vod_and_series_stream_hotkeys() {
     assert!(!series_text.contains("g add group"));
     assert!(!series_text.contains("v fav"));
     assert!(!series_text.contains("i info"));
+}
+
+#[tokio::test]
+async fn test_runtime_navigation_matches_stream_footer_hints() {
+    let mut app = App::new();
+    app.current_screen = CurrentScreen::VodStreams;
+    app.active_pane = Pane::Streams;
+    app.vod_streams = vec![
+        make_vod_stream(1, "Movie 1"),
+        make_vod_stream(2, "Movie 2"),
+        make_vod_stream(3, "Movie 3"),
+    ];
+    app.selected_vod_stream_index = 1;
+    app.vod_stream_list_state.select(Some(1));
+
+    press_runtime_key(&mut app, KeyCode::Char('g')).await;
+    assert_eq!(app.selected_vod_stream_index, 0, "VOD g should jump to top");
+
+    press_runtime_key(&mut app, KeyCode::Char('G')).await;
+    assert_eq!(app.selected_vod_stream_index, 2, "VOD G should jump to bottom");
+
+    let mut app = App::new();
+    app.current_screen = CurrentScreen::SeriesCategories;
+    app.series_categories = generate_categories(3);
+    app.selected_series_category_index = 0;
+    app.series_category_list_state.select(Some(0));
+
+    press_runtime_key(&mut app, KeyCode::Char('G')).await;
+    assert_eq!(
+        app.selected_series_category_index, 2,
+        "Series category G should jump to bottom"
+    );
+
+    let mut app = App::new();
+    app.current_screen = CurrentScreen::SeriesStreams;
+    app.active_pane = Pane::Streams;
+    app.series_streams = vec![
+        make_series_stream(1, "Show 1"),
+        make_series_stream(2, "Show 2"),
+        make_series_stream(3, "Show 3"),
+    ];
+    app.selected_series_stream_index = 1;
+    app.series_stream_list_state.select(Some(1));
+
+    press_runtime_key(&mut app, KeyCode::Home).await;
+    assert_eq!(app.selected_series_stream_index, 0);
+
+    press_runtime_key(&mut app, KeyCode::End).await;
+    assert_eq!(app.selected_series_stream_index, 2);
+
+    app.active_pane = Pane::Episodes;
+    app.series_episodes = vec![
+        make_episode(1, "Episode 1"),
+        make_episode(2, "Episode 2"),
+        make_episode(3, "Episode 3"),
+    ];
+    app.selected_series_episode_index = 1;
+    app.series_episode_list_state.select(Some(1));
+
+    press_runtime_key(&mut app, KeyCode::Home).await;
+    assert_eq!(app.selected_series_episode_index, 0);
+
+    press_runtime_key(&mut app, KeyCode::End).await;
+    assert_eq!(app.selected_series_episode_index, 2);
 }
 
 #[test]
