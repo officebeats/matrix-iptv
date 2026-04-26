@@ -51,6 +51,9 @@ fn make_category(id: &str, name: &str) -> Arc<Category> {
 
 /// Render one frame of the UI — panics on crash
 fn render_frame(app: &mut App) {
+    app.show_matrix_rain = false;
+    app.transition_last_screen = Some(app.current_screen.clone());
+    app.transition_effect = None;
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
@@ -58,6 +61,29 @@ fn render_frame(app: &mut App) {
             matrix_iptv_lib::ui::ui(f, app);
         })
         .unwrap();
+}
+
+fn render_frame_text(app: &mut App) -> String {
+    app.show_matrix_rain = false;
+    app.transition_last_screen = Some(app.current_screen.clone());
+    app.transition_effect = None;
+    let backend = TestBackend::new(140, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| {
+            matrix_iptv_lib::ui::ui(f, app);
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let mut text = String::new();
+    for y in 0..buffer.area.height {
+        for x in 0..buffer.area.width {
+            text.push_str(buffer[(x, y)].symbol());
+        }
+        text.push('\n');
+    }
+    text
 }
 
 /// Generate N streams with unique names for strong8k-scale testing
@@ -115,6 +141,43 @@ fn test_all_screens_render_empty_state() {
         render_frame(&mut app);
         // If we get here without panic, the screen rendered OK
     }
+}
+
+#[test]
+fn test_footer_hints_match_vod_and_series_stream_hotkeys() {
+    let mut app = App::new();
+    app.current_screen = CurrentScreen::VodStreams;
+    app.active_pane = Pane::Streams;
+    app.streams = generate_streams(2);
+    let vod_text = render_frame_text(&mut app);
+    assert!(vod_text.contains("g top"));
+    assert!(vod_text.contains("G bottom"));
+    assert!(!vod_text.contains("g add group"));
+    assert!(!vod_text.contains("v fav"));
+    assert!(!vod_text.contains("i info"));
+
+    let mut app = App::new();
+    app.current_screen = CurrentScreen::SeriesStreams;
+    app.active_pane = Pane::Streams;
+    app.series_streams = vec![make_series_stream(1, "US | Example Show")];
+    let series_text = render_frame_text(&mut app);
+    assert!(series_text.contains("enter episodes"));
+    assert!(series_text.contains("Home top"));
+    assert!(series_text.contains("End bottom"));
+    assert!(!series_text.contains("g add group"));
+    assert!(!series_text.contains("v fav"));
+    assert!(!series_text.contains("i info"));
+}
+
+#[test]
+fn test_help_popup_does_not_advertise_stale_hotkeys() {
+    let mut app = App::new();
+    app.show_help = true;
+    let text = render_frame_text(&mut app);
+    assert!(!text.contains("g/G         jump to top / bottom"));
+    assert!(!text.contains("toggle filter active/all"));
+    assert!(text.contains("/ or f"));
+    assert!(text.contains("category grid or live add-to-group"));
 }
 
 // ─── Test 2: Large Stream List (2000 items — strong8k scale) ───────────────────
@@ -368,7 +431,7 @@ fn test_global_search_rendering() {
     app.search_state.query = "the".to_string();
     app.update_search();
     assert!(
-        app.global_search_results.len() >= 1,
+        !app.global_search_results.is_empty(),
         "Global search for 'the' should match at least The Matrix"
     );
     // Verify caching
@@ -499,7 +562,7 @@ fn test_cross_pane_search() {
     // Categories should be filtered
     // Streams should also be searched cross-pane
     assert!(
-        app.streams.len() >= 1,
+        !app.streams.is_empty(),
         "Cross-pane search should find ESPN in streams"
     );
 }
