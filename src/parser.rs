@@ -504,10 +504,57 @@ pub fn country_flag(country: &str) -> &'static str {
 static GENERIC_COUNTRY_PREFIX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)^([A-Z]{1,3})\s*[|:]").unwrap());
 
+static LIVE_PREFIX_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)^([A-Z]{1,3})(\s*[|:]\s*|\s+)").unwrap());
+
+fn has_strong_us_marker(name_upper: &str) -> bool {
+    name_upper.contains("USA")
+        || name_upper.contains("US LOCALS")
+        || name_upper.contains("AMERICA")
+        || name_upper.contains("UNITED STATES")
+        || name_upper.starts_with("US ")
+        || name_upper.starts_with("US|")
+        || name_upper.starts_with("US:")
+        || name_upper.starts_with("US-")
+        || name_upper.starts_with("AM ")
+        || name_upper.starts_with("AM|")
+        || name_upper.starts_with("AM:")
+        || name_upper.starts_with("AM-")
+}
+
+fn has_american_live_category_marker(name_upper: &str) -> bool {
+    [
+        "NFL",
+        "NBA",
+        "MLB",
+        "NHL",
+        "NCAA",
+        "MLS",
+        "ESPN",
+        "BALLY",
+        "YES NETWORK",
+        "MSG",
+        "ABC",
+        "NBC",
+        "CBS",
+        "FOX",
+        "PPV",
+        "UFC",
+        "24/7",
+        "24-7",
+        "24 7",
+        "24HR",
+        "24 HOUR",
+    ]
+    .iter()
+    .any(|&k| name_upper.contains(k))
+}
+
 /// Check if a name/category is American live content
 pub fn is_american_live(name: &str) -> bool {
     // Normalize special separators first
     let n = name.to_uppercase().replace("▎", "|").replace("︳", "|");
+    let has_us_marker = has_strong_us_marker(&n);
 
     // 0. Strict Blocker for known international junk that slips through (e.g. "AR|")
     // This handles cases where a prefix like Arabic (AR) is used without a space.
@@ -515,7 +562,32 @@ pub fn is_american_live(name: &str) -> bool {
         || n.starts_with("AR|")
         || n.starts_with("AR :")
         || n.starts_with("AR:"))
-        && !n.contains("USA")
+        && !has_us_marker
+    {
+        return false;
+    }
+
+    if let Some(caps) = LIVE_PREFIX_REGEX.captures(&n) {
+        if let Some(prefix) = caps.get(1) {
+            let p = prefix.as_str();
+            let separator = caps.get(2).map(|m| m.as_str()).unwrap_or_default();
+            let ambiguous_word_prefix = matches!(p, "AM" | "IN");
+            let foreign_live_prefix =
+                FOREIGN_COUNTRY_CODES.contains(p) || matches!(p, "CA" | "GB" | "UK");
+            if foreign_live_prefix
+                && !has_us_marker
+                && (separator.contains('|') || separator.contains(':') || !ambiguous_word_prefix)
+            {
+                return false;
+            }
+        }
+    }
+
+    if !has_us_marker
+        && (n.contains("CANADA")
+            || n.contains("CANADIAN")
+            || n.contains("UNITED KINGDOM")
+            || n.contains("BRITISH"))
     {
         return false;
     }
@@ -535,11 +607,7 @@ pub fn is_american_live(name: &str) -> bool {
             if !allowed_prefixes.contains(&p) {
                 // It has a prefix like "UK", "CA", "FR".
                 // We block it UNLESS it explicitly mentions USA inside the name.
-                if !n.contains("USA")
-                    && !n.contains("US LOCALS")
-                    && !n.contains("AMERICA")
-                    && !n.contains("UNITED STATES")
-                {
+                if !has_us_marker {
                     return false;
                 }
             }
@@ -548,7 +616,7 @@ pub fn is_american_live(name: &str) -> bool {
 
     // 2. Explicit Positive check
     // If it passed the prefix check (or has no prefix), we check if it's definitively American.
-    let positive_keywords = [
+    let strong_positive_keywords = [
         "USA",
         "U.S.A",
         " US ",
@@ -559,39 +627,22 @@ pub fn is_american_live(name: &str) -> bool {
         "UNITED STATES",
         "LOCAL",
         "LOCALS",
-        "NFL",
-        "NBA",
-        "MLB",
-        "NHL",
-        "NCAA",
-        "MLS",
-        "ESPN",
-        "BALLY",
-        "YES NETWORK",
-        "MSG",
-        "ABC",
-        "NBC",
-        "CBS",
-        "FOX",
         "4K",
         "UHD",
         "FHD",
         "VIP",
-        "PPV",
-        "UFC",
     ];
-    if positive_keywords.iter().any(|&k| n.contains(k))
-        || n.starts_with("US ")
-        || n.starts_with("US|")
-        || n.starts_with("US:")
-        || n.starts_with("US-")
-    {
+    if strong_positive_keywords.iter().any(|&k| n.contains(k)) || has_us_marker {
         return true;
     }
 
     // Use O(1) HashSet lookup instead of mega-regex
     if matches_foreign(&n) {
         return false;
+    }
+
+    if has_american_live_category_marker(&n) {
+        return true;
     }
 
     // Default: Allow everything else (Exclusion-based filtering)
@@ -844,9 +895,13 @@ pub fn parse_category(name: &str) -> ParsedCategory {
             }
 
             // Only strip if it's NOT a major league/sports marker OR if it has a real separator
-            let is_league = ["NBA", "NFL", "MLB", "NHL", "UFC", "MLS", "NCAAF", "NCAAB", "PPV"]
-                .contains(&code);
-            let has_separator = display_name.find(|c| c == '|' || c == ':' || c == '-').is_some();
+            let is_league = [
+                "NBA", "NFL", "MLB", "NHL", "UFC", "MLS", "NCAAF", "NCAAB", "PPV",
+            ]
+            .contains(&code);
+            let has_separator = display_name
+                .find(|c| c == '|' || c == ':' || c == '-')
+                .is_some();
 
             if !is_league || has_separator {
                 if let Some(pos) = display_name.find(|c| c == '|' || c == ':' || c == '-') {
@@ -887,6 +942,7 @@ pub fn parse_category(name: &str) -> ParsedCategory {
 
     // Detect quality
     let upper = display_name.to_uppercase();
+    let original_upper = original.to_uppercase();
     if upper.contains("4K")
         || upper.contains("ᵁᴴᴰ")
         || upper.contains("³⁸⁴⁰")
@@ -902,7 +958,9 @@ pub fn parse_category(name: &str) -> ParsedCategory {
     }
 
     // Detect content type
-    if upper.contains("SPORT")
+    if original_upper.contains("PPV") || upper.contains("PPV") {
+        content_type = Some(ContentType::PPV);
+    } else if upper.contains("SPORT")
         || ["NBA", "NFL", "MLB", "NHL", "UFC", "F1"]
             .iter()
             .any(|s| upper.contains(s))
@@ -1883,6 +1941,41 @@ mod tests {
         assert_eq!(parsed.country, Some("US".to_string()));
         assert_eq!(parsed.display_name, "SPORTS NETWORK");
         assert_eq!(parsed.content_type, Some(ContentType::Sports));
+    }
+
+    #[test]
+    fn test_merica_live_category_filter_markers() {
+        assert!(is_american_live("NBA Package"));
+        assert!(is_american_live("NBA League Pass"));
+        assert!(is_american_live("NHL Real"));
+        assert!(is_american_live("PPV Events"));
+        assert!(is_american_live("24/7 Channels"));
+        assert!(is_american_live("US | 24/7 ABC"));
+        assert!(is_american_live("AM | 24/7 ABC"));
+        assert!(is_american_live("IN Demand PPV"));
+
+        assert!(!is_american_live("UK PPV"));
+        assert!(!is_american_live("CA 24/7"));
+        assert!(!is_american_live("IN | 24/7 Cricket"));
+        assert!(!is_american_live("International PPV"));
+    }
+
+    #[test]
+    fn test_parse_nba_and_ppv_categories_as_categories() {
+        let nba = parse_category("NBA Package");
+        assert_eq!(nba.country, Some("NBA".to_string()));
+        assert_eq!(nba.display_name, "NBA Package");
+        assert_eq!(nba.content_type, Some(ContentType::Sports));
+
+        let ppv = parse_category("PPV Events");
+        assert_eq!(ppv.country, Some("PPV".to_string()));
+        assert_eq!(ppv.display_name, "PPV Events");
+        assert_eq!(ppv.content_type, Some(ContentType::PPV));
+
+        let ppv_event = parse_category("PPV | UFC 300");
+        assert_eq!(ppv_event.country, Some("PPV".to_string()));
+        assert_eq!(ppv_event.display_name, "UFC 300");
+        assert_eq!(ppv_event.content_type, Some(ContentType::PPV));
     }
 
     #[test]

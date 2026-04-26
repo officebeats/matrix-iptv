@@ -3040,6 +3040,7 @@ mod tests {
 
         // Trigger the logic we added to AsyncAction::TotalChannelsLoaded
         app.select_category(app.selected_category_index);
+        app.is_navigating_categories = false;
         app.refresh_streams_from_cache();
         app.update_search();
 

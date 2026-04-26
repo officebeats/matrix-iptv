@@ -27,7 +27,7 @@ fn test_stream_caching_logic() {
 
     // Note: Caching now happens lazily on first render, not in update_search
     // Call pre_cache_parsed to verify the caching logic still works
-    App::pre_cache_parsed(&mut app.streams, None);
+    App::pre_cache_parsed(&mut app.streams, None, None, "test");
 
     let cached_stream = &app.streams[0];
 
