@@ -10,7 +10,7 @@ use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TE
 use crate::ui::utils::centered_rect;
 
 pub fn render_help_popup(f: &mut Frame, area: Rect) {
-    let area = centered_rect(60, 60, area);
+    let area = centered_rect(64, 82, area);
     f.render_widget(Clear, area);
 
     let inner_area = crate::ui::common::render_composite_block(f, area, Some("keyboard shortcuts"));
@@ -27,6 +27,39 @@ pub fn render_help_popup(f: &mut Frame, area: Rect) {
         Line::from(vec![
             Span::styled("  ←→ / h/l   ", Style::default().fg(MATRIX_GREEN)),
             Span::styled("switch panes", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  PgDn/PgUp   ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("page down / page up", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  ctrl+d/u    ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("half page down / up", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  Home/End    ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("jump to top / bottom", Style::default().fg(TEXT_SECONDARY)),
+        ]),
+        Line::from(vec![
+            Span::styled("  0           ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled(
+                "jump to top where supported",
+                Style::default().fg(TEXT_SECONDARY),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  g           ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled(
+                "category grid or live add-to-group",
+                Style::default().fg(TEXT_SECONDARY),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("  G           ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled(
+                "bottom on VOD/series lists, groups on live",
+                Style::default().fg(TEXT_SECONDARY),
+            ),
         ]),
         Line::from(vec![
             Span::styled("  enter       ", Style::default().fg(MATRIX_GREEN)),
@@ -50,12 +83,12 @@ pub fn render_help_popup(f: &mut Frame, area: Rect) {
             Span::styled("search current view", Style::default().fg(TEXT_SECONDARY)),
         ]),
         Line::from(vec![
-            Span::styled("  f           ", Style::default().fg(MATRIX_GREEN)),
-            Span::styled("toggle filter active/all", Style::default().fg(TEXT_SECONDARY)),
+            Span::styled("  / or f      ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled("search current view", Style::default().fg(TEXT_SECONDARY)),
         ]),
         Line::from(vec![
             Span::styled("  v           ", Style::default().fg(MATRIX_GREEN)),
-            Span::styled("toggle favorite", Style::default().fg(TEXT_SECONDARY)),
+            Span::styled("toggle live favorite", Style::default().fg(TEXT_SECONDARY)),
         ]),
         Line::from(vec![
             Span::styled("  m           ", Style::default().fg(MATRIX_GREEN)),
@@ -372,14 +405,17 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
     let mut details = Vec::new();
     let mut metadata_found = false;
 
-    if app.current_screen == CurrentScreen::SeriesStreams && app.active_pane == Pane::Episodes {
-        if !app.series_episodes.is_empty() {
-            let ep = &app.series_episodes[app.selected_series_episode_index.min(app.series_episodes.len() - 1)];
-            if let Some(info) = &ep.info {
-                if let Some(map) = info.as_object() {
-                    add_metadata_lines(&mut details, map);
-                    metadata_found = true;
-                }
+    if app.current_screen == CurrentScreen::SeriesStreams
+        && app.active_pane == Pane::Episodes
+        && !app.series_episodes.is_empty()
+    {
+        let ep = &app.series_episodes[app
+            .selected_series_episode_index
+            .min(app.series_episodes.len() - 1)];
+        if let Some(info) = &ep.info {
+            if let Some(map) = info.as_object() {
+                add_metadata_lines(&mut details, map);
+                metadata_found = true;
             }
         }
     }
@@ -399,14 +435,19 @@ pub fn render_play_details_popup(f: &mut Frame, app: &App, area: Rect) {
                 if !metadata_found {
                     add_metadata_lines(&mut details, map);
                     metadata_found = true;
-                } else {
-                    if !details.iter().any(|l| l.spans.iter().any(|s| s.content.contains("cast"))) {
-                        if let Some(cast) = map.get("cast").and_then(|v| v.as_str()).or_else(|| map.get("actors").and_then(|v| v.as_str())) {
-                            details.push(Line::from(vec![
-                                Span::styled("cast     ", Style::default().fg(TEXT_SECONDARY)),
-                                Span::styled(cast, Style::default().fg(MATRIX_GREEN)),
-                            ]));
-                        }
+                } else if !details
+                    .iter()
+                    .any(|l| l.spans.iter().any(|s| s.content.contains("cast")))
+                {
+                    if let Some(cast) = map
+                        .get("cast")
+                        .and_then(|v| v.as_str())
+                        .or_else(|| map.get("actors").and_then(|v| v.as_str()))
+                    {
+                        details.push(Line::from(vec![
+                            Span::styled("cast     ", Style::default().fg(TEXT_SECONDARY)),
+                            Span::styled(cast, Style::default().fg(MATRIX_GREEN)),
+                        ]));
                     }
                 }
             }
@@ -581,7 +622,7 @@ pub fn render_cast_picker_popup(f: &mut Frame, app: &App, area: Rect) {
             })
             .collect();
 
-        let mut list_state = app.cast_device_list_state.clone();
+        let mut list_state = app.cast_device_list_state;
         let list = List::new(items)
             .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
             .highlight_symbol(" ▎");
