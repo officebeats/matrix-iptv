@@ -62,7 +62,6 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                         hint!("/", "search");
                         hint!("tab", "streams");
                         hint!("v", "fav");
-                        hint!("PgDn", "page");
                         hint!("g", "grid/list");
                         hint!("G", "groups");
                     }
@@ -87,7 +86,6 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 hint!("esc", "back");
                 hint!("enter", "select");
                 hint!("/", "search");
-                hint!("PgDn", "page");
                 hint!("g", "grid/list");
                 hint!("G", "bottom");
             }
@@ -100,7 +98,6 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 hint!("esc", "back");
                 hint!("enter", "play");
                 hint!("/", "search");
-                hint!("PgDn", "page");
                 hint!("g", "top");
                 hint!("G", "bottom");
             }
@@ -113,7 +110,6 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                 hint!("esc", "back");
                 hint!("enter", "select");
                 hint!("/", "search");
-                hint!("PgDn", "page");
                 hint!("g", "grid/list");
                 hint!("G", "bottom");
             }
@@ -128,7 +124,6 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                         hint!("esc", "back");
                         hint!("enter", "select");
                         hint!("/", "search");
-                        hint!("PgDn", "page");
                         hint!("g", "grid/list");
                         hint!("G", "bottom");
                     }
@@ -136,14 +131,12 @@ pub fn render_footer(f: &mut Frame, app: &App, area: Rect) {
                         hint!("esc", "back");
                         hint!("enter", "episodes");
                         hint!("/", "search");
-                        hint!("PgDn", "page");
                         hint!("Home", "top");
                         hint!("End", "bottom");
                     }
                     crate::app::Pane::Episodes => {
                         hint!("esc", "back");
                         hint!("enter", "play");
-                        hint!("PgDn", "page");
                         hint!("Home", "top");
                         hint!("End", "bottom");
                     }
