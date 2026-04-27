@@ -1,6 +1,6 @@
 use matrix_iptv_lib::api::Stream;
-use matrix_iptv_lib::flex_id::FlexId;
 use matrix_iptv_lib::app::{App, CurrentScreen, Pane};
+use matrix_iptv_lib::flex_id::FlexId;
 use std::sync::Arc;
 
 #[test]
@@ -10,7 +10,7 @@ fn test_stream_caching_logic() {
     // Ensure we are in a state where update_search processes streams
     app.current_screen = CurrentScreen::Categories;
     app.active_pane = Pane::Streams;
-    
+
     // Add a test stream
     let stream = Stream {
         name: "Test Stream US".to_string(),
@@ -18,21 +18,24 @@ fn test_stream_caching_logic() {
         ..Default::default()
     };
     app.all_streams = vec![Arc::new(stream)];
-    
+
     // Trigger the caching logic
     app.update_search();
-    
+
     // Verify results
     assert!(!app.streams.is_empty(), "Streams list should be populated");
-    
+
     // Note: Caching now happens lazily on first render, not in update_search
     // Call pre_cache_parsed to verify the caching logic still works
     App::pre_cache_parsed(&mut app.streams, None);
     let cached_stream = &app.streams[0];
-    
+
     // The Critical Verify: Is the cache populated after explicit caching?
-    assert!(cached_stream.cached_parsed.is_some(), "cached_parsed should be Some after pre_cache_parsed");
-    
+    assert!(
+        cached_stream.cached_parsed.is_some(),
+        "cached_parsed should be Some after pre_cache_parsed"
+    );
+
     // Verify the parsed content matches expectation
     let parsed = cached_stream.cached_parsed.as_ref().unwrap();
     assert_eq!(parsed.original_name, "Test Stream US");

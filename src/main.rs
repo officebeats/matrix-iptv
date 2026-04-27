@@ -5,16 +5,19 @@ use tokio::time::interval;
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen, Clear, ClearType},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
+        LeaveAlternateScreen,
+    },
 };
 
+use matrix_iptv_lib::api::get_id_str;
+use matrix_iptv_lib::app::{App, AsyncAction, CurrentScreen, Pane};
+use matrix_iptv_lib::{handlers, player, setup, sports, ui};
 #[cfg(not(target_arch = "wasm32"))]
 use ratatui::{backend::CrosstermBackend, Terminal};
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::sync::mpsc;
-use matrix_iptv_lib::app::{App, AsyncAction, CurrentScreen, Pane};
-use matrix_iptv_lib::api::get_id_str;
-use matrix_iptv_lib::{player, setup, ui, handlers, sports};
 
 #[derive(clap::Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -54,7 +57,14 @@ async fn main() -> Result<(), anyhow::Error> {
         setup::check_and_install_dependencies()?;
         let player = player::Player::new();
         println!("Playing: {}", url);
-        player.play(&url, matrix_iptv_lib::config::PlayerEngine::Vlc, false, true).await?; // Use optimized VLC with smoothing for CLI play
+        player
+            .play(
+                &url,
+                matrix_iptv_lib::config::PlayerEngine::Vlc,
+                false,
+                true,
+            )
+            .await?; // Use optimized VLC with smoothing for CLI play
         return Ok(());
     }
 
@@ -66,7 +76,12 @@ async fn main() -> Result<(), anyhow::Error> {
     // Setup Terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture, Clear(ClearType::All))?;
+    execute!(
+        stdout,
+        EnterAlternateScreen,
+        EnableMouseCapture,
+        Clear(ClearType::All)
+    )?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
@@ -117,14 +132,14 @@ async fn main() -> Result<(), anyhow::Error> {
         let service = matrix_iptv_lib::scores::ScoreService::new();
         // Initial fetch delayed by 5s to allow startup
         tokio::time::sleep(Duration::from_secs(5)).await;
-        
+
         // Loop every 60s
         let mut ticker = interval(Duration::from_secs(60));
         loop {
-            ticker.tick().await; 
-             if let Ok(scores) = service.fetch_scores().await {
-                 let _ = tx_scores.send(AsyncAction::ScoresLoaded(scores)).await;
-             }
+            ticker.tick().await;
+            if let Ok(scores) = service.fetch_scores().await {
+                let _ = tx_scores.send(AsyncAction::ScoresLoaded(scores)).await;
+            }
         }
     });
 
@@ -174,11 +189,13 @@ async fn run_app<B: ratatui::backend::Backend>(
             app.needs_stream_refresh = false;
             needs_redraw = true;
         }
-        
+
         // Debounce expired: the full UI projection is now zero-cost and renders immediately.
 
         if needs_redraw {
-            terminal.draw(|f| ui::ui(f, app)).map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+            terminal
+                .draw(|f| ui::ui(f, app))
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
             needs_redraw = false;
         }
 
@@ -200,7 +217,10 @@ async fn run_app<B: ratatui::backend::Backend>(
         }
 
         // 1.5 Debounced EPG Fetching
-        if app.current_screen == CurrentScreen::Streams && app.active_pane == Pane::Streams && !app.streams.is_empty() {
+        if app.current_screen == CurrentScreen::Streams
+            && app.active_pane == Pane::Streams
+            && !app.streams.is_empty()
+        {
             let focused_id = get_id_str(&app.streams[app.selected_stream_index].stream_id);
             if app.last_focused_stream_id.as_ref() != Some(&focused_id) {
                 app.last_focused_stream_id = Some(focused_id.clone());
@@ -215,8 +235,13 @@ async fn run_app<B: ratatui::backend::Backend>(
                             let fid = focused_id.clone();
                             tokio::spawn(async move {
                                 if let Ok(epg) = client.get_short_epg(&fid).await {
-                                    if let Some(now_playing) = epg.epg_listings.get(0) {
-                                        let _ = tx.send(AsyncAction::EpgLoaded(fid, now_playing.title.clone())).await;
+                                    if let Some(now_playing) = epg.epg_listings.first() {
+                                        let _ = tx
+                                            .send(AsyncAction::EpgLoaded(
+                                                fid,
+                                                now_playing.title.clone(),
+                                            ))
+                                            .await;
                                     }
                                 }
                             });
@@ -227,9 +252,12 @@ async fn run_app<B: ratatui::backend::Backend>(
         }
 
         // 1.6 Debounced Stream Health Check
-        if (app.current_screen == CurrentScreen::Streams && app.active_pane == Pane::Streams && !app.streams.is_empty()) ||
-           (app.current_screen == CurrentScreen::GlobalSearch && !app.global_search_results.is_empty()) {
-            
+        if (app.current_screen == CurrentScreen::Streams
+            && app.active_pane == Pane::Streams
+            && !app.streams.is_empty())
+            || (app.current_screen == CurrentScreen::GlobalSearch
+                && !app.global_search_results.is_empty())
+        {
             let focused_stream = if app.current_screen == CurrentScreen::GlobalSearch {
                 app.global_search_results.get(app.selected_stream_index)
             } else {
@@ -245,7 +273,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                         let fid = focused_id.clone();
                         let ext = stream.container_extension.as_deref().unwrap_or("ts");
                         let url = client.get_stream_url(&fid, ext);
-                        
+
                         // We use a small delay to avoid spamming while scrolling
                         if app.focus_timestamp.is_none() {
                             app.focus_timestamp = Some(std::time::Instant::now());
@@ -257,16 +285,21 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     .timeout(std::time::Duration::from_secs(3))
                                     .build()
                                     .unwrap_or_default();
-                                
+
                                 if let Ok(resp) = req_client.head(&url).send().await {
                                     if resp.status().is_success() {
                                         let latency = start.elapsed().as_millis() as u64;
-                                        let _ = tx.send(AsyncAction::StreamHealthLoaded(fid, latency)).await;
+                                        let _ = tx
+                                            .send(AsyncAction::StreamHealthLoaded(fid, latency))
+                                            .await;
                                     } else {
-                                        let _ = tx.send(AsyncAction::StreamHealthLoaded(fid, 2000)).await;
+                                        let _ = tx
+                                            .send(AsyncAction::StreamHealthLoaded(fid, 2000))
+                                            .await;
                                     }
                                 } else {
-                                    let _ = tx.send(AsyncAction::StreamHealthLoaded(fid, 5000)).await;
+                                    let _ =
+                                        tx.send(AsyncAction::StreamHealthLoaded(fid, 5000)).await;
                                 }
                             });
                         }
@@ -274,9 +307,12 @@ async fn run_app<B: ratatui::backend::Backend>(
                 }
             }
         }
-        
+
         // 1.7 Debounced VOD Info Fetching
-        if app.current_screen == CurrentScreen::VodStreams && app.active_pane == Pane::Streams && !app.vod_streams.is_empty() {
+        if app.current_screen == CurrentScreen::VodStreams
+            && app.active_pane == Pane::Streams
+            && !app.vod_streams.is_empty()
+        {
             let focused_id = get_id_str(&app.vod_streams[app.selected_vod_stream_index].stream_id);
             if app.last_focused_stream_id.as_ref() != Some(&focused_id) {
                 app.last_focused_stream_id = Some(focused_id.clone());
@@ -299,8 +335,12 @@ async fn run_app<B: ratatui::backend::Backend>(
         }
 
         // 1.7.5 Debounced Series Info Fetching
-        if app.current_screen == CurrentScreen::SeriesStreams && app.active_pane == Pane::Streams && !app.series_streams.is_empty() {
-            let focused_id = get_id_str(&app.series_streams[app.selected_series_stream_index].stream_id);
+        if app.current_screen == CurrentScreen::SeriesStreams
+            && app.active_pane == Pane::Streams
+            && !app.series_streams.is_empty()
+        {
+            let focused_id =
+                get_id_str(&app.series_streams[app.selected_series_stream_index].stream_id);
             if app.last_focused_stream_id.as_ref() != Some(&focused_id) {
                 app.last_focused_stream_id = Some(focused_id.clone());
                 app.focus_timestamp = Some(std::time::Instant::now());
@@ -322,7 +362,9 @@ async fn run_app<B: ratatui::backend::Backend>(
         }
 
         // 1.8 Debounced Info Fetching for Global Search
-        if app.current_screen == CurrentScreen::GlobalSearch && !app.global_search_results.is_empty() {
+        if app.current_screen == CurrentScreen::GlobalSearch
+            && !app.global_search_results.is_empty()
+        {
             let stream = &app.global_search_results[app.selected_stream_index];
             if stream.stream_type == "movie" || stream.stream_type == "series" {
                 let focused_id = get_id_str(&stream.stream_id);
@@ -342,10 +384,8 @@ async fn run_app<B: ratatui::backend::Backend>(
                                     if let Ok(info) = client.get_series_info(&fid).await {
                                         let _ = tx.send(AsyncAction::SeriesInfoLoaded(info)).await;
                                     }
-                                } else {
-                                    if let Ok(info) = client.get_vod_info(&fid).await {
-                                        let _ = tx.send(AsyncAction::VodInfoLoaded(info)).await;
-                                    }
+                                } else if let Ok(info) = client.get_vod_info(&fid).await {
+                                    let _ = tx.send(AsyncAction::VodInfoLoaded(info)).await;
                                 }
                             });
                         }
@@ -355,7 +395,10 @@ async fn run_app<B: ratatui::backend::Backend>(
         }
 
         // 1.10 Debounced Sports Info Fetching (Matches list)
-        if app.current_screen == CurrentScreen::SportsDashboard && app.sports_matches.is_empty() && !app.state_loading {
+        if app.current_screen == CurrentScreen::SportsDashboard
+            && app.sports_matches.is_empty()
+            && !app.state_loading
+        {
             let tx = tx.clone();
             let category = app.sports_categories[app.selected_sports_category_index].clone();
             app.state_loading = true;
@@ -363,14 +406,21 @@ async fn run_app<B: ratatui::backend::Backend>(
                 if let Ok(matches) = sports::fetch_streamed_matches(&category).await {
                     let _ = tx.send(AsyncAction::SportsMatchesLoaded(matches)).await;
                 } else {
-                    let _ = tx.send(AsyncAction::Error("System Protocol: Failed to link with sports uplink.".to_string())).await;
+                    let _ = tx
+                        .send(AsyncAction::Error(
+                            "System Protocol: Failed to link with sports uplink.".to_string(),
+                        ))
+                        .await;
                 }
             });
         }
 
         // 1.11 Debounced Sports Stream Link Fetching
         if app.current_screen == CurrentScreen::SportsDashboard && !app.sports_matches.is_empty() {
-            if let Some(selected_match) = app.sports_matches.get(app.sports_list_state.selected().unwrap_or(0)) {
+            if let Some(selected_match) = app
+                .sports_matches
+                .get(app.sports_list_state.selected().unwrap_or(0))
+            {
                 let focused_id = selected_match.id.clone();
                 if app.last_focused_stream_id.as_ref() != Some(&focused_id) {
                     app.last_focused_stream_id = Some(focused_id.clone());
@@ -385,7 +435,9 @@ async fn run_app<B: ratatui::backend::Backend>(
                             let source_name = source.source.clone();
                             let source_id = source.id.clone();
                             tokio::spawn(async move {
-                                if let Ok(links) = sports::fetch_streamed_links(&source_name, &source_id).await {
+                                if let Ok(links) =
+                                    sports::fetch_streamed_links(&source_name, &source_id).await
+                                {
                                     let _ = tx.send(AsyncAction::SportsStreamsLoaded(links)).await;
                                 }
                             });
@@ -397,7 +449,10 @@ async fn run_app<B: ratatui::backend::Backend>(
 
         // 1.12 Debounced Sports Matching for regular streams
         // Use cached_parsed to avoid expensive parse_stream() calls every frame
-        if (app.current_screen == CurrentScreen::Streams || app.current_screen == CurrentScreen::GlobalSearch) && app.active_pane == Pane::Streams {
+        if (app.current_screen == CurrentScreen::Streams
+            || app.current_screen == CurrentScreen::GlobalSearch)
+            && app.active_pane == Pane::Streams
+        {
             let focused_stream = if app.current_screen == CurrentScreen::GlobalSearch {
                 app.global_search_results.get(app.selected_stream_index)
             } else {
@@ -425,19 +480,31 @@ async fn run_app<B: ratatui::backend::Backend>(
                             let (team1, team2) = if let Some(ref cached) = stream.cached_parsed {
                                 if let Some(ref ev) = cached.sports_event {
                                     (ev.team1.clone(), ev.team2.clone())
-                                } else { continue; }
-                            } else { continue; };
-                            
+                                } else {
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            };
+
                             tokio::spawn(async move {
                                 if let Ok(matches) = sports::fetch_streamed_matches("live").await {
                                     let found = matches.into_iter().find(|m| {
                                         let title = m.title.to_lowercase();
-                                        title.contains(&team1.to_lowercase()) || title.contains(&team2.to_lowercase())
+                                        title.contains(&team1.to_lowercase())
+                                            || title.contains(&team2.to_lowercase())
                                     });
                                     if let Some(m) = found {
                                         if let Some(source) = m.sources.first() {
-                                            if let Ok(links) = sports::fetch_streamed_links(&source.source, &source.id).await {
-                                                let _ = tx.send(AsyncAction::SportsStreamsLoaded(links)).await;
+                                            if let Ok(links) = sports::fetch_streamed_links(
+                                                &source.source,
+                                                &source.id,
+                                            )
+                                            .await
+                                            {
+                                                let _ = tx
+                                                    .send(AsyncAction::SportsStreamsLoaded(links))
+                                                    .await;
                                             }
                                         }
                                     }
@@ -448,7 +515,7 @@ async fn run_app<B: ratatui::backend::Backend>(
                 }
             }
         }
-        
+
         // FTUE: Handle Matrix rain animation
         if app.show_matrix_rain {
             if let Ok(size) = terminal.size() {
@@ -457,19 +524,19 @@ async fn run_app<B: ratatui::backend::Backend>(
                 if app.matrix_rain_columns.is_empty() {
                     app.matrix_rain_columns = matrix_iptv_lib::matrix_rain::init_matrix_rain(rect);
                 }
-                
+
                 // Update animation
                 matrix_iptv_lib::matrix_rain::update_matrix_rain(
-                    &mut app.matrix_rain_columns, 
-                    rect, 
-                    app.loading_tick, 
-                    &mut app.matrix_rain_logo_hits, 
-                    !app.matrix_rain_screensaver_mode
+                    &mut app.matrix_rain_columns,
+                    rect,
+                    app.loading_tick,
+                    &mut app.matrix_rain_logo_hits,
+                    !app.matrix_rain_screensaver_mode,
                 );
-                
+
                 // Force continuous terminal redraws during animation sequences
                 needs_redraw = true;
-                
+
                 // Only end startup animation after 3 seconds (screensaver runs indefinitely)
                 if !app.matrix_rain_screensaver_mode {
                     if let Some(start_time) = app.matrix_rain_start_time {
@@ -497,19 +564,33 @@ async fn run_app<B: ratatui::backend::Backend>(
                     match handlers::input::handle_key_event(app, key, &tx, player).await? {
                         handlers::input::InputResult::Quit => return Ok(None),
                         handlers::input::InputResult::UpdateRequested => return Ok(Some(42)),
-                        handlers::input::InputResult::Continue => { needs_redraw = true; continue; },
-                        handlers::input::InputResult::Ok => { needs_redraw = true; }
+                        handlers::input::InputResult::Continue => {
+                            needs_redraw = true;
+                            continue;
+                        }
+                        handlers::input::InputResult::Ok => {
+                            needs_redraw = true;
+                        }
                     }
                     // ── Input Coalescing: drain queued keys without redrawing ──
                     // When scrolling fast, multiple key events queue up. Process them
                     // all in one batch to avoid 33ms render + debounce between each.
                     while event::poll(Duration::from_millis(0))? {
                         if let Event::Key(next_key) = event::read()? {
-                            match handlers::input::handle_key_event(app, next_key, &tx, player).await? {
+                            match handlers::input::handle_key_event(app, next_key, &tx, player)
+                                .await?
+                            {
                                 handlers::input::InputResult::Quit => return Ok(None),
-                                handlers::input::InputResult::UpdateRequested => return Ok(Some(42)),
-                                handlers::input::InputResult::Continue => { needs_redraw = true; continue; },
-                                handlers::input::InputResult::Ok => { needs_redraw = true; }
+                                handlers::input::InputResult::UpdateRequested => {
+                                    return Ok(Some(42))
+                                }
+                                handlers::input::InputResult::Continue => {
+                                    needs_redraw = true;
+                                    continue;
+                                }
+                                handlers::input::InputResult::Ok => {
+                                    needs_redraw = true;
+                                }
                             }
                         }
                     }

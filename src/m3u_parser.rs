@@ -1,15 +1,15 @@
-/// M3U/M3U8 playlist parser for IPTV catalog ingestion.
-///
-/// Parses the extended M3U format (`#EXTM3U` + `#EXTINF` lines) commonly distributed
-/// by IPTV providers. This is distinct from HLS segment playlists — this module handles
-/// *catalog* playlists that list channel URLs with metadata tags.
-///
-/// # Format example
-/// ```text
-/// #EXTM3U
-/// #EXTINF:-1 tvg-id="cnn.us" tvg-name="CNN" tvg-logo="http://..." group-title="News",CNN
-/// http://provider.example/live/user/pass/12345.ts
-/// ```
+//! M3U/M3U8 playlist parser for IPTV catalog ingestion.
+//!
+//! Parses the extended M3U format (`#EXTM3U` + `#EXTINF` lines) commonly distributed
+//! by IPTV providers. This is distinct from HLS segment playlists — this module handles
+//! *catalog* playlists that list channel URLs with metadata tags.
+//!
+//! # Format example
+//! ```text
+//! #EXTM3U
+//! #EXTINF:-1 tvg-id="cnn.us" tvg-name="CNN" tvg-logo="http://..." group-title="News",CNN
+//! http://provider.example/live/user/pass/12345.ts
+//! ```
 
 /// A single entry parsed from an M3U playlist.
 #[derive(Debug, Clone, PartialEq)]
@@ -56,9 +56,8 @@ fn extract_attr<'a>(line: &'a str, key: &str) -> &'a str {
     let search = format!("{}=", key);
     if let Some(pos) = line.find(&search) {
         let rest = &line[pos + search.len()..];
-        if rest.starts_with('"') {
+        if let Some(inner) = rest.strip_prefix('"') {
             // Quoted value: find the closing quote
-            let inner = &rest[1..];
             if let Some(end) = inner.find('"') {
                 return &inner[..end];
             }
@@ -66,9 +65,7 @@ fn extract_attr<'a>(line: &'a str, key: &str) -> &'a str {
             return inner;
         } else {
             // Unquoted value: terminate at space or comma
-            let end = rest
-                .find(|c: char| c == ' ' || c == ',')
-                .unwrap_or(rest.len());
+            let end = rest.find([' ', ',']).unwrap_or(rest.len());
             return &rest[..end];
         }
     }

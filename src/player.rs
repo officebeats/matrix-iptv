@@ -1,17 +1,13 @@
+use crate::config::PlayerEngine;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
-use crate::config::PlayerEngine;
 
 #[cfg(not(target_arch = "wasm32"))]
 use std::process::{Child, Command, Stdio};
 
 #[cfg(not(target_arch = "wasm32"))]
-
-
 #[cfg(not(target_arch = "wasm32"))]
-
-
 #[cfg(target_arch = "wasm32")]
 use web_sys::window;
 
@@ -21,6 +17,12 @@ pub struct Player {
     process: Arc<Mutex<Option<Child>>>,
     #[cfg(not(target_arch = "wasm32"))]
     ipc_path: Arc<Mutex<Option<PathBuf>>>,
+}
+
+impl Default for Player {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Player {
@@ -40,13 +42,19 @@ impl Player {
 
     /// Start the selected player engine and return the IPC pipe path for monitoring
     #[cfg(not(target_arch = "wasm32"))]
-    pub async fn play(&self, url: &str, engine: PlayerEngine, use_default_mpv: bool, smooth_motion: bool) -> Result<(), anyhow::Error> {
+    pub async fn play(
+        &self,
+        url: &str,
+        engine: PlayerEngine,
+        use_default_mpv: bool,
+        smooth_motion: bool,
+    ) -> Result<(), anyhow::Error> {
         // We SKIP the pre-flight `check_stream_health(url)` here because doing a GET request
         // immediately before launching the player can trigger the IPTV provider's
         // "Max 1 Connection" rule (the health check leaves a ghost connection open
         // for 30-60 seconds on their backend). This would cause the provider
         // to gracefully kill the stream ~45 seconds in!
-        
+
         self.stop();
 
         match engine {
@@ -68,12 +76,15 @@ impl Player {
         // We use a stream request but abort immediately to check connectivity/headers.
         // HEAD often fails on some IPTV servers, so a started GET is safer logic-wise.
         let mut result = client.get(url).send().await;
-        
+
         // Resilience: Fallback to DoH if DNS fails for the stream health check
         if let Err(ref e) = result {
             if crate::doh::is_dns_error(e) {
                 #[cfg(debug_assertions)]
-                println!("DEBUG: Health check DNS error detected for {}. Trying DoH fallback...", url);
+                println!(
+                    "DEBUG: Health check DNS error detected for {}. Trying DoH fallback...",
+                    url
+                );
 
                 if let Some(resp) = crate::doh::try_doh_fallback(&client, url).await {
                     result = Ok(resp);
@@ -86,25 +97,35 @@ impl Player {
                 if resp.status().is_success() || resp.status().is_redirection() {
                     Ok(())
                 } else {
-                    Err(anyhow::anyhow!("Stream returned error status: {} (Server might be offline/blocking)", resp.status()))
+                    Err(anyhow::anyhow!(
+                        "Stream returned error status: {} (Server might be offline/blocking)",
+                        resp.status()
+                    ))
                 }
-            },
+            }
             Err(e) => {
                 // Provide a user-friendly error description using shared DNS detection
                 if crate::doh::is_dns_error(&e) {
-                     Err(anyhow::anyhow!("Stream Server Unreachable. The host likely does not exist or is blocked (DNS Error). Details: {}", e))
+                    Err(anyhow::anyhow!("Stream Server Unreachable. The host likely does not exist or is blocked (DNS Error). Details: {}", e))
                 } else if e.is_connect() || e.is_timeout() {
-                     Err(anyhow::anyhow!("Stream Connection Failed. Server may be slow or offline. Details: {}", e))
+                    Err(anyhow::anyhow!(
+                        "Stream Connection Failed. Server may be slow or offline. Details: {}",
+                        e
+                    ))
                 } else {
-                     Err(anyhow::anyhow!("Stream Check Failed: {}", e))
+                    Err(anyhow::anyhow!("Stream Check Failed: {}", e))
                 }
             }
         }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
-    fn play_mpv(&self, url: &str, use_default_mpv: bool, smooth_motion: bool) -> Result<(), anyhow::Error> {
-
+    fn play_mpv(
+        &self,
+        url: &str,
+        use_default_mpv: bool,
+        smooth_motion: bool,
+    ) -> Result<(), anyhow::Error> {
         // Find mpv executable, checking PATH and common installation locations
         let mpv_path = crate::setup::get_mpv_path().ok_or_else(|| {
             let hint = if cfg!(target_os = "macos") {
@@ -131,7 +152,7 @@ impl Player {
         };
 
         let mut cmd = Command::new(&mpv_path);
-        
+
         // Add Referrer validation (Common anti-scraping measure)
         if let Some(scheme_end) = url.find("://") {
             let rest = &url[scheme_end + 3..];
@@ -141,7 +162,7 @@ impl Player {
                 cmd.arg(format!("--referrer={}", base));
             }
         }
-        
+
         let _is_live = url.contains("/live/") || url.contains(".m3u8");
 
         cmd.arg(url)
@@ -154,9 +175,9 @@ impl Player {
         // Apply smooth motion interpolation if enabled
         if smooth_motion {
             cmd.arg("--video-sync=display-resample") // Smooth motion sync (required for interpolation)
-               .arg("--interpolation=yes") // Frame generation / motion smoothing
-               .arg("--tscale=linear")     // Soap opera effect - smooth motion blending (GPU friendly)
-               .arg("--tscale-clamp=0.0"); // Allow full blending for maximum smoothness
+                .arg("--interpolation=yes") // Frame generation / motion smoothing
+                .arg("--tscale=linear") // Soap opera effect - smooth motion blending (GPU friendly)
+                .arg("--tscale-clamp=0.0"); // Allow full blending for maximum smoothness
         }
 
         // Only apply optimizations if not using default MPV settings
@@ -182,10 +203,10 @@ impl Player {
                .arg("--tls-verify=no");
 
             if cfg!(target_os = "windows") {
-                cmd.arg("--d3d11-flip=yes")            // Modern Windows presentation (faster)
-                   .arg("--gpu-api=d3d11");             // Force D3D11 (faster than OpenGL on Windows)
+                cmd.arg("--d3d11-flip=yes") // Modern Windows presentation (faster)
+                    .arg("--gpu-api=d3d11"); // Force D3D11 (faster than OpenGL on Windows)
             } else if cfg!(target_os = "macos") {
-                cmd.arg("--gpu-api=opengl");            // Generally safe default for macOS mpv
+                cmd.arg("--gpu-api=opengl"); // Generally safe default for macOS mpv
             }
         }
 
@@ -205,23 +226,25 @@ impl Player {
 
         // Disconnect from terminal input/output to prevent hotkey conflicts
         cmd.stdin(Stdio::null())
-           .stdout(Stdio::null())
-           .stderr(Stdio::null());
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
 
         let child = cmd.spawn();
 
         match child {
             Ok(child) => {
                 {
-                    let mut guard = self.process.lock().map_err(|e| {
-                        anyhow::anyhow!("Failed to lock process mutex: {}", e)
-                    })?;
+                    let mut guard = self
+                        .process
+                        .lock()
+                        .map_err(|e| anyhow::anyhow!("Failed to lock process mutex: {}", e))?;
                     *guard = Some(child);
                 }
                 {
-                    let mut ipc_guard = self.ipc_path.lock().map_err(|e| {
-                        anyhow::anyhow!("Failed to lock IPC path mutex: {}", e)
-                    })?;
+                    let mut ipc_guard = self
+                        .ipc_path
+                        .lock()
+                        .map_err(|e| anyhow::anyhow!("Failed to lock IPC path mutex: {}", e))?;
                     *ipc_guard = Some(PathBuf::from(&pipe_name));
                 }
                 Ok(())
@@ -237,10 +260,7 @@ impl Player {
                 } else {
                     String::new()
                 };
-                Err(anyhow::anyhow!(
-                    "Failed to start mpv: {}.{}",
-                    e, hint
-                ))
+                Err(anyhow::anyhow!("Failed to start mpv: {}.{}", e, hint))
             }
         }
     }
@@ -248,12 +268,11 @@ impl Player {
     #[cfg(not(target_arch = "wasm32"))]
     fn play_vlc(&self, url: &str, smooth_motion: bool) -> Result<(), anyhow::Error> {
         // Find vlc executable
-        let vlc_path = crate::setup::get_vlc_path().ok_or_else(|| {
-            anyhow::anyhow!("VLC not found. Please install VLC.")
-        })?;
+        let vlc_path = crate::setup::get_vlc_path()
+            .ok_or_else(|| anyhow::anyhow!("VLC not found. Please install VLC."))?;
 
         let mut cmd = Command::new(&vlc_path);
-        
+
         // Add Referrer validation (Common anti-scraping measure)
         // Manual parsing to avoid adding 'url' crate dependency
         if let Some(scheme_end) = url.find("://") {
@@ -277,12 +296,12 @@ impl Player {
         // Apply smooth motion (deinterlacing) if enabled
         if smooth_motion {
             cmd.arg("--video-filter=deinterlace")
-               .arg("--deinterlace-mode=bob");
+                .arg("--deinterlace-mode=bob");
         }
         // DISCONNECT from terminal
         cmd.stdin(Stdio::null())
-           .stdout(Stdio::null())
-           .stderr(Stdio::null());
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
 
         #[cfg(windows)]
         {
@@ -292,27 +311,31 @@ impl Player {
         }
 
         let child = cmd.spawn()?;
-        
+
         {
-            let mut guard = self.process.lock().map_err(|e| {
-                anyhow::anyhow!("Failed to lock process mutex: {}", e)
-            })?;
+            let mut guard = self
+                .process
+                .lock()
+                .map_err(|e| anyhow::anyhow!("Failed to lock process mutex: {}", e))?;
             *guard = Some(child);
         }
-        
+
         Ok(())
     }
 
     /// Read the last few lines of the player logs to find errors
     pub fn get_last_error_from_log(&self) -> Option<String> {
         let logs = ["mpv_playback.log", "vlc_playback.log"];
-        
+
         for log_file in logs {
             if let Ok(content) = std::fs::read_to_string(log_file) {
                 let lines: Vec<&str> = content.lines().rev().take(15).collect();
                 for line in lines {
                     let lower = line.to_lowercase();
-                    if lower.contains("error") || lower.contains("failed") || lower.contains("fatal") {
+                    if lower.contains("error")
+                        || lower.contains("failed")
+                        || lower.contains("fatal")
+                    {
                         // Clean up common VLC/MPV prefixes for cleaner UI display
                         let cleaned = line.split("]: ").last().unwrap_or(line);
                         return Some(cleaned.to_string());
@@ -375,7 +398,13 @@ impl Player {
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn play(&self, url: &str, _engine: PlayerEngine, _use_default_mpv: bool, _smooth_motion: bool) -> Result<(), anyhow::Error> {
+    pub fn play(
+        &self,
+        url: &str,
+        _engine: PlayerEngine,
+        _use_default_mpv: bool,
+        _smooth_motion: bool,
+    ) -> Result<(), anyhow::Error> {
         self.stop();
         if let Some(win) = window() {
             let _ = win.alert_with_message(&format!("Play stream: {}", url));

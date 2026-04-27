@@ -68,35 +68,35 @@ pub enum IptvError {
     /// DNS resolution failed
     #[error("📡 DNS Resolve Error: Could not find server host '{0}'.\nDetail: {1}\nSuggestion: Try enabling 'Quad9 DoH' in Settings.")]
     DnsResolution(String, String),
- 
+
     /// Connection timeout
     #[error("⏱️ Connection Timeout (after {1}s) to server: {0}.\nSuggestion: Higher provider latency or server offline.")]
     ConnectionTimeout(String, u64),
- 
+
     /// Connection failed
     #[error("🚫 {0} Failure: {1}\nSuggestion: {}", .0.suggestion())]
     ConnectionFailed(ConnectionStage, String),
- 
+
     /// Authentication failed
     #[error("🔑 Authentication Denied: {0}\nSuggestion: Double check username/password with your provider.")]
     AuthenticationFailed(String),
- 
+
     /// Server returned an error status
     #[error("⚠️ Server Error ({0}): {1}\nSuggestion: Provider may be experiencing issues.")]
     ServerError(u16, String),
- 
+
     /// Failed to parse response
     #[error("📦 Data Format Error: {0}\nSuggestion: Provider sent corrupted or unexpected data.")]
     ParseError(String),
- 
+
     /// Empty or invalid response
     #[error("🕳️ Empty response from server: {0}")]
     EmptyResponse(String),
- 
+
     /// ISP block detected
     #[error("🛡️ ISP BLOCK DETECTED!\nYour internet provider is actively blocking this IPTV server.\n🔧 FIX: Disable 'Secure Home' features in your router or use a VPN.")]
     IspBlock,
- 
+
     /// Generic error
     #[error("Error: {0}")]
     Generic(String),
@@ -116,22 +116,40 @@ impl IptvError {
                 format!("Connection Timeout\nHost: {}\nTimeout: {} seconds\nSuggestion: Server is slow or offline", host, timeout)
             }
             IptvError::ConnectionFailed(stage, source) => {
-                format!("Connection Failed at {}\nError: {}\nSuggestion: {}", stage.display_name(), source, stage.suggestion())
+                format!(
+                    "Connection Failed at {}\nError: {}\nSuggestion: {}",
+                    stage.display_name(),
+                    source,
+                    stage.suggestion()
+                )
             }
             IptvError::AuthenticationFailed(reason) => {
-                format!("Authentication Failed\nReason: {}\nSuggestion: Verify username and password", reason)
+                format!(
+                    "Authentication Failed\nReason: {}\nSuggestion: Verify username and password",
+                    reason
+                )
             }
             IptvError::ServerError(status, message) => {
-                format!("Server Error\nStatus: {}\nMessage: {}\nSuggestion: Try again later", status, message)
+                format!(
+                    "Server Error\nStatus: {}\nMessage: {}\nSuggestion: Try again later",
+                    status, message
+                )
             }
             IptvError::ParseError(source) => {
-                format!("Parse Error\nError: {}\nSuggestion: Provider response is invalid", source)
+                format!(
+                    "Parse Error\nError: {}\nSuggestion: Provider response is invalid",
+                    source
+                )
             }
             IptvError::EmptyResponse(reason) => {
-                format!("Empty Response\nReason: {}\nSuggestion: Try again later", reason)
+                format!(
+                    "Empty Response\nReason: {}\nSuggestion: Try again later",
+                    reason
+                )
             }
             IptvError::IspBlock => {
-                format!("ISP Block Detected\nSuggestion: Disable AT&T Home Network Security or use a VPN")
+                "ISP Block Detected\nSuggestion: Disable AT&T Home Network Security or use a VPN"
+                    .to_string()
             }
             IptvError::Generic(message) => {
                 format!("Error\nMessage: {}\nSuggestion: Try again", message)
@@ -166,7 +184,11 @@ impl LoadingProgress {
 
     pub fn to_message(&self) -> String {
         let progress = format!("[{}/{}]", self.current, self.total);
-        let eta = self.eta.as_ref().map(|d| format!(" ETA: {}s", d.as_secs())).unwrap_or_default();
+        let eta = self
+            .eta
+            .as_ref()
+            .map(|d| format!(" ETA: {}s", d.as_secs()))
+            .unwrap_or_default();
         format!("{} - {} {}", self.stage.display_name(), progress, eta)
     }
 }

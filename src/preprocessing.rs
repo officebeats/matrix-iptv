@@ -10,13 +10,22 @@ pub fn preprocess_categories(
     _account_name: &str,
 ) {
     if !cats.iter().any(|c| c.category_id == "ALL") {
-        cats.insert(0, Category {
-            category_id: "ALL".to_string(),
-            category_name: if is_live { "All Channels".to_string() } else if is_vod { "All Movies".to_string() } else { "All Series".to_string() },
-            is_american: true,
-            is_english: true,
-            ..Default::default()
-        });
+        cats.insert(
+            0,
+            Category {
+                category_id: "ALL".to_string(),
+                category_name: if is_live {
+                    "All Channels".to_string()
+                } else if is_vod {
+                    "All Movies".to_string()
+                } else {
+                    "All Series".to_string()
+                },
+                is_american: true,
+                is_english: true,
+                ..Default::default()
+            },
+        );
     }
 
     let use_merica = modes.contains(&crate::config::ProcessingMode::Merica);
@@ -26,7 +35,9 @@ pub fn preprocess_categories(
     // 1. Filter
     cats.retain_mut(|c| {
         // Keep ALL category always
-        if c.category_id == "ALL" { return true; }
+        if c.category_id == "ALL" {
+            return true;
+        }
 
         let mut keep = true;
 
@@ -41,31 +52,31 @@ pub fn preprocess_categories(
             }
 
             // All English Logic (if Merica not active, or additive?)
-            // If AllEnglish is ON, we only keep English. 
+            // If AllEnglish is ON, we only keep English.
             // If Merica is ALSO on, Merica is stricter, so it implicitly satisfies AllEnglish mostly.
             // But let's treat them as additive filters (AND).
             if use_all_english {
                 c.is_english = crate::parser::is_english_live(&c.category_name);
-                if !c.is_english { keep = false; }
+                if !c.is_english {
+                    keep = false;
+                }
             }
 
             // Sports Mode Logic - If ONLY Sports is on, we filter for sports.
             // If Sports AND Merica are on, we filter for American Sports.
-            if use_sports {
-                if !crate::parser::is_sports_content(&c.category_name) {
-                    keep = false;
-                }
+            if use_sports && !crate::parser::is_sports_content(&c.category_name) {
+                keep = false;
             }
         } else {
             // VOD/Series
             if use_merica || use_all_english {
                 c.is_english = crate::parser::is_english_vod(&c.category_name);
-                if !c.is_english { keep = false; }
-            }
-            if use_sports {
-                if !crate::parser::is_sports_content(&c.category_name) {
+                if !c.is_english {
                     keep = false;
                 }
+            }
+            if use_sports && !crate::parser::is_sports_content(&c.category_name) {
+                keep = false;
             }
         }
 
@@ -82,7 +93,7 @@ pub fn preprocess_categories(
             c.clean_name = c.category_name.clone();
         }
         c.search_name = c.clean_name.to_lowercase();
-        
+
         // Cache parsed metadata to enable O(1) TUI rendering
         if c.cached_parsed.is_none() {
             c.cached_parsed = Some(Box::new(crate::parser::parse_category(&c.category_name)));
@@ -91,17 +102,25 @@ pub fn preprocess_categories(
 
     // 3. Sort - Parallelized
     cats.par_sort_by(|a, b| {
-        if a.category_id == "ALL" { return std::cmp::Ordering::Less; }
-        if b.category_id == "ALL" { return std::cmp::Ordering::Greater; }
+        if a.category_id == "ALL" {
+            return std::cmp::Ordering::Less;
+        }
+        if b.category_id == "ALL" {
+            return std::cmp::Ordering::Greater;
+        }
         let a_fav = favorites.contains(&a.category_id);
         let b_fav = favorites.contains(&b.category_id);
-        
+
         // Sports Mode Hoisting
         if use_sports {
             let a_sport = crate::parser::is_sports_content(&a.category_name);
             let b_sport = crate::parser::is_sports_content(&b.category_name);
-            if a_sport && !b_sport { return std::cmp::Ordering::Less; }
-            if !a_sport && b_sport { return std::cmp::Ordering::Greater; }
+            if a_sport && !b_sport {
+                return std::cmp::Ordering::Less;
+            }
+            if !a_sport && b_sport {
+                return std::cmp::Ordering::Greater;
+            }
         }
 
         match (a_fav, b_fav) {
@@ -128,26 +147,38 @@ pub fn preprocess_streams(
 
     if let Some(ref tx) = tx {
         let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
-            "Phase 1/3: Stripping provider separators...".to_string()
+            "Phase 1/3: Stripping provider separators...".to_string(),
         ));
     }
-    
+
     // 0. Strip out provider-injected separator/header entries.
     streams.retain(|s| {
         let name = s.name.trim();
-        if name.is_empty() { return false; }
-        
-        let sep_chars: &[char] = &['❖', '#', '═', '●', '◆', '■', '▬', '━', '─', '☆', '★', '◇', '◈', '▶', '▷'];
+        if name.is_empty() {
+            return false;
+        }
+
+        let sep_chars: &[char] = &[
+            '❖', '#', '═', '●', '◆', '■', '▬', '━', '─', '☆', '★', '◇', '◈', '▶', '▷',
+        ];
         let sep_count = name.chars().filter(|c| sep_chars.contains(c)).count();
-        if sep_count >= 2 { return false; }
-        if name.chars().all(|c| sep_chars.contains(&c) || c.is_whitespace()) { return false; }
+        if sep_count >= 2 {
+            return false;
+        }
+        if name
+            .chars()
+            .all(|c| sep_chars.contains(&c) || c.is_whitespace())
+        {
+            return false;
+        }
         true
     });
 
     if let Some(ref tx) = tx {
-        let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
-            format!("Phase 2/3: Cleaning metadata for {} streams...", streams.len())
-        ));
+        let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(format!(
+            "Phase 2/3: Cleaning metadata for {} streams...",
+            streams.len()
+        )));
     }
 
     // 1. Filter
@@ -157,22 +188,28 @@ pub fn preprocess_streams(
         if is_live {
             if use_merica {
                 s.is_american = crate::parser::is_american_live(&s.name);
-                if !s.is_american { keep = false; }
+                if !s.is_american {
+                    keep = false;
+                }
             }
             if use_all_english {
                 s.is_english = crate::parser::is_english_live(&s.name);
-                if !s.is_english { keep = false; }
+                if !s.is_english {
+                    keep = false;
+                }
             }
-            if use_sports {
-                 if !crate::parser::is_sports_content(&s.name) { keep = false; }
+            if use_sports && !crate::parser::is_sports_content(&s.name) {
+                keep = false;
             }
         } else {
             if use_merica || use_all_english {
                 s.is_english = crate::parser::is_english_vod(&s.name);
-                if !s.is_english { keep = false; }
+                if !s.is_english {
+                    keep = false;
+                }
             }
-            if use_sports {
-                 if !crate::parser::is_sports_content(&s.name) { keep = false; }
+            if use_sports && !crate::parser::is_sports_content(&s.name) {
+                keep = false;
             }
         }
         keep
@@ -181,29 +218,35 @@ pub fn preprocess_streams(
     // 2. Process (Clean names & Metadata) - Parallelized via Rayon
     use rayon::prelude::*;
     let should_clean = use_merica;
-    
+
     if let Some(ref tx) = tx {
-        let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(
-            format!("Phase 2/3: Cleaning metadata for {} streams (Multi-Core)...", streams.len())
-        ));
+        let _ = tx.try_send(crate::app::AsyncAction::LoadingMessage(format!(
+            "Phase 2/3: Cleaning metadata for {} streams (Multi-Core)...",
+            streams.len()
+        )));
     }
 
     streams.par_iter_mut().for_each(|s| {
         if should_clean {
             s.clean_name = crate::parser::clean_american_name(&s.name);
-            s.name = s.clean_name.clone(); 
+            s.name = s.clean_name.clone();
         } else {
             s.clean_name = s.name.clone();
         }
-        
+
         // Sports Mode Icon Prefixing
         if use_sports && is_live {
             if let Some(league) = s.epg_channel_id.as_ref().or(Some(&s.name)) {
                 let lower = league.to_lowercase();
-                if lower.contains("nba") { s.clean_name = format!("🏀 {}", s.clean_name); }
-                else if lower.contains("nfl") { s.clean_name = format!("🏈 {}", s.clean_name); }
-                else if lower.contains("mlb") { s.clean_name = format!("⚾ {}", s.clean_name); }
-                else if lower.contains("nhl") { s.clean_name = format!("🏒 {}", s.clean_name); }
+                if lower.contains("nba") {
+                    s.clean_name = format!("🏀 {}", s.clean_name);
+                } else if lower.contains("nfl") {
+                    s.clean_name = format!("🏈 {}", s.clean_name);
+                } else if lower.contains("mlb") {
+                    s.clean_name = format!("⚾ {}", s.clean_name);
+                } else if lower.contains("nhl") {
+                    s.clean_name = format!("🏒 {}", s.clean_name);
+                }
             }
         }
 
@@ -216,14 +259,14 @@ pub fn preprocess_streams(
             s.cached_parsed = Some(Box::new(crate::parser::parse_stream(&s.name, None)));
         }
     });
-    
+
     // 3. Sort - Zero-Copy Architectural Pattern
     streams.sort_by(|a, b| {
         let a_id = get_id_str(&a.stream_id);
         let b_id = get_id_str(&b.stream_id);
         let a_fav = favorites.contains(&a_id);
         let b_fav = favorites.contains(&b_id);
-        
+
         // Tier 1: Favorites Hoisting
         match (a_fav, b_fav) {
             (true, false) => return std::cmp::Ordering::Less,

@@ -729,9 +729,7 @@ impl App {
                         if !crate::parser::is_american_live(&c.category_name) {
                             return false;
                         }
-                    } else if use_all_english
-                        && !crate::parser::is_english_live(&c.category_name)
-                    {
+                    } else if use_all_english && !crate::parser::is_english_live(&c.category_name) {
                         return false;
                     }
 

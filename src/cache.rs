@@ -16,9 +16,9 @@ const CACHE_VERSION: u32 = 1;
 #[derive(Serialize, Deserialize)]
 pub struct CachedCatalog {
     pub version: u32,
-    pub cached_at: u64,            // Unix timestamp (seconds)
+    pub cached_at: u64, // Unix timestamp (seconds)
     pub account_name: String,
-    pub account_url: String,       // To detect if provider changed
+    pub account_url: String, // To detect if provider changed
 
     // Pre-preprocessed data (already filtered by active modes at cache time)
     pub processing_modes: Vec<ProcessingMode>,

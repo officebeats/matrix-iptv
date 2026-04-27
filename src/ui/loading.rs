@@ -1,3 +1,5 @@
+use crate::app::App;
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -5,8 +7,6 @@ use ratatui::{
     widgets::{Block, Borders, Clear, Paragraph},
     Frame,
 };
-use crate::app::App;
-use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
 
 pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
     if !app.state_loading {
@@ -16,8 +16,8 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
     // Subtle overlay across the background
     let row = "░".repeat(area.width as usize);
     let lines = vec![Line::from(row.as_str()); area.height as usize];
-    let dim_paragraph = Paragraph::new(lines)
-        .style(Style::default().fg(Color::DarkGray).bg(Color::Rgb(0, 0, 0)));
+    let dim_paragraph =
+        Paragraph::new(lines).style(Style::default().fg(Color::DarkGray).bg(Color::Rgb(0, 0, 0)));
     f.render_widget(dim_paragraph, area);
 
     // Perfectly fitted fixed-height modal popup
@@ -26,7 +26,11 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
 
     // Dynamic title: show % when progress is available
     let title = if let Some(ref progress) = app.loading_progress {
-        let pct = if progress.total > 0 { (progress.current * 100) / progress.total } else { 0 };
+        let pct = if progress.total > 0 {
+            (progress.current * 100) / progress.total
+        } else {
+            0
+        };
         format!(" loading  {}% ", pct)
     } else {
         " loading ".to_string()
@@ -37,7 +41,12 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
         .borders(Borders::ALL)
         .border_set(border::ROUNDED)
         .border_style(Style::default().fg(MATRIX_GREEN))
-        .title(Span::styled(title, Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)))
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        ))
         .title_alignment(Alignment::Center)
         .style(Style::default().bg(Color::Rgb(0, 0, 0)));
 
@@ -58,7 +67,12 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
     let tick = app.loading_tick;
 
     // Matrix style Katakana spinner and decoding effect
-    let katakana = ['ｦ', 'ｧ', 'ｨ', 'ｩ', 'ｪ', 'ｫ', 'ｬ', 'ｭ', 'ｮ', 'ｯ', 'ｰ', 'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ｶ', 'ｷ', 'ｸ', 'ｹ', 'ｺ', 'ｻ', 'ｼ', 'ｽ', 'ｾ', 'ｿ', 'ﾀ', 'ﾁ', 'ﾂ', 'ﾃ', 'ﾄ', 'ﾅ', 'ﾆ', 'ﾇ', 'ﾈ', 'ﾉ', 'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ', 'ﾎ', 'ﾏ', 'ﾐ', 'ﾑ', 'ﾒ', 'ﾓ', 'ﾔ', 'ﾕ', 'ﾖ', 'ﾗ', 'ﾘ', 'ﾙ', 'ﾚ', 'ﾛ', 'ﾜ', 'ﾝ'];
+    let katakana = [
+        'ｦ', 'ｧ', 'ｨ', 'ｩ', 'ｪ', 'ｫ', 'ｬ', 'ｭ', 'ｮ', 'ｯ', 'ｰ', 'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ｶ', 'ｷ',
+        'ｸ', 'ｹ', 'ｺ', 'ｻ', 'ｼ', 'ｽ', 'ｾ', 'ｿ', 'ﾀ', 'ﾁ', 'ﾂ', 'ﾃ', 'ﾄ', 'ﾅ', 'ﾆ', 'ﾇ', 'ﾈ', 'ﾉ',
+        'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ', 'ﾎ', 'ﾏ', 'ﾐ', 'ﾑ', 'ﾒ', 'ﾓ', 'ﾔ', 'ﾕ', 'ﾖ', 'ﾗ', 'ﾘ', 'ﾙ', 'ﾚ', 'ﾛ',
+        'ﾜ', 'ﾝ',
+    ];
     let spinner = katakana[(tick as usize) % katakana.len()];
 
     let glitch_len = 8;
@@ -68,34 +82,67 @@ pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
         glitch_str.push(katakana[char_idx]);
     }
 
-    let current_msg = app.loading_message.as_deref().unwrap_or("Initializing system...");
+    let current_msg = app
+        .loading_message
+        .as_deref()
+        .unwrap_or("Initializing system...");
 
     // ── Hero line ─────────────────────────────────────────────
     // Matrix style: Katakana spinner + Message + Glitch decoding tail
     let hero = Paragraph::new(Line::from(vec![
-        Span::styled(format!("{} ", spinner), Style::default().fg(Color::Rgb(200, 255, 200)).add_modifier(Modifier::BOLD)),
-        Span::styled(current_msg, Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
-        Span::styled(format!(" [{}]", glitch_str), Style::default().fg(MATRIX_GREEN)),
+        Span::styled(
+            format!("{} ", spinner),
+            Style::default()
+                .fg(Color::Rgb(200, 255, 200))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            current_msg,
+            Style::default()
+                .fg(TEXT_PRIMARY)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" [{}]", glitch_str),
+            Style::default().fg(MATRIX_GREEN),
+        ),
     ]));
     f.render_widget(hero, chunks[0]);
 
     // ── Progress bar ──────────────────────────────────────────
     if let Some(ref progress) = app.loading_progress {
-        let pct = if progress.total > 0 { (progress.current * 100) / progress.total } else { 0 };
+        let pct = if progress.total > 0 {
+            (progress.current * 100) / progress.total
+        } else {
+            0
+        };
         // Dynamic bar width: pad to fit inside border margins
-        let bar_width = (popup_area.width as usize).saturating_sub(22).max(10).min(40);
+        let bar_width = (popup_area.width as usize).saturating_sub(22).clamp(10, 40);
         let filled = (pct * bar_width) / 100;
         let empty = bar_width.saturating_sub(filled);
         let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
 
-        let eta_str = progress.eta.as_ref().map(|d| {
-            let secs = d.as_secs();
-            if secs >= 60 { format!("{}m {}s", secs / 60, secs % 60) } else { format!("{}s", secs) }
-        }).unwrap_or_else(|| "…".to_string());
+        let eta_str = progress
+            .eta
+            .as_ref()
+            .map(|d| {
+                let secs = d.as_secs();
+                if secs >= 60 {
+                    format!("{}m {}s", secs / 60, secs % 60)
+                } else {
+                    format!("{}s", secs)
+                }
+            })
+            .unwrap_or_else(|| "…".to_string());
 
         let bar_line = Paragraph::new(Line::from(vec![
             Span::styled(format!("[{}]", bar), Style::default().fg(SOFT_GREEN)),
-            Span::styled(format!("  {:>3}%", pct), Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                format!("  {:>3}%", pct),
+                Style::default()
+                    .fg(TEXT_PRIMARY)
+                    .add_modifier(Modifier::BOLD),
+            ),
             Span::styled(
                 format!("  {}/{}", progress.current, progress.total),
                 Style::default().fg(TEXT_SECONDARY),

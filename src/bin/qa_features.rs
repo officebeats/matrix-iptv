@@ -35,7 +35,10 @@ fn main() {
             Ok(config) => {
                 let has_timestamps = config.accounts.iter().all(|a| a.last_refreshed.is_some());
                 if has_timestamps && !config.accounts.is_empty() {
-                    println!("✅ PASS ({} accounts with timestamps)", config.accounts.len());
+                    println!(
+                        "✅ PASS ({} accounts with timestamps)",
+                        config.accounts.len()
+                    );
                     passed += 1;
                 } else if config.accounts.is_empty() {
                     println!("⚠️ SKIP (no accounts configured)");
@@ -58,10 +61,10 @@ fn main() {
         let fresh = now - (12 * 3600); // 12 hours ago
         let stale = now - (48 * 3600); // 48 hours ago
         let threshold = 24i64;
-        
+
         let is_fresh_ok = (now - fresh) <= (threshold * 3600);
         let is_stale_ok = (now - stale) > (threshold * 3600);
-        
+
         if is_fresh_ok && is_stale_ok {
             println!("✅ PASS (fresh=12h OK, stale=48h detected)");
             passed += 1;
@@ -98,7 +101,10 @@ fn main() {
     {
         let mut config = AppConfig::default();
         let idx = config.create_group("Sports".to_string(), Some("⚽".to_string()));
-        if idx == 0 && config.favorites.groups.len() == 1 && config.favorites.groups[0].name == "Sports" {
+        if idx == 0
+            && config.favorites.groups.len() == 1
+            && config.favorites.groups[0].name == "Sports"
+        {
             println!("✅ PASS (created at index {})", idx);
             passed += 1;
         } else {
@@ -114,12 +120,15 @@ fn main() {
         config.create_group("News".to_string(), None);
         config.add_to_group(0, "stream_123".to_string());
         config.add_to_group(0, "stream_456".to_string());
-        
+
         if config.favorites.groups[0].stream_ids.len() == 2 {
             println!("✅ PASS (2 streams added)");
             passed += 1;
         } else {
-            println!("❌ FAIL (got {} streams)", config.favorites.groups[0].stream_ids.len());
+            println!(
+                "❌ FAIL (got {} streams)",
+                config.favorites.groups[0].stream_ids.len()
+            );
             failed += 1;
         }
     }
@@ -131,7 +140,7 @@ fn main() {
         config.create_group("Movies".to_string(), None);
         config.add_to_group(0, "stream_123".to_string());
         config.add_to_group(0, "stream_123".to_string()); // Duplicate
-        
+
         if config.favorites.groups[0].stream_ids.len() == 1 {
             println!("✅ PASS (duplicate rejected)");
             passed += 1;
@@ -149,9 +158,10 @@ fn main() {
         config.add_to_group(0, "stream_a".to_string());
         config.add_to_group(0, "stream_b".to_string());
         config.remove_from_group(0, "stream_a");
-        
-        if config.favorites.groups[0].stream_ids.len() == 1 
-           && config.favorites.groups[0].stream_ids[0] == "stream_b" {
+
+        if config.favorites.groups[0].stream_ids.len() == 1
+            && config.favorites.groups[0].stream_ids[0] == "stream_b"
+        {
             println!("✅ PASS");
             passed += 1;
         } else {
@@ -167,7 +177,7 @@ fn main() {
         config.create_group("Group1".to_string(), None);
         config.create_group("Group2".to_string(), None);
         config.delete_group(0);
-        
+
         if config.favorites.groups.len() == 1 && config.favorites.groups[0].name == "Group2" {
             println!("✅ PASS");
             passed += 1;
@@ -183,7 +193,7 @@ fn main() {
         let mut config = AppConfig::default();
         config.create_group("OldName".to_string(), None);
         config.rename_group(0, "NewName".to_string());
-        
+
         if config.favorites.groups[0].name == "NewName" {
             println!("✅ PASS");
             passed += 1;
