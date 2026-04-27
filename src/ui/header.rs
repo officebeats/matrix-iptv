@@ -170,7 +170,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(tabs, left_inner);
 
     // System/Account Info Context
-    if let Some(_) = &app.session.current_client {
+    if app.session.current_client.is_some() {
         let name = app
             .config
             .accounts

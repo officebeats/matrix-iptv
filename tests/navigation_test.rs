@@ -344,7 +344,7 @@ async fn test_series_episodes_page_navigation() {
         app.series_episodes
             .push(matrix_iptv_lib::api::SeriesEpisode {
                 id: Some(FlexId::from_number(i as i64)),
-                episode_num: i as i32,
+                episode_num: i,
                 title: Some(format!("Episode {}", i)),
                 container_extension: Some("mp4".to_string()),
                 info: None,

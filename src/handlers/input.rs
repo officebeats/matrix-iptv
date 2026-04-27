@@ -372,10 +372,12 @@ pub async fn handle_key_event(
                 }
                 #[cfg(not(feature = "chromecast"))]
                 {
-                    let _ = tx.send(AsyncAction::CastFailed(
-                        "Chromecast support not enabled. Rebuild with --features chromecast"
-                            .to_string(),
-                    ));
+                    let _ = tx
+                        .send(AsyncAction::CastFailed(
+                            "Chromecast support not enabled. Rebuild with --features chromecast"
+                                .to_string(),
+                        ))
+                        .await;
                 }
             }
             KeyCode::Enter => {
@@ -410,11 +412,12 @@ pub async fn handle_key_event(
     }
 
     // Priority 5: Global Error Overlay Dismissal
-    if app.login_error.is_some() && app.current_screen != CurrentScreen::Login {
-        if key.code == KeyCode::Esc {
-            app.login_error = None;
-            return Ok(InputResult::Continue);
-        }
+    if app.login_error.is_some()
+        && app.current_screen != CurrentScreen::Login
+        && key.code == KeyCode::Esc
+    {
+        app.login_error = None;
+        return Ok(InputResult::Continue);
     }
 
     // GLOBAL KEYS
@@ -478,31 +481,30 @@ pub async fn handle_key_event(
         }
 
         // Quick Mode Switch
-        if matches!(key.code, KeyCode::Char('m') | KeyCode::Char('M')) {
-            if app.current_screen != CurrentScreen::Settings
-                || app.settings_state != SettingsState::PlaylistModeSelection
-            {
-                if app.current_screen != CurrentScreen::Settings {
-                    app.previous_screen = Some(app.current_screen.clone());
-                }
-                app.current_screen = CurrentScreen::Settings;
-                app.settings_state = SettingsState::PlaylistModeSelection;
-
-                // Pre-select: 0 = "None" when no modes active, else first active mode (offset +1)
-                let modes = crate::config::ProcessingMode::all();
-                let idx = if app.config.processing_modes.is_empty() {
-                    0
-                } else {
-                    app.config
-                        .processing_modes
-                        .first()
-                        .and_then(|fm| modes.iter().position(|m| m == fm))
-                        .map(|i| i + 1)
-                        .unwrap_or(0)
-                };
-                app.playlist_mode_list_state.select(Some(idx));
-                return Ok(InputResult::Continue);
+        if matches!(key.code, KeyCode::Char('m') | KeyCode::Char('M'))
+            && (app.current_screen != CurrentScreen::Settings
+                || app.settings_state != SettingsState::PlaylistModeSelection)
+        {
+            if app.current_screen != CurrentScreen::Settings {
+                app.previous_screen = Some(app.current_screen.clone());
             }
+            app.current_screen = CurrentScreen::Settings;
+            app.settings_state = SettingsState::PlaylistModeSelection;
+
+            // Pre-select: 0 = "None" when no modes active, else first active mode (offset +1)
+            let modes = crate::config::ProcessingMode::all();
+            let idx = if app.config.processing_modes.is_empty() {
+                0
+            } else {
+                app.config
+                    .processing_modes
+                    .first()
+                    .and_then(|fm| modes.iter().position(|m| m == fm))
+                    .map(|i| i + 1)
+                    .unwrap_or(0)
+            };
+            app.playlist_mode_list_state.select(Some(idx));
+            return Ok(InputResult::Continue);
         }
     }
 
@@ -1799,7 +1801,7 @@ pub async fn handle_key_event(
                         app.jump_to_category_top();
                     }
                     KeyCode::Char('1') => {
-                        if app.vod_categories.len() > 0 {
+                        if !app.vod_categories.is_empty() {
                             app.selected_vod_category_index = 0;
                             app.vod_category_list_state.select(Some(0));
                         }
@@ -2025,7 +2027,7 @@ pub async fn handle_key_event(
                         app.jump_to_vod_top();
                     }
                     KeyCode::Char('1') => {
-                        if app.vod_streams.len() > 0 {
+                        if !app.vod_streams.is_empty() {
                             app.selected_vod_stream_index = 0;
                             app.vod_stream_list_state.select(Some(0));
                         }
@@ -2184,7 +2186,7 @@ pub async fn handle_key_event(
                         app.jump_to_category_top();
                     }
                     KeyCode::Char('1') => {
-                        if app.series_categories.len() > 0 {
+                        if !app.series_categories.is_empty() {
                             app.selected_series_category_index = 0;
                             app.series_category_list_state.select(Some(0));
                         }
@@ -2512,11 +2514,8 @@ pub async fn handle_key_event(
                                 let episode =
                                     &app.series_episodes[app.selected_series_episode_index];
                                 if let Some(client) = &app.session.current_client {
-                                    let id = episode
-                                        .id
-                                        .as_ref()
-                                        .map(|v| get_id_str(v))
-                                        .unwrap_or_default();
+                                    let id =
+                                        episode.id.as_ref().map(get_id_str).unwrap_or_default();
                                     if !id.is_empty() {
                                         let ext =
                                             episode.container_extension.as_deref().unwrap_or("mp4");
@@ -2607,11 +2606,8 @@ pub async fn handle_key_event(
                                 let episode =
                                     &app.series_episodes[app.selected_series_episode_index];
                                 if let Some(client) = &app.session.current_client {
-                                    let id = episode
-                                        .id
-                                        .as_ref()
-                                        .map(|v| get_id_str(v))
-                                        .unwrap_or_default();
+                                    let id =
+                                        episode.id.as_ref().map(get_id_str).unwrap_or_default();
                                     if !id.is_empty() {
                                         let ext =
                                             episode.container_extension.as_deref().unwrap_or("mp4");
@@ -3540,9 +3536,9 @@ pub async fn handle_key_event(
                     } else {
                         let i = match app.sports_list_state.selected() {
                             Some(i) => {
-                                if app.sports_matches.is_empty() {
-                                    0
-                                } else if i >= app.sports_matches.len() - 1 {
+                                if app.sports_matches.is_empty()
+                                    || i >= app.sports_matches.len() - 1
+                                {
                                     0
                                 } else {
                                     i + 1

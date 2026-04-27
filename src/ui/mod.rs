@@ -120,7 +120,7 @@ pub fn ui(f: &mut Frame, app: &mut App) {
         let screen_changed = app
             .transition_last_screen
             .as_ref()
-            .map_or(true, |s| *s != app.current_screen);
+            .is_none_or(|s| *s != app.current_screen);
         if screen_changed && !app.show_matrix_rain {
             app.transition_last_screen = Some(app.current_screen.clone());
             let effect = fx::sweep_in(

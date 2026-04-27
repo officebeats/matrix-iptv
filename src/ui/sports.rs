@@ -67,7 +67,7 @@ fn render_sports_categories_pane(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .highlight_symbol(" ▎");
 
-    let mut state = app.sports_category_list_state.clone();
+    let mut state = app.sports_category_list_state;
     state.select(Some(selected - start));
     f.render_stateful_widget(list, inner_area, &mut state);
 }
@@ -156,7 +156,7 @@ fn render_sports_matches_pane(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .highlight_symbol(" ▎");
 
-    let mut state = app.sports_list_state.clone();
+    let mut state = app.sports_list_state;
     state.select(Some(selected - start));
     f.render_stateful_widget(list, inner_area, &mut state);
 }

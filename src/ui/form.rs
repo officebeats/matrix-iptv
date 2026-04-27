@@ -198,7 +198,7 @@ fn render_input<'a>(
         value.to_string()
     };
 
-    if is_active && is_editing && (tick / 15) % 2 == 0 {
+    if is_active && is_editing && (tick / 15).is_multiple_of(2) {
         if cursor_pos >= display_value.len() {
             display_value.push('█');
         } else {
@@ -234,6 +234,7 @@ fn render_input<'a>(
 }
 
 /// Helper to render a settings sub-screen with list + description + hints
+#[allow(clippy::too_many_arguments)]
 fn render_settings_subscreen(
     f: &mut Frame,
     area: Rect,
@@ -522,7 +523,7 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             );
         }
         SettingsState::VideoModeSelection => {
-            let modes = vec![
+            let modes = [
                 (
                     "Enhanced",
                     "Interpolation, upscaling, soap opera effect for smoother video",
@@ -705,7 +706,7 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
             );
         }
         SettingsState::AutoRefreshSelection => {
-            let intervals = vec![
+            let intervals = [
                 ("Disabled", "Never auto-refresh playlist data on login"),
                 (
                     "Every 6 hours",
@@ -785,7 +786,7 @@ pub fn render_category_management(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     // Tabs for Content Type
-    let tabs = vec!["Live TV", "Movies", "Series"];
+    let tabs = ["Live TV", "Movies", "Series"];
     let tab_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

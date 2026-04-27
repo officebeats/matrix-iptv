@@ -741,7 +741,7 @@ impl XtreamClient {
 
                         if let Some(total) = total_size {
                             let percent = ((downloaded as f64 / total as f64) * 100.0) as usize;
-                            if percent > last_percent && percent % 2 == 0 {
+                            if percent > last_percent && percent.is_multiple_of(2) {
                                 last_percent = percent;
                                 if let Some(ref sender) = tx {
                                     let bytes_mb = downloaded as f64 / 1_048_576.0;
@@ -1506,9 +1506,9 @@ impl M3uClient {
         while i < lines.len() {
             let line = lines[i].trim();
 
-            if line.starts_with("#EXTINF:") {
+            if let Some(extinf) = line.strip_prefix("#EXTINF:") {
                 // Parse the EXTINF line for metadata
-                let extinf = &line[8..]; // Skip "#EXTINF:"
+                // Skip "#EXTINF:"
 
                 // Extract group-title
                 let group = Self::extract_attribute(extinf, "group-title")

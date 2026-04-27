@@ -3,17 +3,12 @@ use std::fmt;
 
 /// A flexible ID type that can deserialize from number, string, or null
 /// This handles inconsistent API responses from IPTV providers
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum FlexId {
     Number(i64),
     String(String),
+    #[default]
     Null,
-}
-
-impl Default for FlexId {
-    fn default() -> Self {
-        FlexId::Null
-    }
 }
 
 impl FlexId {

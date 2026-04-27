@@ -1,5 +1,4 @@
 use matrix_iptv_lib::config::AppConfig;
-use tokio;
 
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -14,7 +13,7 @@ async fn main() -> Result<(), anyhow::Error> {
         )
     } else {
         let config = AppConfig::load()?;
-        if let Some(acc) = config.accounts.get(0) {
+        if let Some(acc) = config.accounts.first() {
             (
                 acc.base_url.clone(),
                 acc.username.clone(),

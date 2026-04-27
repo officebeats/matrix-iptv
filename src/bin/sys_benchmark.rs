@@ -14,25 +14,29 @@ async fn main() {
     println!("Generating mock data...");
     let mut streams = Vec::new();
     for i in 0..50000 {
-        let mut s = Stream::default();
-        s.num = Some(FlexId::from_number((i % 1000) as i64));
-        // Use "USA | NFL" to pass both is_american_live and is_sports_content
-        s.name = format!("USA | NFL: Game Title {} (2024) [4K]", i);
-        s.stream_id = FlexId::from_number(i as i64);
-        s.epg_channel_id = Some("NFL.HD".to_string());
-        s.category_id = Some("1".to_string());
-        s.container_extension = Some("mkv".to_string());
-        s.rating = Some(4.5);
-        s.stream_type = "live".to_string();
+        // Use "USA | NFL" to pass both is_american_live and is_sports_content.
+        let s = Stream {
+            num: Some(FlexId::from_number((i % 1000) as i64)),
+            name: format!("USA | NFL: Game Title {} (2024) [4K]", i),
+            stream_id: FlexId::from_number(i as i64),
+            epg_channel_id: Some("NFL.HD".to_string()),
+            category_id: Some("1".to_string()),
+            container_extension: Some("mkv".to_string()),
+            rating: Some(4.5),
+            stream_type: "live".to_string(),
+            ..Default::default()
+        };
         streams.push(s);
     }
 
     let mut categories = Vec::new();
     for i in 0..1000 {
-        let mut c = Category::default();
-        c.category_id = i.to_string();
-        c.category_name = format!("VIP | US | Action Movies {}", i);
-        c.parent_id = FlexId::from_number(0);
+        let c = Category {
+            category_id: i.to_string(),
+            category_name: format!("VIP | US | Action Movies {}", i),
+            parent_id: FlexId::from_number(0),
+            ..Default::default()
+        };
         categories.push(c);
     }
 

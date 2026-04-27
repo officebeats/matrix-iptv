@@ -34,7 +34,7 @@ pub fn get_loading_status_line(app: &App) -> Option<Line<'static>> {
     ));
 
     if let Some(pct) = panel.percent {
-        let bar_width = 12usize.min(20).max(8);
+        let bar_width = 12usize;
         let filled = (pct * bar_width) / 100;
         let empty = bar_width.saturating_sub(filled);
         let bar = format!(

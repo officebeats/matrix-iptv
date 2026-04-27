@@ -1,8 +1,8 @@
-/// DNS-over-HTTPS fallback utility.
-///
-/// Extracts the hostname from a URL, queries multiple DoH providers for an A record,
-/// and attempts to reconnect using the resolved IP. Only works for plain HTTP — HTTPS
-/// will fail due to TLS SNI mismatch so we skip the retry in that case.
+//! DNS-over-HTTPS fallback utility.
+//!
+//! Extracts the hostname from a URL, queries multiple DoH providers for an A record,
+//! and attempts to reconnect using the resolved IP. Only works for plain HTTP — HTTPS
+//! will fail due to TLS SNI mismatch so we skip the retry in that case.
 
 /// Attempt to resolve DNS via DoH and retry the request.
 /// Returns `Some(Response)` if a DoH provider resolves and the retry succeeds.

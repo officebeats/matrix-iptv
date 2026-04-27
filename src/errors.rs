@@ -148,7 +148,8 @@ impl IptvError {
                 )
             }
             IptvError::IspBlock => {
-                format!("ISP Block Detected\nSuggestion: Disable AT&T Home Network Security or use a VPN")
+                "ISP Block Detected\nSuggestion: Disable AT&T Home Network Security or use a VPN"
+                    .to_string()
             }
             IptvError::Generic(message) => {
                 format!("Error\nMessage: {}\nSuggestion: Try again", message)

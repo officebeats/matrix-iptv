@@ -103,6 +103,12 @@ impl PlaybackError {
     }
 }
 
+impl Default for Player {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Player {
     pub fn new() -> Self {
         #[cfg(not(target_arch = "wasm32"))]
@@ -205,7 +211,7 @@ impl Player {
     /// Extract base URL without extension for format fallback
     #[cfg(not(target_arch = "wasm32"))]
     fn extract_stream_base_url(&self, url: &str) -> Option<String> {
-        let base = url.rsplit('.').last()?;
+        let base = url.rsplit('.').next_back()?;
         let formats = ["ts", "m3u8", "mp4", "json"];
         if formats.contains(&base) {
             let pos = url.len() - base.len() - 1;
@@ -631,8 +637,7 @@ impl Player {
     /// Windows stub for read_ipc_socket
     #[cfg(all(not(target_arch = "wasm32"), target_os = "windows"))]
     async fn read_ipc_socket(&self, _path: &PathBuf) -> Result<String, std::io::Error> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        Err(std::io::Error::other(
             "Unix sockets not available on Windows",
         ))
     }

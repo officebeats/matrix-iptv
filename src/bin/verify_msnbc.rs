@@ -6,7 +6,7 @@ async fn main() -> Result<(), anyhow::Error> {
     let config = AppConfig::load()?;
     let acc = config
         .accounts
-        .get(0)
+        .first()
         .ok_or_else(|| anyhow::anyhow!("No active account found"))?;
 
     println!("📡 Fetching Live Channels for account: {}", acc.name);
@@ -99,7 +99,7 @@ async fn main() -> Result<(), anyhow::Error> {
         println!("✅ Stream URL is reachable (Status: {})", resp.status());
         let bytes = resp.bytes().await?;
         println!("📦 Stream content size: {} bytes", bytes.len());
-        if bytes.len() > 0 {
+        if !bytes.is_empty() {
             println!("🚀 Playback verified: Stream is providing data!");
         } else {
             println!("⚠️ Stream is reachable but returned 0 bytes.");

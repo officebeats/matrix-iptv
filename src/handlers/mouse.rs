@@ -350,11 +350,7 @@ pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent, tx: &mpsc::Sender<As
 
                             let episode = &app.series_episodes[app.selected_series_episode_index];
                             if let Some(client) = &app.session.current_client {
-                                let id = episode
-                                    .id
-                                    .as_ref()
-                                    .map(|v| get_id_str(v))
-                                    .unwrap_or_default();
+                                let id = episode.id.as_ref().map(get_id_str).unwrap_or_default();
                                 if !id.is_empty() {
                                     let ext =
                                         episode.container_extension.as_deref().unwrap_or("mp4");
@@ -396,9 +392,9 @@ pub fn handle_mouse_event(app: &mut App, mouse: MouseEvent, tx: &mpsc::Sender<As
                                         .await;
                                 } else {
                                     let _ = tx_cloned
-                                        .send(crate::app::AsyncAction::Error(format!(
-                                            "Failed to load sports"
-                                        )))
+                                        .send(crate::app::AsyncAction::Error(
+                                            "Failed to load sports".to_string(),
+                                        ))
                                         .await;
                                 }
                             });

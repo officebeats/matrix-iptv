@@ -282,8 +282,7 @@ fn matches_foreign(name_upper: &str) -> bool {
     // 2. Country code structural match (e.g., "AR |", "|AR|", " AR ")
     for code in FOREIGN_COUNTRY_CODES.iter() {
         // "XX |" or "XX|" prefix
-        if name_upper.starts_with(code) {
-            let rest = &name_upper[code.len()..];
+        if let Some(rest) = name_upper.strip_prefix(code) {
             if rest.starts_with(" |")
                 || rest.starts_with("|")
                 || rest.starts_with(" :")
@@ -366,6 +365,15 @@ static CLEAN_SUFFIXES: Lazy<Regex> = Lazy::new(|| {
 static CLEAN_BRACKETS_GARBAGE: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"(?i)\s*[\(\[]\s*(?:ET|UK|BST|CET|MEZ|EST|EDT|PT|PST|PDT|CT|CST|CDT|GMT|UTC|HD|BK|SD|FHD|4K|UHD|HQ|EVENT\s+ONLY|LIVE\s+NOW|LIVE|REPLAY|HITS|RAW|MULTI-AUDIO|MULTISUB|MULTILANG|MULTIAUDIO|MULTI)\s*[\)\]]").unwrap()
 });
+
+static CLEAN_EVENT_DAY_PREFIX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)^(MNF|TNF|SNF|SLING|S)(?:\s*[:|-]\s*|\s+)").unwrap());
+static CLEAN_LEAGUE_PREFIX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[:|-]\s*|\s+\d)").unwrap());
+static CLEAN_GENERIC_PREFIX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)^([A-Z0-9/]{1,7})(?:\s*[|:-]\s*|\s+)").unwrap());
+static CLEAN_LEAGUE_SEPARATOR_PREFIX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[|:-]\s*|\s+\d)").unwrap());
 
 /// VOD-specific foreign keywords for is_english_vod check.
 /// Uses HashSet for O(1) lookup instead of regex.
@@ -681,8 +689,8 @@ pub fn clean_american_name(name: &str) -> String {
 
     // Extra cleanup for leading/trailing colons and dots
     let cleaned_str = cleaned
-        .trim_start_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
-        .trim_end_matches(|c: char| c == ':' || c == '.' || c == '|' || c == '-' || c == ' ')
+        .trim_start_matches([':', '.', '|', '-', ' '])
+        .trim_end_matches([':', '.', '|', '-', ' '])
         .trim();
 
     if cleaned_str.is_empty() {
@@ -899,12 +907,10 @@ pub fn parse_category(name: &str) -> ParsedCategory {
                 "NBA", "NFL", "MLB", "NHL", "UFC", "MLS", "NCAAF", "NCAAB", "PPV",
             ]
             .contains(&code);
-            let has_separator = display_name
-                .find(|c| c == '|' || c == ':' || c == '-')
-                .is_some();
+            let has_separator = display_name.find(['|', ':', '-']).is_some();
 
             if !is_league || has_separator {
-                if let Some(pos) = display_name.find(|c| c == '|' || c == ':' || c == '-') {
+                if let Some(pos) = display_name.find(['|', ':', '-']) {
                     display_name = display_name[pos + 1..].trim().to_string();
                 } else if let Some(pos) = display_name.find(' ') {
                     display_name = display_name[pos + 1..].trim().to_string();
@@ -1109,16 +1115,15 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
 
         // Remove "MNF", "TNF", "SNF" game day labels AND league prefixes ONLY when followed by separator or number
         // We want to keep "NBA TV" intact but strip "NBA | Game" or "NBA 01: Something"
-        let re_mnf = Regex::new(r"(?i)^(MNF|TNF|SNF|SLING|S)(?:\s*[:|-]\s*|\s+)").unwrap();
-        if re_mnf.is_match(&display_name) {
-            display_name = re_mnf.replace(&display_name, "").to_string();
+        if CLEAN_EVENT_DAY_PREFIX.is_match(&display_name) {
+            display_name = CLEAN_EVENT_DAY_PREFIX
+                .replace(&display_name, "")
+                .to_string();
             clean_loop = true;
         }
         // Strip league prefix ONLY if followed by separator (:|) or number, NOT regular words like "TV"
-        let re_league_prefix =
-            Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[:|-]\s*|\s+\d)").unwrap();
-        if re_league_prefix.is_match(&display_name) {
-            display_name = re_league_prefix.replace(&display_name, "").to_string();
+        if CLEAN_LEAGUE_PREFIX.is_match(&display_name) {
+            display_name = CLEAN_LEAGUE_PREFIX.replace(&display_name, "").to_string();
             clean_loop = true;
         }
 
@@ -1140,22 +1145,7 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         let suffix = display_name[idx + 1..].trim();
         // If the suffix is significant (more than just quality), and the prefix looks like a category/channel label, take suffix
         if suffix.len() > 5 && !suffix.chars().all(|c| c.is_numeric() || c == ' ') {
-            // Heuristic: If suffix starts with a digit and "x" or "vs", it's likely the event part "01 x Team"
-            // And the prefix is just channel spam.
-            let re_event_start = Regex::new(r"(?i)^\d+\s*(x|vs|at|-)\s+").unwrap();
-            if re_event_start.is_match(suffix) {
-                display_name = suffix.to_string();
-            }
-            // Heuristic 2: If the part after contains " x " or " vs "
-            else if (suffix.to_uppercase().contains(" VS ")
-                || suffix.to_uppercase().contains(" X ")
-                || suffix.to_uppercase().contains(" AT "))
-                && suffix.len() > 5
-            {
-                display_name = suffix.to_string();
-            } else {
-                display_name = suffix.to_string();
-            }
+            display_name = suffix.to_string();
         }
     }
 
@@ -1174,8 +1164,7 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
     let mut clean_loop = true;
     while clean_loop {
         clean_loop = false;
-        let re_prefix = Regex::new(r"(?i)^([A-Z0-9/]{1,7})(?:\s*[|:-]\s*|\s+)").unwrap();
-        if let Some(caps) = re_prefix.captures(&display_name) {
+        if let Some(caps) = CLEAN_GENERIC_PREFIX.captures(&display_name) {
             let code = caps.get(1).unwrap().as_str().to_uppercase();
             // Country codes that should always be stripped
             let country_codes = [
@@ -1191,21 +1180,21 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                 .to_uppercase();
 
             if country_codes.iter().any(|&c| check_name.starts_with(c)) {
-                display_name = re_prefix.replace(&display_name, "").to_string();
+                display_name = CLEAN_GENERIC_PREFIX.replace(&display_name, "").to_string();
                 // Extra trim to remove following dashes if any
                 display_name = display_name
-                    .trim_start_matches(|c: char| c == '-' || c == '|' || c == ':' || c == ' ')
+                    .trim_start_matches(['-', '|', ':', ' '])
                     .to_string();
                 clean_loop = true;
             } else if league_codes.contains(&code.as_str()) {
                 // For leagues, only strip if followed by separator (: | -) or number, NOT regular words
-                let re_league =
-                    Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[|:-]\s*|\s+\d)").unwrap();
-                if re_league.is_match(&display_name) {
+                if CLEAN_LEAGUE_SEPARATOR_PREFIX.is_match(&display_name) {
                     if country.is_none() {
                         country = Some(code);
                     }
-                    display_name = re_league.replace(&display_name, "").to_string();
+                    display_name = CLEAN_LEAGUE_SEPARATOR_PREFIX
+                        .replace(&display_name, "")
+                        .to_string();
                     clean_loop = true;
                 }
             }
@@ -1339,16 +1328,7 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
                         }
                     } else {
                         // Heuristic: If it looks like a US League but no country prefix, default to Central
-                        if upper.contains("NFL")
-                            || upper.contains("NBA")
-                            || upper.contains("MLB")
-                            || upper.contains("NHL")
-                            || upper.contains("UFC")
-                        {
-                            chrono_tz::America::Chicago
-                        } else {
-                            chrono_tz::America::Chicago
-                        }
+                        chrono_tz::America::Chicago
                     }
                 }
             };
@@ -1856,9 +1836,9 @@ pub fn parse_movie(name: &str) -> ParsedMovie {
     ];
 
     for (pattern, lang) in lang_patterns {
-        if name.starts_with(pattern) {
+        if let Some(stripped) = name.strip_prefix(pattern) {
             language = Some(lang.to_string());
-            title = name[pattern.len()..].trim().to_string();
+            title = stripped.trim().to_string();
             break;
         }
     }
@@ -1869,7 +1849,7 @@ pub fn parse_movie(name: &str) -> ParsedMovie {
     if let Some(caps) = YEAR_REGEX.captures(&title) {
         if let Some(m) = caps.get(1) {
             if let Ok(y) = m.as_str().parse::<u16>() {
-                if y >= 1900 && y <= 2030 {
+                if (1900..=2030).contains(&y) {
                     found_year = Some(y);
                 }
             }

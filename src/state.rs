@@ -108,6 +108,7 @@ impl SessionState {
 
 /// Content state for categories and streams
 /// Used for Live channels, VOD movies, and Series
+#[derive(Default)]
 pub struct ContentState {
     /// All categories (unfiltered)
     pub all_categories: Vec<Arc<Category>>,
@@ -129,23 +130,6 @@ pub struct ContentState {
     pub category_channel_counts: HashMap<String, usize>,
     /// EPG data cache (Live only)
     pub epg_cache: HashMap<String, String>,
-}
-
-impl Default for ContentState {
-    fn default() -> Self {
-        Self {
-            all_categories: Vec::new(),
-            categories: Vec::new(),
-            selected_category_index: 0,
-            category_list_state: ListState::default(),
-            all_streams: Vec::new(),
-            streams: Vec::new(),
-            selected_stream_index: 0,
-            stream_list_state: ListState::default(),
-            category_channel_counts: HashMap::new(),
-            epg_cache: HashMap::new(),
-        }
-    }
 }
 
 impl ContentState {
@@ -198,6 +182,7 @@ impl ContentState {
 }
 
 /// Series state extending ContentState with episode handling
+#[derive(Default)]
 pub struct SeriesState {
     /// Base content state
     pub content: ContentState,
@@ -209,18 +194,6 @@ pub struct SeriesState {
     pub series_episode_list_state: ListState,
     /// Selected series metadata
     pub current_series_info: Option<SeriesInfo>,
-}
-
-impl Default for SeriesState {
-    fn default() -> Self {
-        Self {
-            content: ContentState::default(),
-            series_episodes: Vec::new(),
-            selected_series_episode_index: 0,
-            series_episode_list_state: ListState::default(),
-            current_series_info: None,
-        }
-    }
 }
 
 impl SeriesState {
@@ -250,20 +223,12 @@ impl SeriesState {
 }
 
 /// VOD state with movie info
+#[derive(Default)]
 pub struct VodState {
     /// Base content state
     pub content: ContentState,
     /// Selected VOD metadata
     pub current_vod_info: Option<VodInfo>,
-}
-
-impl Default for VodState {
-    fn default() -> Self {
-        Self {
-            content: ContentState::default(),
-            current_vod_info: None,
-        }
-    }
 }
 
 impl VodState {
@@ -432,6 +397,7 @@ impl SportsState {
 }
 
 /// Matrix rain animation state
+#[derive(Default)]
 pub struct MatrixRainState {
     /// Animation active
     pub active: bool,
@@ -446,18 +412,6 @@ pub struct MatrixRainState {
     pub columns: Vec<MatrixColumn>,
     /// Logo pixel activation
     pub logo_hits: Vec<bool>,
-}
-
-impl Default for MatrixRainState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            start_time: None,
-            screensaver_mode: false,
-            columns: Vec::new(),
-            logo_hits: Vec::new(),
-        }
-    }
 }
 
 impl MatrixRainState {

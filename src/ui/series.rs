@@ -70,7 +70,7 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
             if let Some(mat) = re_year.find(&s.name) {
                 let year_clean = mat.as_str().replace('[', "(").replace(']', ")");
                 if !name.contains(&year_clean) {
-                    name.push_str(" ");
+                    name.push(' ');
                     name.push_str(&year_clean);
                 }
             }
@@ -134,7 +134,7 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let is_active = app.active_pane == Pane::Streams;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
     let inner_area =
-        crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
+        crate::ui::common::render_matrix_box_active(f, area, title, border_color, is_active);
 
     let list = List::new(items)
         .highlight_style(
@@ -187,7 +187,7 @@ fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let is_active = app.active_pane == Pane::Episodes;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
     let inner_area =
-        crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
+        crate::ui::common::render_matrix_box_active(f, area, title, border_color, is_active);
 
     let list = List::new(items)
         .highlight_style(
@@ -198,7 +198,7 @@ fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
         )
         .highlight_symbol(" ▎");
 
-    let mut adjusted_state = app.series_episode_list_state.clone();
+    let mut adjusted_state = app.series_episode_list_state;
     adjusted_state.select(Some(selected - start));
     f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }

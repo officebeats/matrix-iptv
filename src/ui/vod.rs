@@ -181,7 +181,7 @@ pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let is_active = app.active_pane == Pane::Streams;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
     let inner_area =
-        crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
+        crate::ui::common::render_matrix_box_active(f, area, title, border_color, is_active);
 
     let list = List::new(items)
         .highlight_style(

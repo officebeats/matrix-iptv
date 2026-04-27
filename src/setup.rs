@@ -192,15 +192,15 @@ fn find_brew() -> Option<String> {
 
     for candidate in candidates {
         let path = Path::new(candidate);
-        if path.exists() && path.is_file() {
-            if Command::new(candidate)
+        if path.exists()
+            && path.is_file()
+            && Command::new(candidate)
                 .arg("--version")
                 .output()
                 .map(|o| o.status.success())
                 .unwrap_or(false)
-            {
-                return Some(candidate.to_string());
-            }
+        {
+            return Some(candidate.to_string());
         }
     }
 
@@ -215,7 +215,7 @@ fn install_homebrew() -> Result<String, anyhow::Error> {
 
     // Run the official Homebrew installer script with NONINTERACTIVE flag
     let status = Command::new("/bin/bash")
-        .args(&[
+        .args([
             "-c",
             "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
         ])
@@ -256,9 +256,7 @@ fn install_mpv_macos() -> Result<(), anyhow::Error> {
     println!("Installing mpv via Homebrew...");
     println!("Running: {} install mpv", brew_path);
 
-    let status = Command::new(&brew_path)
-        .args(&["install", "mpv"])
-        .status()?;
+    let status = Command::new(&brew_path).args(["install", "mpv"]).status()?;
 
     if status.success() {
         println!("✓ mpv installed successfully via Homebrew.");
@@ -268,7 +266,7 @@ fn install_mpv_macos() -> Result<(), anyhow::Error> {
     // Try cask as fallback
     println!("Formula install failed, trying cask...");
     let status_cask = Command::new(&brew_path)
-        .args(&["install", "--cask", "mpv"])
+        .args(["install", "--cask", "mpv"])
         .status()?;
 
     if status_cask.success() {
@@ -287,7 +285,7 @@ fn install_mpv_windows() -> Result<(), anyhow::Error> {
     // Try installing specific ID first
     println!("Running: winget install -e --id \"9P3JFR0CLLL6\" --accept-source-agreements --accept-package-agreements");
     let status = Command::new("winget")
-        .args(&[
+        .args([
             "install",
             "-e",
             "--id",
@@ -306,7 +304,7 @@ fn install_mpv_windows() -> Result<(), anyhow::Error> {
 
     println!("Specific ID failed, trying generic 'mpv'...");
     let status_generic = Command::new("winget")
-        .args(&[
+        .args([
             "install",
             "-e",
             "mpv",
@@ -332,7 +330,7 @@ fn install_vlc_macos() -> Result<(), anyhow::Error> {
 
     println!("Installing vlc via Homebrew Cask...");
     let status = Command::new(&brew_path)
-        .args(&["install", "--cask", "vlc"])
+        .args(["install", "--cask", "vlc"])
         .status()?;
 
     if status.success() {
@@ -347,7 +345,7 @@ fn install_vlc_macos() -> Result<(), anyhow::Error> {
 fn install_vlc_windows() -> Result<(), anyhow::Error> {
     println!("Running: winget install -e --id VideoLAN.VLC --accept-source-agreements --accept-package-agreements");
     let status = Command::new("winget")
-        .args(&[
+        .args([
             "install",
             "-e",
             "--id",

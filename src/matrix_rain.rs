@@ -61,10 +61,10 @@ pub fn init_matrix_rain(area: Rect) -> Vec<MatrixColumn> {
 }
 
 pub fn update_matrix_rain(
-    columns: &mut Vec<MatrixColumn>,
+    columns: &mut [MatrixColumn],
     area: Rect,
     tick: u64,
-    logo_hits: &mut Vec<bool>,
+    logo_hits: &mut [bool],
     show_logo: bool,
 ) {
     let mut rng = rand::thread_rng();
@@ -76,26 +76,24 @@ pub fn update_matrix_rain(
 
     for column in columns.iter_mut() {
         // Update position based on speed
-        if tick % column.speed as u64 == 0 {
+        if tick.is_multiple_of(column.speed as u64) {
             column.y += 1;
 
             // Hit detection for building logo: Check the head AND the immediate trail segment
-            if show_logo {
-                if column.x >= logo_x && column.x < logo_x + logo_width {
-                    let lx = (column.x - logo_x) as usize;
-                    // Check the head and a few pixels of the tail to "paint" the logo in more solidly
-                    for i in 0..6 {
-                        // Check top 6 chars of the falling column
-                        let py = column.y.saturating_sub(i);
-                        if py >= logo_y && py < logo_y + logo_height {
-                            let ly = (py - logo_y) as usize;
-                            if let Some(line) = LOGO_LINES.get(ly) {
-                                if let Some(c) = line.chars().nth(lx) {
-                                    if c != ' ' {
-                                        let idx = ly * (logo_width as usize) + lx;
-                                        if idx < logo_hits.len() {
-                                            logo_hits[idx] = true;
-                                        }
+            if show_logo && column.x >= logo_x && column.x < logo_x + logo_width {
+                let lx = (column.x - logo_x) as usize;
+                // Check the head and a few pixels of the tail to "paint" the logo in more solidly
+                for i in 0..6 {
+                    // Check top 6 chars of the falling column
+                    let py = column.y.saturating_sub(i);
+                    if py >= logo_y && py < logo_y + logo_height {
+                        let ly = (py - logo_y) as usize;
+                        if let Some(line) = LOGO_LINES.get(ly) {
+                            if let Some(c) = line.chars().nth(lx) {
+                                if c != ' ' {
+                                    let idx = ly * (logo_width as usize) + lx;
+                                    if idx < logo_hits.len() {
+                                        logo_hits[idx] = true;
                                     }
                                 }
                             }
@@ -195,7 +193,7 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
                 if gx >= area.left() && gx < area.right() && c != ' ' {
                     if let Some(cell) = buf.cell_mut((gx, gy)) {
                         // Only draw ghosting if not already hit
-                        let idx = (ly as usize) * (logo_width as usize) + lx;
+                        let idx = ly * (logo_width as usize) + lx;
                         if app.matrix_rain_logo_hits.get(idx) != Some(&true) {
                             cell.set_char(c);
                             cell.set_style(trace_style);

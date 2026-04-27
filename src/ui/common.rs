@@ -12,6 +12,7 @@ use ratatui::{
 
 use crate::ui::utils::scrub_emojis;
 
+#[allow(clippy::too_many_arguments)]
 pub fn stylize_channel_name(
     name: &str,
     is_vip: bool,
@@ -82,12 +83,12 @@ pub fn stylize_channel_name(
 
         // Sports matchup: Home green, Away white
         spans.push(Span::styled(
-            format!("{}", event.team1),
+            event.team1.to_string(),
             base_style.fg(MATRIX_GREEN),
         ));
         spans.push(Span::styled(" vs ", Style::default().fg(TEXT_SECONDARY)));
         spans.push(Span::styled(
-            format!("{}", event.team2),
+            event.team2.to_string(),
             base_style.fg(TEXT_PRIMARY),
         ));
     } else {
@@ -160,7 +161,7 @@ pub fn stylize_channel_name(
                     }
                     val if val.ends_with("FPS") && val.len() > 3 => {
                         spans.push(Span::styled(
-                            format!("{}", val.to_lowercase()),
+                            val.to_lowercase().to_string(),
                             base_style.fg(fps_color),
                         ));
                     }
@@ -168,11 +169,11 @@ pub fn stylize_channel_name(
                         let is_year = ((sub.starts_with('(') && sub.ends_with(')'))
                             || (sub.starts_with('[') && sub.ends_with(']')))
                             && sub.len() == 6
-                            && sub[1..5].chars().all(|c| c.is_digit(10));
+                            && sub[1..5].chars().all(|c| c.is_ascii_digit());
 
                         if is_year {
                             spans.push(Span::styled(
-                                format!("{}", sub),
+                                sub.to_string(),
                                 Style::default().fg(TEXT_SECONDARY),
                             ));
                         } else {
@@ -194,7 +195,7 @@ pub fn stylize_channel_name(
                                 };
                             }
 
-                            spans.push(Span::styled(format!("{}", sub), base_style));
+                            spans.push(Span::styled(sub.to_string(), base_style));
                         }
                     }
                 }

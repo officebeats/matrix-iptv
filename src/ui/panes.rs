@@ -73,11 +73,11 @@ fn render_categories_grid(f: &mut Frame, app: &mut App, area: Rect, border_color
     let title = " categories ";
     let is_active = app.active_pane == crate::app::Pane::Categories;
     let inner_area =
-        crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
+        crate::ui::common::render_matrix_box_active(f, area, title, border_color, is_active);
 
     let max_name_len = app.session.max_category_name_len;
     let min_cell_width = (max_name_len as u16 + 10).max(14);
-    let cols = ((inner_area.width / min_cell_width) as usize).max(1).min(8);
+    let cols = ((inner_area.width / min_cell_width) as usize).clamp(1, 8);
     app.grid_cols = cols; // UPDATE BEFORE BORROWING categories_ref
 
     let (categories_ref, selected, _) = get_category_data(app);
@@ -143,8 +143,7 @@ fn render_categories_grid(f: &mut Frame, app: &mut App, area: Rect, border_color
                 name_style = name_style.fg(Color::Cyan);
             }
 
-            let mut spans = vec![];
-            spans.push(Span::styled(parsed.display_name.as_str(), name_style));
+            let spans = vec![Span::styled(parsed.display_name.as_str(), name_style)];
 
             let content = Paragraph::new(vec![Line::from(spans)])
                 .block(card_block)
@@ -159,7 +158,7 @@ fn render_categories_list(f: &mut Frame, app: &mut App, area: Rect, border_color
     let title = " categories ";
     let is_active = app.active_pane == crate::app::Pane::Categories;
     let inner_area =
-        crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
+        crate::ui::common::render_matrix_box_active(f, area, title, border_color, is_active);
 
     let max_name_len = app.session.max_category_name_len as u16;
     let min_col_width = (max_name_len + 15).max(30);
@@ -181,7 +180,7 @@ fn render_categories_list(f: &mut Frame, app: &mut App, area: Rect, border_color
         }
     }
 
-    let rows = (total + cols - 1) / cols;
+    let rows = total.div_ceil(cols);
     let full_cols = if total % cols == 0 {
         cols
     } else {
@@ -265,19 +264,19 @@ fn render_categories_list(f: &mut Frame, app: &mut App, area: Rect, border_color
     let list_widget = Table::new(list_items, constraints).column_spacing(0);
 
     // Convert selected row index to a relative selection for TableState
-    let mut state = list_state_ref.clone();
+    let mut state = *list_state_ref;
     state.select(Some(selected_row - start_row));
 
     // Update the app's state for the specific screen
     match app.current_screen {
         CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
-            app.vod_category_list_state = state.clone();
+            app.vod_category_list_state = state;
         }
         CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
-            app.series_category_list_state = state.clone();
+            app.series_category_list_state = state;
         }
         _ => {
-            app.category_list_state = state.clone();
+            app.category_list_state = state;
         }
     }
 
@@ -361,7 +360,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             let now = Utc::now();
             let is_ended = parsed.stop_time.map(|t| now > t).unwrap_or(false);
             let is_live = parsed.start_time.map(|st| now >= st).unwrap_or(false) && !is_ended;
-            let is_blink_on = app.session.loading_tick / 4 % 2 == 0;
+            let is_blink_on = (app.session.loading_tick / 4).is_multiple_of(2);
 
             let status_span = if is_live {
                 let live_color = if is_blink_on {
@@ -505,14 +504,12 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                         }
                         year_suffix = y_str;
                     }
-                } else {
-                    if display_name.len() > max_width {
-                        if max_width > 3 {
-                            display_name =
-                                format!("{}...", &display_name[..max_width.saturating_sub(3)]);
-                        } else {
-                            display_name = display_name.chars().take(max_width).collect();
-                        }
+                } else if display_name.len() > max_width {
+                    if max_width > 3 {
+                        display_name =
+                            format!("{}...", &display_name[..max_width.saturating_sub(3)]);
+                    } else {
+                        display_name = display_name.chars().take(max_width).collect();
                     }
                 }
 
@@ -798,7 +795,7 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
             let now = Utc::now();
             let is_ended = parsed.stop_time.map(|t| now > t).unwrap_or(false);
             let is_live = parsed.start_time.map(|st| now >= st).unwrap_or(false) && !is_ended;
-            let is_blink_on = app.session.loading_tick / 4 % 2 == 0;
+            let is_blink_on = (app.session.loading_tick / 4).is_multiple_of(2);
 
             let status_span = if is_live {
                 let live_color = if is_blink_on {
@@ -1018,7 +1015,7 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
         let user_tz_str = app.config.get_user_timezone();
         let user_tz: Tz = user_tz_str.parse().unwrap_or(chrono_tz::UTC);
         let now = Utc::now();
-        let is_blink_on = app.session.loading_tick / 4 % 2 == 0;
+        let is_blink_on = (app.session.loading_tick / 4).is_multiple_of(2);
 
         // Check live score data first (most authoritative for sports)
         let score_data = app.get_score_for_stream(&parsed.display_name);
@@ -1461,7 +1458,7 @@ pub fn render_stream_details_pane(f: &mut Frame, app: &mut App, area: Rect, bord
 
     let (team1, team2) = if let Some(ref ev) = event {
         (ev.team1.clone(), ev.team2.clone())
-    } else if let Some(ref sd) = score_data {
+    } else if let Some(sd) = score_data {
         (sd.home_team.clone(), sd.away_team.clone())
     } else {
         return;

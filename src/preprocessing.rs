@@ -64,10 +64,8 @@ pub fn preprocess_categories(
 
             // Sports Mode Logic - If ONLY Sports is on, we filter for sports.
             // If Sports AND Merica are on, we filter for American Sports.
-            if use_sports {
-                if !crate::parser::is_sports_content(&c.category_name) {
-                    keep = false;
-                }
+            if use_sports && !crate::parser::is_sports_content(&c.category_name) {
+                keep = false;
             }
         } else {
             // VOD/Series
@@ -77,10 +75,8 @@ pub fn preprocess_categories(
                     keep = false;
                 }
             }
-            if use_sports {
-                if !crate::parser::is_sports_content(&c.category_name) {
-                    keep = false;
-                }
+            if use_sports && !crate::parser::is_sports_content(&c.category_name) {
+                keep = false;
             }
         }
 
@@ -204,10 +200,8 @@ pub fn preprocess_streams(
                     keep = false;
                 }
             }
-            if use_sports {
-                if !crate::parser::is_sports_content(&s.name) {
-                    keep = false;
-                }
+            if use_sports && !crate::parser::is_sports_content(&s.name) {
+                keep = false;
             }
         } else {
             if use_merica || use_all_english {
@@ -216,10 +210,8 @@ pub fn preprocess_streams(
                     keep = false;
                 }
             }
-            if use_sports {
-                if !crate::parser::is_sports_content(&s.name) {
-                    keep = false;
-                }
+            if use_sports && !crate::parser::is_sports_content(&s.name) {
+                keep = false;
             }
         }
         keep

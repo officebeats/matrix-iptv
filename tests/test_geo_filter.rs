@@ -1,7 +1,6 @@
 use matrix_iptv_lib::api::XtreamClient;
 use matrix_iptv_lib::config::{AppConfig, ProcessingMode};
 use matrix_iptv_lib::parser;
-use tokio;
 
 /// Comprehensive geo-filter verification test.
 /// Connects to the real provider, fetches Live/VOD/Series categories,
@@ -61,7 +60,7 @@ fn test_merica_filter_all_content_types() {
                 }
 
                 assert!(
-                    american.len() > 0,
+                    !american.is_empty(),
                     "Must have at least some American live categories"
                 );
             }
@@ -127,7 +126,7 @@ fn test_merica_filter_all_content_types() {
                 }
 
                 assert!(
-                    english.len() > 0,
+                    !english.is_empty(),
                     "Must have at least some English VOD categories"
                 );
             }
@@ -167,7 +166,7 @@ fn test_merica_filter_all_content_types() {
                 }
 
                 assert!(
-                    english.len() > 0,
+                    !english.is_empty(),
                     "Must have at least some English series categories"
                 );
             }

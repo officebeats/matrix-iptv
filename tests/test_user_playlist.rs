@@ -2,7 +2,6 @@ use matrix_iptv_lib::api::XtreamClient;
 use matrix_iptv_lib::config::{AppConfig, ProcessingMode};
 use matrix_iptv_lib::preprocessing::preprocess_streams;
 use std::collections::HashSet;
-use tokio;
 
 #[test]
 fn test_user_real_playlist_msnbc() {
@@ -32,7 +31,7 @@ fn test_user_real_playlist_msnbc() {
         match client.get_live_streams("ALL", None).await {
             Ok(mut streams) => {
                 println!("Downloaded {} raw streams.", streams.len());
-                assert!(streams.len() > 0, "Provider returned 0 streams!");
+                assert!(!streams.is_empty(), "Provider returned 0 streams!");
 
                 // 5. Apply 'Merica Mode Filtering
                 let favorites = HashSet::new();

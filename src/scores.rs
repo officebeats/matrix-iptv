@@ -188,6 +188,12 @@ pub struct ScoreService {
     client: Client,
 }
 
+impl Default for ScoreService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ScoreService {
     pub fn new() -> Self {
         Self {

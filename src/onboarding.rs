@@ -15,6 +15,9 @@ use std::thread;
 use std::time::Duration;
 use tachyonfx::{fx, Effect};
 
+type ValidationResult = Result<(String, String, String, String), String>;
+type ValidationReceiver = Receiver<ValidationResult>;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnboardingStep {
     Welcome,
@@ -38,7 +41,7 @@ pub struct OnboardingState {
     pub active_effect: Option<Effect>,
     pub should_quit: bool,
     pub success_account: Option<Account>,
-    pub validation_rx: Option<Receiver<Result<(String, String, String, String), String>>>,
+    pub validation_rx: Option<ValidationReceiver>,
 }
 
 impl Default for OnboardingState {
