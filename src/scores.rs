@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EspnResponse {
@@ -10,7 +10,7 @@ pub struct EspnResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EspnEvent {
     pub id: String,
-    pub date: String, // ISO 8601 UTC
+    pub date: String,               // ISO 8601 UTC
     pub short_name: Option<String>, // e.g. "CHI @ GB"
     pub status: EspnStatus,
     pub competitions: Vec<EspnCompetition>,
@@ -29,8 +29,8 @@ pub struct EspnStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EspnStatusType {
     pub id: String,
-    pub name: String, // STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_FINAL
-    pub state: String, // "pre", "in", "post"
+    pub name: String,           // STATUS_SCHEDULED, STATUS_IN_PROGRESS, STATUS_FINAL
+    pub state: String,          // "pre", "in", "post"
     pub detail: Option<String>, // "Final", "OT", "10:00 - 1st Quarter"
     pub short_detail: Option<String>, // "Final", "1st", "Halftime"
 }
@@ -79,7 +79,7 @@ pub struct EspnProbability {
 pub struct EspnHeadline {
     #[serde(rename = "type")]
     pub headline_type: Option<String>, // "Recap"
-    pub description: Option<String>,   // Full headline text
+    pub description: Option<String>,     // Full headline text
     pub short_link_text: Option<String>, // Short summary
 }
 
@@ -94,7 +94,7 @@ pub struct EspnSeries {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EspnLeaderCategory {
-    pub name: Option<String>,     // "points", "rebounds", "assists"
+    pub name: Option<String>, // "points", "rebounds", "assists"
     pub leaders: Option<Vec<EspnLeaderEntry>>,
 }
 
@@ -141,13 +141,13 @@ pub struct EspnCompetitor {
 pub struct EspnTeam {
     pub id: String,
     pub uid: Option<String>,
-    pub location: Option<String>, // "Chicago"
-    pub name: Option<String>,     // "Bears"
+    pub location: Option<String>,     // "Chicago"
+    pub name: Option<String>,         // "Bears"
     pub abbreviation: Option<String>, // "CHI"
     pub display_name: Option<String>, // "Chicago Bears"
     pub color: Option<String>,
     pub alternate_color: Option<String>,
-    pub logo: Option<String>,     // Team logo URL
+    pub logo: Option<String>, // Team logo URL
 }
 
 #[derive(Debug, Clone)]
@@ -155,14 +155,14 @@ pub struct ScoreGame {
     pub id: String,
     pub league: String,
     pub start_time: String,
-    pub status_state: String, // pre, in, post
+    pub status_state: String,  // pre, in, post
     pub status_detail: String, // "Final", "12:43 1st"
     pub home_team: String,
     pub home_score: String,
     pub home_abbr: String,
-    pub home_color: Option<String>,    // Team primary color hex
-    pub home_record: Option<String>,   // e.g., "24-18"
-    pub home_logo: Option<String>,     // Team logo URL
+    pub home_color: Option<String>,  // Team primary color hex
+    pub home_record: Option<String>, // e.g., "24-18"
+    pub home_logo: Option<String>,   // Team logo URL
     pub away_team: String,
     pub away_score: String,
     pub away_abbr: String,
@@ -175,17 +175,23 @@ pub struct ScoreGame {
     pub venue_city: Option<String>,
     pub venue_state: Option<String>,
     // Enhanced intelligence data
-    pub broadcasts: Vec<String>,          // TV networks
-    pub last_play: Option<String>,        // "Lakers Full timeout"
-    pub home_win_pct: Option<f64>,        // Win probability
+    pub broadcasts: Vec<String>,   // TV networks
+    pub last_play: Option<String>, // "Lakers Full timeout"
+    pub home_win_pct: Option<f64>, // Win probability
     pub away_win_pct: Option<f64>,
-    pub headline: Option<String>,         // Game summary/recap headline
-    pub series_summary: Option<String>,   // Playoff series status "Series tied 2-2"
-    pub top_scorer: Option<String>,       // "Ja Morant - 24 PTS"
+    pub headline: Option<String>,       // Game summary/recap headline
+    pub series_summary: Option<String>, // Playoff series status "Series tied 2-2"
+    pub top_scorer: Option<String>,     // "Ja Morant - 24 PTS"
 }
 
 pub struct ScoreService {
     client: Client,
+}
+
+impl Default for ScoreService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ScoreService {
@@ -207,7 +213,7 @@ impl ScoreService {
             ("hockey/nhl", "NHL"),
             ("baseball/mlb", "MLB"),
             ("soccer/usa.1", "MLS"),
-            ("soccer/eng.1", "EPL"), 
+            ("soccer/eng.1", "EPL"),
         ];
 
         let mut all_games = Vec::new();
@@ -229,51 +235,72 @@ impl ScoreService {
                                 if let (Some(h), Some(a)) = (home, away) {
                                     let h_name = h.team.display_name.clone().unwrap_or_default();
                                     let a_name = a.team.display_name.clone().unwrap_or_default();
-                                    
-                                    let venue_name = comp.venue.as_ref().and_then(|v| v.full_name.clone());
-                                    let (venue_city, venue_state) = if let Some(addr) = comp.venue.as_ref().and_then(|v| v.address.as_ref()) {
+
+                                    let venue_name =
+                                        comp.venue.as_ref().and_then(|v| v.full_name.clone());
+                                    let (venue_city, venue_state) = if let Some(addr) =
+                                        comp.venue.as_ref().and_then(|v| v.address.as_ref())
+                                    {
                                         (addr.city.clone(), addr.state.clone())
                                     } else {
                                         (None, None)
                                     };
-                                    
+
                                     // Extract broadcasts
-                                    let broadcasts: Vec<String> = comp.broadcasts.as_ref()
-                                        .map(|bs| bs.iter()
-                                            .flat_map(|b| b.names.clone().unwrap_or_default())
-                                            .collect())
+                                    let broadcasts: Vec<String> = comp
+                                        .broadcasts
+                                        .as_ref()
+                                        .map(|bs| {
+                                            bs.iter()
+                                                .flat_map(|b| b.names.clone().unwrap_or_default())
+                                                .collect()
+                                        })
                                         .unwrap_or_default();
-                                    
+
                                     // Extract last play and win probability
-                                    let (last_play, home_win_pct, away_win_pct) = if let Some(sit) = &comp.situation {
-                                        let lp = sit.last_play.as_ref().and_then(|p| p.text.clone());
-                                        let hwp = sit.last_play.as_ref()
-                                            .and_then(|p| p.probability.as_ref())
-                                            .and_then(|pr| pr.home_win_percentage);
-                                        let awp = sit.last_play.as_ref()
-                                            .and_then(|p| p.probability.as_ref())
-                                            .and_then(|pr| pr.away_win_percentage);
-                                        (lp, hwp, awp)
-                                    } else {
-                                        (None, None, None)
-                                    };
-                                    
+                                    let (last_play, home_win_pct, away_win_pct) =
+                                        if let Some(sit) = &comp.situation {
+                                            let lp =
+                                                sit.last_play.as_ref().and_then(|p| p.text.clone());
+                                            let hwp = sit
+                                                .last_play
+                                                .as_ref()
+                                                .and_then(|p| p.probability.as_ref())
+                                                .and_then(|pr| pr.home_win_percentage);
+                                            let awp = sit
+                                                .last_play
+                                                .as_ref()
+                                                .and_then(|p| p.probability.as_ref())
+                                                .and_then(|pr| pr.away_win_percentage);
+                                            (lp, hwp, awp)
+                                        } else {
+                                            (None, None, None)
+                                        };
+
                                     // Extract headline (for post-game recaps)
-                                    let headline = comp.headlines.as_ref()
-                                        .and_then(|hl| hl.first())
-                                        .and_then(|h| h.short_link_text.clone().or(h.description.clone()));
-                                    
+                                    let headline =
+                                        comp.headlines.as_ref().and_then(|hl| hl.first()).and_then(
+                                            |h| h.short_link_text.clone().or(h.description.clone()),
+                                        );
+
                                     // Extract series summary (for playoffs)
-                                    let series_summary = comp.series.as_ref()
-                                        .and_then(|s| s.summary.clone());
-                                    
+                                    let series_summary =
+                                        comp.series.as_ref().and_then(|s| s.summary.clone());
+
                                     // Extract top scorer (points leader from home team)
-                                    let top_scorer = h.leaders.as_ref()
-                                        .and_then(|cats| cats.iter().find(|c| c.name.as_deref() == Some("rating")))
+                                    let top_scorer = h
+                                        .leaders
+                                        .as_ref()
+                                        .and_then(|cats| {
+                                            cats.iter()
+                                                .find(|c| c.name.as_deref() == Some("rating"))
+                                        })
                                         .and_then(|cat| cat.leaders.as_ref())
                                         .and_then(|leaders| leaders.first())
                                         .map(|l| {
-                                            let name = l.athlete.as_ref()
+                                            let name = l
+                                                .athlete
+                                                .as_ref()
                                                 .and_then(|a| a.display_name.clone())
                                                 .unwrap_or_default();
                                             let value = l.display_value.clone().unwrap_or_default();
@@ -285,7 +312,19 @@ impl ScoreService {
                                         league: league_name.to_string(),
                                         start_time: event.date.clone(),
                                         status_state: event.status.status_type.state.clone(),
-                                        status_detail: event.status.status_type.short_detail.clone().unwrap_or(event.status.status_type.detail.clone().unwrap_or_default()),
+                                        status_detail: event
+                                            .status
+                                            .status_type
+                                            .short_detail
+                                            .clone()
+                                            .unwrap_or(
+                                                event
+                                                    .status
+                                                    .status_type
+                                                    .detail
+                                                    .clone()
+                                                    .unwrap_or_default(),
+                                            ),
                                         home_team: h_name,
                                         home_score: h.score.clone().unwrap_or("0".to_string()),
                                         home_abbr: h.team.abbreviation.clone().unwrap_or_default(),
@@ -298,7 +337,11 @@ impl ScoreService {
                                         away_color: a.team.color.clone(),
                                         away_record: None,
                                         away_logo: a.team.logo.clone(),
-                                        display_clock: event.status.display_clock.clone().unwrap_or_else(|| "00:00".to_string()),
+                                        display_clock: event
+                                            .status
+                                            .display_clock
+                                            .clone()
+                                            .unwrap_or_else(|| "00:00".to_string()),
                                         period: event.status.period.unwrap_or(0),
                                         venue_name,
                                         venue_city,

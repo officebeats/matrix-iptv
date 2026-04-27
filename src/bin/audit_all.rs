@@ -12,11 +12,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    println!("Found {} accounts. Starting audit...\n", config.accounts.len());
+    println!(
+        "Found {} accounts. Starting audit...\n",
+        config.accounts.len()
+    );
 
     for (i, acc) in config.accounts.iter().enumerate() {
-        println!("[{}/{}] Account: {} ({})", i + 1, config.accounts.len(), acc.name, acc.base_url);
-        
+        println!(
+            "[{}/{}] Account: {} ({})",
+            i + 1,
+            config.accounts.len(),
+            acc.name,
+            acc.base_url
+        );
+
         // 1. Connection & Auth
         let start = Instant::now();
         match XtreamClient::new_with_doh(
@@ -24,7 +33,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             acc.username.clone(),
             acc.password.clone(),
             DnsProvider::System,
-        ).await {
+        )
+        .await
+        {
             Ok(client) => {
                 match client.authenticate().await {
                     Ok((true, _, _)) => {
@@ -36,7 +47,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         match client.get_live_categories().await {
                             Ok(cats) => {
                                 let cat_dur = cat_start.elapsed();
-                                println!("  📂 Categories: {} items in {:.2}s", cats.len(), cat_dur.as_secs_f32());
+                                println!(
+                                    "  📂 Categories: {} items in {:.2}s",
+                                    cats.len(),
+                                    cat_dur.as_secs_f32()
+                                );
 
                                 // 3. Full Stream Fetch (Testing Resilience & Speed)
                                 println!("  🔍 Fetching ALL live streams (Testing Resilience)...");
@@ -44,13 +59,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 match client.get_live_streams("ALL", None).await {
                                     Ok(streams) => {
                                         let stream_dur = stream_start.elapsed();
-                                        println!("  ✅ Streams: {} items in {:.2}s", streams.len(), stream_dur.as_secs_f32());
+                                        println!(
+                                            "  ✅ Streams: {} items in {:.2}s",
+                                            streams.len(),
+                                            stream_dur.as_secs_f32()
+                                        );
 
                                         // 4. MSNBC Search
-                                        let msnbc: Vec<_> = streams.iter()
+                                        let msnbc: Vec<_> = streams
+                                            .iter()
                                             .filter(|s| s.name.to_uppercase().contains("MSNBC"))
                                             .collect();
-                                        
+
                                         if !msnbc.is_empty() {
                                             println!("  📍 Found {} MSNBC streams:", msnbc.len());
                                             for s in msnbc.iter().take(3) {

@@ -1,7 +1,6 @@
+use anyhow::Result;
 use ratatui::style::Color;
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
-
 
 /// Returns the primary color for a team based on its name or abbreviation.
 pub fn get_team_color(name: &str) -> Color {
@@ -299,7 +298,7 @@ fn lighten_color(color: Color) -> Color {
         Color::Rgb(r, g, b) => {
             // Calculate luminance (using rough approximation)
             let luminance = (r as f32 * 0.299 + g as f32 * 0.587 + b as f32 * 0.114) / 255.0;
-            
+
             // If color is too dark (luminance < 0.5), lighten it (increased from 0.4)
             if luminance < 0.5 {
                 let boost = 1.7 + (0.5 - luminance); // Increased boost by ~15%
@@ -332,11 +331,33 @@ pub fn get_team_color_with_fallback(name: &str, is_home: bool) -> Color {
 pub fn is_generic_label(name: &str) -> bool {
     let name = name.to_uppercase();
     let generics = [
-        "MNF", "SNF", "TNF", "NFL LIVE", "NFL MEDIA", "NFL NETWORK", "NFL PACKAGE",
-        "NBA TV", "NBA PACKAGE", "NBA GAMETIME", "MLB TV", "MLB PACKAGE",
-        "EVENT ONLY", "LIVE NOW", "REPLAY", "FULL REPLAY", "DIRECT TV",
-        "SPORTS", "FOOTBALL", "BASKETBALL", "BASEBALL", "HOCKEY", "SOCCER",
-        "LIVE SPORTS", "GAME PASS", "REDZONE", "NFL REDZONE"
+        "MNF",
+        "SNF",
+        "TNF",
+        "NFL LIVE",
+        "NFL MEDIA",
+        "NFL NETWORK",
+        "NFL PACKAGE",
+        "NBA TV",
+        "NBA PACKAGE",
+        "NBA GAMETIME",
+        "MLB TV",
+        "MLB PACKAGE",
+        "EVENT ONLY",
+        "LIVE NOW",
+        "REPLAY",
+        "FULL REPLAY",
+        "DIRECT TV",
+        "SPORTS",
+        "FOOTBALL",
+        "BASKETBALL",
+        "BASEBALL",
+        "HOCKEY",
+        "SOCCER",
+        "LIVE SPORTS",
+        "GAME PASS",
+        "REDZONE",
+        "NFL REDZONE",
     ];
 
     for g in generics {
@@ -375,7 +396,7 @@ pub fn parse_sports_event(display_name: &str) -> Option<SportsEvent> {
         let team1_abbr = caps.get(2).map(|m| m.as_str().trim().to_string());
         let team2 = caps.get(3)?.as_str().trim().to_string();
         let team2_abbr = caps.get(4).map(|m| m.as_str().trim().to_string());
-        
+
         // Debug prints
         if display_name.contains("start:2025-12-21") {
             println!("DEBUG: display_name: {:?}", display_name);

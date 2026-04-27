@@ -1,9 +1,9 @@
-use matrix_iptv_lib::app::{App, CurrentScreen, Pane};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use matrix_iptv_lib::api::{Category, SeriesEpisode, Stream};
+use matrix_iptv_lib::app::{App, CurrentScreen, Pane};
 use matrix_iptv_lib::flex_id::FlexId;
 use matrix_iptv_lib::handlers::input::handle_key_event;
 use matrix_iptv_lib::player::Player;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
 use std::sync::Arc;
@@ -223,7 +223,10 @@ async fn test_runtime_navigation_matches_stream_footer_hints() {
     assert_eq!(app.selected_vod_stream_index, 0, "VOD g should jump to top");
 
     press_runtime_key(&mut app, KeyCode::Char('G')).await;
-    assert_eq!(app.selected_vod_stream_index, 2, "VOD G should jump to bottom");
+    assert_eq!(
+        app.selected_vod_stream_index, 2,
+        "VOD G should jump to bottom"
+    );
 
     let mut app = App::new();
     app.current_screen = CurrentScreen::SeriesCategories;
@@ -348,7 +351,11 @@ fn test_search_filtering_live_tv() {
     // Empty search → all streams
     app.search_state.query.clear();
     app.update_search();
-    assert_eq!(app.streams.len(), 5, "Empty search should return all streams");
+    assert_eq!(
+        app.streams.len(),
+        5,
+        "Empty search should return all streams"
+    );
 
     // Exact substring search
     app.search_state.query = "espn".to_string();
@@ -392,12 +399,23 @@ fn test_search_filtering_vod() {
 
     app.search_state.query = "matrix".to_string();
     app.update_search();
-    assert_eq!(app.vod_streams.len(), 1, "VOD search for 'matrix' should return 1");
-    assert!(app.vod_streams[0].cached_parsed.is_some(), "VOD stream should have cached parse");
+    assert_eq!(
+        app.vod_streams.len(),
+        1,
+        "VOD search for 'matrix' should return 1"
+    );
+    assert!(
+        app.vod_streams[0].cached_parsed.is_some(),
+        "VOD stream should have cached parse"
+    );
 
     app.search_state.query.clear();
     app.update_search();
-    assert_eq!(app.vod_streams.len(), 3, "Clearing search should restore all VOD streams");
+    assert_eq!(
+        app.vod_streams.len(),
+        3,
+        "Clearing search should restore all VOD streams"
+    );
 }
 
 // ─── Test 6: Search Filtering Correctness (Series) ────────────────────────────
@@ -415,11 +433,19 @@ fn test_search_filtering_series() {
 
     app.search_state.query = "wire".to_string();
     app.update_search();
-    assert_eq!(app.series_streams.len(), 1, "Series search for 'wire' should return 1");
+    assert_eq!(
+        app.series_streams.len(),
+        1,
+        "Series search for 'wire' should return 1"
+    );
 
     app.search_state.query.clear();
     app.update_search();
-    assert_eq!(app.series_streams.len(), 3, "Clearing search should restore all series");
+    assert_eq!(
+        app.series_streams.len(),
+        3,
+        "Clearing search should restore all series"
+    );
 }
 
 // ─── Test 7: Navigation Boundary Checks ────────────────────────────────────────
@@ -511,23 +537,20 @@ fn test_global_search_rendering() {
     let mut app = App::new();
 
     // Populate all content types into global pools
-    app.global_all_streams = vec![
-        make_stream(1, "ESPN HD"),
-        make_stream(2, "CNN"),
-    ];
-    app.global_all_vod_streams = vec![
-        make_vod_stream(10, "The Matrix (1999)"),
-    ];
-    app.global_all_series_streams = vec![
-        make_series_stream(20, "Breaking Bad"),
-    ];
+    app.global_all_streams = vec![make_stream(1, "ESPN HD"), make_stream(2, "CNN")];
+    app.global_all_vod_streams = vec![make_vod_stream(10, "The Matrix (1999)")];
+    app.global_all_series_streams = vec![make_series_stream(20, "Breaking Bad")];
 
     app.current_screen = CurrentScreen::GlobalSearch;
 
     // Empty search → no results
     app.search_state.query.clear();
     app.update_search();
-    assert_eq!(app.global_search_results.len(), 0, "Empty global search should show no results");
+    assert_eq!(
+        app.global_search_results.len(),
+        0,
+        "Empty global search should show no results"
+    );
     render_frame(&mut app);
 
     // Search across all types
@@ -539,7 +562,10 @@ fn test_global_search_rendering() {
     );
     // Verify caching
     for s in &app.global_search_results {
-        assert!(s.cached_parsed.is_some(), "Global search results should have cached_parsed");
+        assert!(
+            s.cached_parsed.is_some(),
+            "Global search results should have cached_parsed"
+        );
     }
     render_frame(&mut app);
 }
@@ -651,10 +677,7 @@ fn test_cross_pane_search() {
         make_category("1", "US Sports"),
         make_category("2", "UK News"),
     ];
-    app.global_all_streams = vec![
-        make_stream(1, "ESPN HD"),
-        make_stream(2, "BBC World"),
-    ];
+    app.global_all_streams = vec![make_stream(1, "ESPN HD"), make_stream(2, "BBC World")];
     app.current_screen = CurrentScreen::Categories;
     app.active_pane = Pane::Categories;
 

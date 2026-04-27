@@ -1,3 +1,9 @@
+use crate::app::{App, Pane};
+use crate::parser::parse_stream;
+use crate::ui::colors::{
+    DARK_GREEN, HIGHLIGHT_BG, MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY,
+};
+use crate::ui::common::stylize_channel_name;
 use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
@@ -5,10 +11,6 @@ use ratatui::{
     widgets::{List, ListItem},
     Frame,
 };
-use crate::app::{App, Pane};
-use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, DARK_GREEN, HIGHLIGHT_BG, TEXT_PRIMARY, TEXT_DIM};
-use crate::parser::parse_stream;
-use crate::ui::common::stylize_channel_name;
 
 pub fn render_series_view(f: &mut Frame, app: &mut App, area: Rect) {
     let is_active = true; // Overall view is active
@@ -30,12 +32,11 @@ pub fn render_series_view(f: &mut Frame, app: &mut App, area: Rect) {
                 ratatui::layout::Constraint::Percentage(60),
             ])
             .split(area);
-            
+
         render_series_streams_pane(f, app, chunks[0]);
         render_series_episodes_pane(f, app, chunks[1]);
     }
 }
-
 
 fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let visible_height = area.height.saturating_sub(2) as usize;
@@ -43,18 +44,23 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let selected = app.selected_series_stream_index;
 
     let half_window = visible_height / 2;
-    let start = if selected > half_window { selected - half_window } else { 0 };
+    let start = selected.saturating_sub(half_window);
     let end = (start + visible_height + half_window).min(total);
     let adjusted_start = if end == total && end > visible_height + half_window {
         end.saturating_sub(visible_height + half_window)
-    } else { start };
+    } else {
+        start
+    };
 
-    let items: Vec<ListItem> = app.series_streams.iter().enumerate()
+    let items: Vec<ListItem> = app
+        .series_streams
+        .iter()
+        .enumerate()
         .skip(adjusted_start)
         .take(end - adjusted_start)
         .map(|(_, s)| {
             let mut spans = vec![];
-            
+
             // O(1) metadata retrieval from pre-computed cache
             let (display_name, quality) = if let Some(ref parsed) = s.cached_parsed {
                 (parsed.display_name.clone(), parsed.quality)
@@ -68,35 +74,48 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
             if let Some(mat) = re_year.find(&s.name) {
                 let year_clean = mat.as_str().replace('[', "(").replace(']', ")");
                 if !name.contains(&year_clean) {
-                    name.push_str(" ");
+                    name.push(' ');
                     name.push_str(&year_clean);
                 }
             }
 
             // Check if recently watched (progress indicator)
-            let is_watched = app.config.recently_watched.iter().any(|(id, _)| id == &s.stream_id.to_string());
-            let prefix = if is_watched { "✓ "} else { "" };
+            let is_watched = app
+                .config
+                .recently_watched
+                .iter()
+                .any(|(id, _)| id == &s.stream_id.to_string());
+            let prefix = if is_watched { "✓ " } else { "" };
             let prefixed_name = format!("{}{}", prefix, name);
 
             let (mut styled_name, _) = stylize_channel_name(
-                &prefixed_name, false, false, quality, None, None,
+                &prefixed_name,
+                false,
+                false,
+                quality,
+                None,
+                None,
                 Style::default().fg(TEXT_PRIMARY),
             );
-            
+
             // Colorize the checkmark if it's there
             if is_watched {
                 if let Some(first_span) = styled_name.first_mut() {
                     if first_span.content.starts_with("✓") {
-                        let check_span = ratatui::text::Span::styled("✓ ", Style::default().fg(crate::ui::colors::SOFT_GREEN));
-                        first_span.content = std::borrow::Cow::Owned(first_span.content[2..].to_string());
-                        
+                        let check_span = ratatui::text::Span::styled(
+                            "✓ ",
+                            Style::default().fg(crate::ui::colors::SOFT_GREEN),
+                        );
+                        first_span.content =
+                            std::borrow::Cow::Owned(first_span.content[2..].to_string());
+
                         let mut new_spans = vec![check_span];
                         new_spans.extend(styled_name);
                         styled_name = new_spans;
                     }
                 }
             }
-            
+
             spans.extend(styled_name);
 
             if let Some(rating_f) = s.rating {
@@ -111,19 +130,28 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
             }
 
             ListItem::new(Line::from(spans))
-        }).collect();
+        })
+        .collect();
 
     let title = "series";
     let is_active = app.active_pane == Pane::Streams;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
-    let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
+    let inner_area =
+        crate::ui::common::render_matrix_box_active(f, area, title, border_color, is_active);
 
     let list = List::new(items)
-        .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .bg(HIGHLIGHT_BG)
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol(" ▎");
 
-    let mut adjusted_state = app.series_stream_list_state.clone();
-    if adjusted_start > 0 { adjusted_state.select(Some(selected - adjusted_start)); }
+    let mut adjusted_state = app.series_stream_list_state;
+    if adjusted_start > 0 {
+        adjusted_state.select(Some(selected - adjusted_start));
+    }
     f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }
 
@@ -133,13 +161,18 @@ fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let selected = app.selected_series_episode_index;
 
     let half_window = visible_height / 2;
-    let start = if selected > half_window { selected - half_window } else { 0 };
+    let start = selected.saturating_sub(half_window);
     let end = (start + visible_height + half_window).min(total);
     let adjusted_start = if end == total && end > visible_height + half_window {
         end.saturating_sub(visible_height + half_window)
-    } else { start };
+    } else {
+        start
+    };
 
-    let items: Vec<ListItem> = app.series_episodes.iter().enumerate()
+    let items: Vec<ListItem> = app
+        .series_episodes
+        .iter()
+        .enumerate()
         .skip(adjusted_start)
         .take(end - adjusted_start)
         .map(|(_, ep)| {
@@ -147,24 +180,35 @@ fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
             let spans = vec![
                 ratatui::text::Span::styled(
                     format!("S{:02}E{:02}", ep.season, ep.episode_num),
-                    Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(MATRIX_GREEN)
+                        .add_modifier(Modifier::BOLD),
                 ),
                 ratatui::text::Span::styled(" · ", Style::default().fg(TEXT_DIM)),
                 ratatui::text::Span::styled(title.to_string(), Style::default().fg(TEXT_PRIMARY)),
             ];
             ListItem::new(Line::from(spans))
-        }).collect();
+        })
+        .collect();
 
     let title = "episodes";
     let is_active = app.active_pane == Pane::Episodes;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
-    let inner_area = crate::ui::common::render_matrix_box_active(f, area, &title, border_color, is_active);
+    let inner_area =
+        crate::ui::common::render_matrix_box_active(f, area, title, border_color, is_active);
 
     let list = List::new(items)
-        .highlight_style(Style::default().bg(HIGHLIGHT_BG).fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))
+        .highlight_style(
+            Style::default()
+                .bg(HIGHLIGHT_BG)
+                .fg(MATRIX_GREEN)
+                .add_modifier(Modifier::BOLD),
+        )
         .highlight_symbol(" ▎");
 
-    let mut adjusted_state = app.series_episode_list_state.clone();
-    if adjusted_start > 0 { adjusted_state.select(Some(selected - adjusted_start)); }
+    let mut adjusted_state = app.series_episode_list_state;
+    if adjusted_start > 0 {
+        adjusted_state.select(Some(selected - adjusted_start));
+    }
     f.render_stateful_widget(list, inner_area, &mut adjusted_state);
 }

@@ -942,7 +942,7 @@ impl XtreamClient {
 
                         if let Some(total) = total_size {
                             let percent = ((downloaded as f64 / total as f64) * 100.0) as usize;
-                            if percent > last_percent && percent % 2 == 0 {
+                            if percent > last_percent && percent.is_multiple_of(2) {
                                 last_percent = percent;
                                 if let Some(ref sender) = tx {
                                     let bytes_mb = downloaded as f64 / 1_048_576.0;
@@ -1029,7 +1029,7 @@ impl XtreamClient {
 
             let unique_streams = tokio::task::spawn_blocking(move || -> Result<Vec<Stream>, anyhow::Error> {
                 if let Some(ref sender) = tx_clone {
-                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage(format!("Phase 2/3: Deserializing JSON structures out of RAM heap...")));
+                    let _ = sender.blocking_send(crate::app::AsyncAction::LoadingMessage("Phase 2/3: Deserializing JSON structures out of RAM heap...".to_string()));
                 }
 
                 let streams = serde_json::from_slice::<Vec<Stream>>(&bytes)
