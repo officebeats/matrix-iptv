@@ -174,12 +174,20 @@ fn test_all_screens_render_empty_state() {
 #[test]
 fn test_footer_hints_match_vod_and_series_stream_hotkeys() {
     let mut app = App::new();
+    app.current_screen = CurrentScreen::Categories;
+    app.active_pane = Pane::Categories;
+    app.categories = generate_categories(2);
+    let live_text = render_frame_text(&mut app);
+    assert!(!live_text.contains("PgDn"));
+
+    let mut app = App::new();
     app.current_screen = CurrentScreen::VodStreams;
     app.active_pane = Pane::Streams;
     app.streams = generate_streams(2);
     let vod_text = render_frame_text(&mut app);
     assert!(vod_text.contains("g top"));
     assert!(vod_text.contains("G bottom"));
+    assert!(!vod_text.contains("PgDn"));
     assert!(!vod_text.contains("g add group"));
     assert!(!vod_text.contains("v fav"));
     assert!(!vod_text.contains("i info"));
@@ -192,6 +200,7 @@ fn test_footer_hints_match_vod_and_series_stream_hotkeys() {
     assert!(series_text.contains("enter episodes"));
     assert!(series_text.contains("Home top"));
     assert!(series_text.contains("End bottom"));
+    assert!(!series_text.contains("PgDn"));
     assert!(!series_text.contains("g add group"));
     assert!(!series_text.contains("v fav"));
     assert!(!series_text.contains("i info"));
@@ -268,6 +277,8 @@ fn test_help_popup_does_not_advertise_stale_hotkeys() {
     let text = render_frame_text(&mut app);
     assert!(!text.contains("g/G         jump to top / bottom"));
     assert!(!text.contains("toggle filter active/all"));
+    assert!(!text.contains("PgDn/PgUp"));
+    assert!(!text.contains("ctrl+d/u"));
     assert!(text.contains("/ or f"));
     assert!(text.contains("category grid or live add-to-group"));
 }

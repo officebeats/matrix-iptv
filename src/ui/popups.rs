@@ -29,14 +29,6 @@ pub fn render_help_popup(f: &mut Frame, area: Rect) {
             Span::styled("switch panes", Style::default().fg(TEXT_SECONDARY)),
         ]),
         Line::from(vec![
-            Span::styled("  PgDn/PgUp   ", Style::default().fg(MATRIX_GREEN)),
-            Span::styled("page down / page up", Style::default().fg(TEXT_SECONDARY)),
-        ]),
-        Line::from(vec![
-            Span::styled("  ctrl+d/u    ", Style::default().fg(MATRIX_GREEN)),
-            Span::styled("half page down / up", Style::default().fg(TEXT_SECONDARY)),
-        ]),
-        Line::from(vec![
             Span::styled("  Home/End    ", Style::default().fg(MATRIX_GREEN)),
             Span::styled("jump to top / bottom", Style::default().fg(TEXT_SECONDARY)),
         ]),
