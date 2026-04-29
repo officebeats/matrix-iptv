@@ -1,5 +1,8 @@
 name: "00 - Kanban Board Management (Scrum Master)"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   issue_comment:
     types: [created]

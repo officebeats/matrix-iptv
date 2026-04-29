@@ -1,5 +1,8 @@
 name: "06 - Clarification Request (Agent to Human)"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   issues:
     types: [labeled]
