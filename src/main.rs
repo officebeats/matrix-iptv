@@ -22,6 +22,9 @@ use tokio::sync::mpsc;
 #[derive(clap::Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    #[command(subcommand)]
+    command: Option<Command>,
+
     /// Optional Direct Play URL (if provided, plays and exits)
     #[arg(short, long)]
     play: Option<String>,
@@ -35,6 +38,12 @@ struct Args {
     skip_update: bool,
 }
 
+#[derive(clap::Subcommand, Debug)]
+enum Command {
+    /// Update the installed Matrix IPTV binary from the latest GitHub release
+    Update,
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 #[tokio::main]
 async fn main() -> Result<(), anyhow::Error> {
@@ -42,6 +51,23 @@ async fn main() -> Result<(), anyhow::Error> {
     let args = Args::parse();
 
     // -- CLI MODE --
+    if let Some(Command::Update) = args.command {
+        #[cfg(target_os = "windows")]
+        {
+            setup::perform_windows_self_update()?;
+            println!("Matrix IPTV updater launched. The app will reopen when the update finishes.");
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            println!("For npm installs, run: matrix-iptv update");
+            println!("For standalone binaries, download the latest release asset from:");
+            println!("https://github.com/officebeats/matrix-iptv/releases/latest");
+        }
+
+        return Ok(());
+    }
+
     if args.check {
         setup::check_and_install_dependencies()?;
         println!("Checking configuration...");
@@ -164,21 +190,23 @@ async fn main() -> Result<(), anyhow::Error> {
     };
 
     if exit_code == 42 {
-        // On Windows, handle the update directly from the binary to avoid
-        // the EBUSY bug in older versions of cli.js
         #[cfg(target_os = "windows")]
         {
-            if let Err(e) = setup::perform_windows_self_update() {
-                eprintln!(
-                    "\n[!] Self-update failed: {}. Falling back to CLI updater.",
-                    e
-                );
-                std::process::exit(42);
+            // New npm wrappers provide a safer transactional updater. Keep the
+            // Rust fallback for standalone binaries and old wrappers that do not
+            // mark child launches with MATRIX_IPTV_WRAPPER.
+            if std::env::var_os("MATRIX_IPTV_WRAPPER").is_none() {
+                if let Err(e) = setup::perform_windows_self_update() {
+                    eprintln!(
+                        "\n[!] Self-update failed: {}. Falling back to CLI updater.",
+                        e
+                    );
+                    std::process::exit(42);
+                }
+                std::process::exit(0);
             }
-            std::process::exit(0);
         }
 
-        #[cfg(not(target_os = "windows"))]
         std::process::exit(42);
     }
 

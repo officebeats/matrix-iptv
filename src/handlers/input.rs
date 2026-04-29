@@ -3463,6 +3463,12 @@ pub async fn handle_key_event(
                     }
                     app.current_screen = CurrentScreen::Home;
                 }
+                KeyCode::Char('s') | KeyCode::Char('S') => {
+                    if let Some(ref version) = app.new_version_available {
+                        crate::setup::skip_update(version);
+                    }
+                    app.current_screen = CurrentScreen::Home;
+                }
                 _ => {}
             }
         }
