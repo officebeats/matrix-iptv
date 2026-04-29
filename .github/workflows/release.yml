@@ -2,9 +2,11 @@ name: Release Build
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  GIT_CONFIG_COUNT: "1"
-  GIT_CONFIG_KEY_0: advice.detachedHead
-  GIT_CONFIG_VALUE_0: "false"
+  GIT_CONFIG_COUNT: "2"
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
+  GIT_CONFIG_KEY_1: advice.detachedHead
+  GIT_CONFIG_VALUE_1: "false"
 
 on:
   push:
