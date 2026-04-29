@@ -28,7 +28,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Scrum Master - Create Backlogs
         uses: anthropics/claude-code-action@v1
@@ -92,7 +92,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Scrum Master - Move to Planning
         uses: anthropics/claude-code-action@v1
@@ -141,7 +141,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Scrum Master - Move to Developing
         uses: anthropics/claude-code-action@v1
@@ -181,7 +181,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Scrum Master - Move to Testing
         uses: anthropics/claude-code-action@v1
@@ -226,7 +226,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Scrum Master - Move to Human Review
         uses: anthropics/claude-code-action@v1
@@ -267,7 +267,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Scrum Master - Move to Done
         uses: anthropics/claude-code-action@v1
