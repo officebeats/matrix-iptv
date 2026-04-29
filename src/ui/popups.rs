@@ -680,7 +680,7 @@ pub fn render_update_prompt(f: &mut Frame, app: &App, area: Rect) {
         ]),
         Line::from(""),
         Line::from(vec![Span::styled(
-            "The update will be downloaded and installed automatically.",
+            "The updater verifies the download and restores the old binary if install fails.",
             Style::default().fg(TEXT_SECONDARY),
         )]),
     ];
@@ -706,7 +706,14 @@ pub fn render_update_prompt(f: &mut Frame, app: &App, area: Rect) {
                 .fg(ratatui::style::Color::Rgb(255, 100, 100))
                 .add_modifier(Modifier::BOLD),
         ),
-        Span::styled(" later", Style::default().fg(TEXT_PRIMARY)),
+        Span::styled(" later   ", Style::default().fg(TEXT_PRIMARY)),
+        Span::styled(
+            "s",
+            Style::default()
+                .fg(ratatui::style::Color::Rgb(255, 180, 80))
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(" skip version", Style::default().fg(TEXT_PRIMARY)),
     ])])
     .alignment(Alignment::Center);
 

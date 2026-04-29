@@ -391,6 +391,13 @@ fn get_update_cooldown_path() -> Option<std::path::PathBuf> {
         .map(|dirs| dirs.config_dir().join(".update_cooldown"))
 }
 
+/// Returns the path to the skipped update file (stored next to config).
+#[cfg(not(target_arch = "wasm32"))]
+fn get_update_skip_path() -> Option<std::path::PathBuf> {
+    directories::ProjectDirs::from("", "", "matrix-iptv")
+        .map(|dirs| dirs.config_dir().join(".update_skip"))
+}
+
 /// Check if an update for the given version was recently dismissed (within cooldown_hours)
 #[cfg(not(target_arch = "wasm32"))]
 fn is_update_dismissed(version: &str, cooldown_hours: u64) -> bool {
@@ -419,6 +426,19 @@ fn is_update_dismissed(version: &str, cooldown_hours: u64) -> bool {
     false
 }
 
+/// Check if a specific update version was explicitly skipped.
+#[cfg(not(target_arch = "wasm32"))]
+fn is_update_skipped(version: &str) -> bool {
+    let path = match get_update_skip_path() {
+        Some(p) => p,
+        None => return false,
+    };
+
+    std::fs::read_to_string(&path)
+        .map(|content| content.trim() == version)
+        .unwrap_or(false)
+}
+
 /// Record that the user dismissed an update for a specific version
 #[cfg(not(target_arch = "wasm32"))]
 pub fn dismiss_update(version: &str) {
@@ -434,11 +454,26 @@ pub fn dismiss_update(version: &str) {
     }
 }
 
+/// Record that the user wants to skip a specific update version.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn skip_update(version: &str) {
+    if let Some(path) = get_update_skip_path() {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, version);
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub async fn check_for_updates(
     tx: tokio::sync::mpsc::Sender<crate::app::AsyncAction>,
     manual: bool,
 ) {
+    if std::env::var_os("MATRIX_IPTV_SKIP_UPDATE").is_some() {
+        return;
+    }
+
     let current_version = env!("CARGO_PKG_VERSION");
     let client = reqwest::Client::builder()
         .user_agent("matrix-iptv-cli-updater")
@@ -446,28 +481,37 @@ pub async fn check_for_updates(
         .build()
         .unwrap_or_default();
 
-    // Use a GET request to the latest release to check the tag
-    // GitHub redirects /latest to the specific tag URL
     if let Ok(resp) = client
-        .get("https://github.com/officebeats/matrix-iptv/releases/latest")
+        .get("https://api.github.com/repos/officebeats/matrix-iptv/releases/latest")
         .send()
         .await
     {
-        let final_url = resp.url().to_string();
-        // URL is likely https://github.com/officebeats/matrix-iptv/releases/tag/v3.0.9
-        if let Some(tag) = final_url.split("/tag/").last() {
-            let tag = tag.trim_start_matches('v');
-            if is_newer_version(current_version, tag) {
-                // For automatic (non-manual) checks: skip if user dismissed this version recently
-                if !manual && is_update_dismissed(tag, 24) {
-                    return; // User dismissed this version within the last 24 hours
+        let tag = resp
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("tag_name")
+                    .and_then(|tag| tag.as_str())
+                    .map(|tag| tag.trim_start_matches('v').to_string())
+            });
+
+        if let Some(tag) = tag {
+            if is_newer_version(current_version, &tag) {
+                if !manual && (is_update_dismissed(&tag, 24) || is_update_skipped(&tag)) {
+                    return;
                 }
-                let _ = tx
-                    .send(crate::app::AsyncAction::UpdateAvailable(tag.to_string()))
-                    .await;
+                let _ = tx.send(crate::app::AsyncAction::UpdateAvailable(tag)).await;
             } else if manual {
                 let _ = tx.send(crate::app::AsyncAction::NoUpdateFound).await;
             }
+        } else if manual {
+            let _ = tx
+                .send(crate::app::AsyncAction::Error(
+                    "Failed to read the latest GitHub release version.".to_string(),
+                ))
+                .await;
         }
     } else if manual {
         let _ = tx
