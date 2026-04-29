@@ -124,17 +124,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh run download "${{ github.run_id }}" --repo "${{ github.repository }}" --dir artifacts --pattern "matrix-iptv-*"
 
-      - name: Flatten artifacts
-        shell: bash
-        run: |
-          find artifacts -mindepth 2 -type f -exec mv {} artifacts/ \;
-          find artifacts -mindepth 1 -type d -empty -delete
-
       - name: Create Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.event.inputs.tag_name || github.ref_name }}
-          files: artifacts/*
+          files: artifacts/*/*
           fail_on_unmatched_files: true
           draft: false
           prerelease: false
