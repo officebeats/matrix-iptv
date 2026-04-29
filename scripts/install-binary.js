@@ -53,13 +53,13 @@ async function fetchRelease() {
 function selectAsset(release) {
   const platform = platformMap[os.platform()];
   if (!platform) {
-    fail(`Unsupported platform: ${os.platform()}`);
+    throw new Error(`Unsupported platform: ${os.platform()}`);
   }
 
   const expectedName = `matrix-iptv-${platform}`;
   const asset = (release.assets || []).find((item) => item.name === expectedName);
   if (!asset) {
-    fail(`Release ${release.tag_name} does not include ${expectedName}.`);
+    throw new Error(`Release ${release.tag_name} does not include ${expectedName}.`);
   }
 
   return asset;
@@ -81,6 +81,9 @@ async function download(url, destination) {
     const writer = fs.createWriteStream(destination, { flags: "wx" });
     response.data.pipe(writer);
     writer.on("finish", () => writer.close(resolve));
+    response.data.on("error", (err) => {
+      writer.destroy(err);
+    });
     writer.on("error", (err) => {
       fs.rm(destination, { force: true }, () => {});
       reject(err);
@@ -104,18 +107,18 @@ function makeExecutable(filePath) {
 function verifyBinary(filePath, asset) {
   const stat = fs.statSync(filePath);
   if (stat.size < minBinarySize) {
-    fail(`Downloaded file is too small (${stat.size} bytes).`);
+    throw new Error(`Downloaded file is too small (${stat.size} bytes).`);
   }
 
   if (asset.size && stat.size !== asset.size) {
-    fail(`Downloaded file size mismatch: expected ${asset.size}, got ${stat.size}.`);
+    throw new Error(`Downloaded file size mismatch: expected ${asset.size}, got ${stat.size}.`);
   }
 
   if (asset.digest && asset.digest.startsWith("sha256:")) {
     const expectedDigest = asset.digest.slice("sha256:".length).toLowerCase();
     const actualDigest = sha256(filePath);
     if (actualDigest !== expectedDigest) {
-      fail("Downloaded binary checksum did not match the GitHub release asset digest.");
+      throw new Error("Downloaded binary checksum did not match the GitHub release asset digest.");
     }
   } else {
     console.log("[!] GitHub did not provide a release asset digest; continuing with size and version checks.");
@@ -135,12 +138,43 @@ function verifyBinary(filePath, asset) {
   });
 
   if (result.error) {
-    fail(`Unable to run downloaded binary: ${result.error.message}`);
+    throw new Error(`Unable to run downloaded binary: ${result.error.message}`);
   }
 
   const version = parseVersion(`${result.stdout}\n${result.stderr}`);
   if (result.status !== 0 || version !== packageVersion) {
-    fail(`Downloaded binary reports version ${version || "unknown"}, expected ${packageVersion}.`);
+    throw new Error(`Downloaded binary reports version ${version || "unknown"}, expected ${packageVersion}.`);
+  }
+}
+
+function replaceBinary(tempPath, asset) {
+  const backupPath = fs.existsSync(binaryPath)
+    ? `${binaryPath}.old-${Date.now()}${os.platform() === "win32" ? ".exe" : ""}`
+    : null;
+  let backupCreated = false;
+  let replacementMoved = false;
+
+  try {
+    if (backupPath) {
+      fs.renameSync(binaryPath, backupPath);
+      backupCreated = true;
+    }
+
+    fs.renameSync(tempPath, binaryPath);
+    replacementMoved = true;
+    verifyBinary(binaryPath, asset);
+
+    if (backupCreated) {
+      fs.rmSync(backupPath, { force: true });
+    }
+  } catch (err) {
+    if (replacementMoved) {
+      fs.rmSync(binaryPath, { force: true });
+    }
+    if (backupCreated && fs.existsSync(backupPath)) {
+      fs.renameSync(backupPath, binaryPath);
+    }
+    throw err;
   }
 }
 
@@ -152,8 +186,8 @@ async function install() {
   const tempPath = path.join(
     binDir,
     os.platform() === "win32"
-      ? `matrix-iptv-${process.pid}.download.exe`
-      : `matrix-iptv-${process.pid}.download`
+      ? `matrix-iptv-${process.pid}-${Date.now()}.download.exe`
+      : `matrix-iptv-${process.pid}-${Date.now()}.download`
   );
 
   console.log("[*] Matrix IPTV binary bootstrap");
@@ -166,24 +200,7 @@ async function install() {
     console.log(`[*] Downloading ${asset.name} from ${release.tag_name}...`);
     await download(asset.browser_download_url, tempPath);
     verifyBinary(tempPath, asset);
-
-    if (fs.existsSync(binaryPath)) {
-      const backupPath = `${binaryPath}.old-${Date.now()}${os.platform() === "win32" ? ".exe" : ""}`;
-      fs.renameSync(binaryPath, backupPath);
-      try {
-        fs.renameSync(tempPath, binaryPath);
-        fs.rmSync(backupPath, { force: true });
-      } catch (err) {
-        if (!fs.existsSync(binaryPath) && fs.existsSync(backupPath)) {
-          fs.renameSync(backupPath, binaryPath);
-        }
-        throw err;
-      }
-    } else {
-      fs.renameSync(tempPath, binaryPath);
-    }
-
-    makeExecutable(binaryPath);
+    replaceBinary(tempPath, asset);
     console.log("[+] Matrix IPTV binary ready.");
     console.log("Type 'matrix-iptv' to start.");
   } catch (err) {

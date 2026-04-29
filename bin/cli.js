@@ -130,6 +130,9 @@ async function downloadAsset(asset, destination) {
     const writer = fs.createWriteStream(destination, { flags: "wx" });
     response.data.pipe(writer);
     writer.on("finish", () => writer.close(resolve));
+    response.data.on("error", (err) => {
+      writer.destroy(err);
+    });
     writer.on("error", (err) => {
       fs.rm(destination, { force: true }, () => {});
       reject(err);

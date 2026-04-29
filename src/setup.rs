@@ -529,64 +529,111 @@ pub async fn check_for_updates(
 pub fn perform_windows_self_update() -> Result<(), anyhow::Error> {
     let current_exe = std::env::current_exe()?;
     let exe_path = current_exe.to_string_lossy().replace('\\', "\\\\");
-    let download_url = "https://github.com/officebeats/matrix-iptv/releases/latest/download/matrix-iptv-windows.exe";
-
-    let ps_script = format!(
-        r#"
+    let ps_script_template = r#"
 # Matrix IPTV Self-Update Script
 $ErrorActionPreference = 'Stop'
 Start-Sleep -Seconds 2
 
-$exePath = "{exe_path}"
+$exePath = "__EXE_PATH__"
 $tempPath = "$exePath.update.tmp"
 $backupPath = "$exePath.old.$([DateTimeOffset]::Now.ToUnixTimeMilliseconds())"
+$minBinarySize = 102400
 
-try {{
-    # Download new binary
+function Get-MatrixVersion($path) {
+    $env:MATRIX_IPTV_WRAPPER = '1'
+    $env:MATRIX_IPTV_SKIP_UPDATE = '1'
+    $output = & $path --version 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Version check failed for ${path}: $output"
+    }
+    $match = [regex]::Match(($output -join "`n"), '(\d+\.\d+\.\d+)')
+    if (-not $match.Success) {
+        throw "Could not read Matrix IPTV version from ${path}"
+    }
+    return $match.Groups[1].Value
+}
+
+try {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $webClient = New-Object System.Net.WebClient
-    $webClient.Headers.Add('User-Agent', 'matrix-iptv-cli-updater')
-    $webClient.DownloadFile("{download_url}", $tempPath)
+    $headers = @{ 'User-Agent' = 'matrix-iptv-cli-updater' }
+    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/officebeats/matrix-iptv/releases/latest' -Headers $headers
+    $targetVersion = [string]$release.tag_name
+    $targetVersion = $targetVersion.TrimStart('v', 'V')
+    $asset = $release.assets | Where-Object { $_.name -eq 'matrix-iptv-windows.exe' } | Select-Object -First 1
+    if (-not $asset) {
+        throw "Latest release does not include matrix-iptv-windows.exe"
+    }
+
+    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $tempPath -Headers $headers
+    $downloaded = Get-Item $tempPath
+    if ($downloaded.Length -lt $minBinarySize) {
+        throw "Downloaded file is too small: $($downloaded.Length) bytes"
+    }
+    if ($asset.size -and $downloaded.Length -ne $asset.size) {
+        throw "Downloaded file size mismatch: expected $($asset.size), got $($downloaded.Length)"
+    }
+    if ($asset.digest -and $asset.digest.StartsWith('sha256:')) {
+        $expectedHash = $asset.digest.Substring(7).ToLowerInvariant()
+        $actualHash = (Get-FileHash -Algorithm SHA256 -Path $tempPath).Hash.ToLowerInvariant()
+        if ($actualHash -ne $expectedHash) {
+            throw "Downloaded binary checksum did not match the GitHub release asset digest"
+        }
+    }
+
+    $downloadedVersion = Get-MatrixVersion $tempPath
+    if ($downloadedVersion -ne $targetVersion) {
+        throw "Downloaded binary reports version $downloadedVersion, expected $targetVersion"
+    }
     
-    # Replace binary with retries
     $maxAttempts = 15
-    for ($i = 0; $i -lt $maxAttempts; $i++) {{
-        try {{
-            if (Test-Path $exePath) {{
+    for ($i = 0; $i -lt $maxAttempts; $i++) {
+        try {
+            if ((Test-Path $exePath) -and -not (Test-Path $backupPath)) {
                 Move-Item -Path $exePath -Destination $backupPath -Force
-                try {{ Remove-Item $backupPath -Force -ErrorAction SilentlyContinue }} catch {{}}
-            }}
+            }
             Move-Item -Path $tempPath -Destination $exePath -Force
             break
-        }} catch {{
-            if ($i -eq ($maxAttempts - 1)) {{ throw }}
+        } catch {
+            if ($i -eq ($maxAttempts - 1)) { throw }
             Start-Sleep -Seconds (1 + $i * 0.5)
-        }}
-    }}
+        }
+    }
+
+    $installedVersion = Get-MatrixVersion $exePath
+    if ($installedVersion -ne $targetVersion) {
+        throw "Installed binary reports version $installedVersion, expected $targetVersion"
+    }
+
+    if (Test-Path $backupPath) {
+        Remove-Item $backupPath -Force -ErrorAction SilentlyContinue
+    }
     
-    # Relaunch with retries
     Start-Sleep -Seconds 1
     $maxSpawn = 5
-    for ($j = 0; $j -lt $maxSpawn; $j++) {{
-        try {{
+    for ($j = 0; $j -lt $maxSpawn; $j++) {
+        try {
             Start-Process -FilePath $exePath -WindowStyle Normal
             break
-        }} catch {{
-            if ($j -eq ($maxSpawn - 1)) {{ throw }}
+        } catch {
+            if ($j -eq ($maxSpawn - 1)) { throw }
             Start-Sleep -Seconds (1 + $j * 0.5)
-        }}
-    }}
-}} catch {{
+        }
+    }
+} catch {
     Write-Host "`n[!] Update failed: $_" -ForegroundColor Red
-    if (Test-Path $tempPath) {{ Remove-Item $tempPath -Force -ErrorAction SilentlyContinue }}
+    if (Test-Path $tempPath) { Remove-Item $tempPath -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $backupPath) {
+        if (Test-Path $exePath) { Remove-Item $exePath -Force -ErrorAction SilentlyContinue }
+        Move-Item -Path $backupPath -Destination $exePath -Force
+    }
     Write-Host "Press any key to exit..."
     $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-}}
+}
 
 # Clean up this script
 Remove-Item -Path $MyInvocation.MyCommand.Source -Force -ErrorAction SilentlyContinue
-"#
-    );
+"#;
+    let ps_script = ps_script_template.replace("__EXE_PATH__", &exe_path);
 
     let temp_dir = std::env::temp_dir();
     let script_path = temp_dir.join("matrix-iptv-update.ps1");
