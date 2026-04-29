@@ -122,7 +122,7 @@ jobs:
       - name: Download all artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh run download "${{ github.run_id }}" --dir artifacts --pattern "matrix-iptv-*"
+        run: gh run download "${{ github.run_id }}" --repo "${{ github.repository }}" --dir artifacts --pattern "matrix-iptv-*"
 
       - name: Flatten artifacts
         shell: bash
