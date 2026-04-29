@@ -15,6 +15,7 @@ on:
         default: "v4.0.0"
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -119,10 +120,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v6
-        with:
-          path: artifacts
-          merge-multiple: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh run download "${{ github.run_id }}" --dir artifacts --pattern "matrix-iptv-*"
+
+      - name: Flatten artifacts
+        shell: bash
+        run: |
+          find artifacts -mindepth 2 -type f -exec mv {} artifacts/ \;
+          find artifacts -mindepth 1 -type d -empty -delete
 
       - name: Create Release
         uses: softprops/action-gh-release@v3
