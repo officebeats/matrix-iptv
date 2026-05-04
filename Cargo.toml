@@ -1,6 +1,6 @@
 [package]
 name = "matrix-iptv"
-version = "4.3.10"
+version = "4.3.11"
 edition = "2021"
 default-run = "matrix-iptv"
 

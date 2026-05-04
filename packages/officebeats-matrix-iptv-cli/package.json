@@ -1,6 +1,6 @@
 {
   "name": "@officebeats/matrix-iptv-cli",
-  "version": "4.3.10",
+  "version": "4.3.11",
   "description": "Compatibility wrapper for the matrix-iptv CLI",
   "bin": {
     "matrix-iptv": "bin/cli.js"
@@ -16,6 +16,6 @@
   "author": "Beats",
   "license": "MIT",
   "dependencies": {
-    "matrix-iptv": "4.3.10"
+    "matrix-iptv": "4.3.11"
   }
 }
