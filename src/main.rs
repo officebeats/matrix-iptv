@@ -69,7 +69,7 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     if args.check {
-        setup::check_and_install_dependencies()?;
+        setup::check_and_install_dependencies_verbose()?;
         println!("Checking configuration...");
         // Reuse verification logic (simplified)
         // For now just print ok as verifying needs full async client setup which is in TUI logic
@@ -192,10 +192,15 @@ async fn main() -> Result<(), anyhow::Error> {
     if exit_code == 42 {
         #[cfg(target_os = "windows")]
         {
-            // New npm wrappers provide a safer transactional updater. Keep the
-            // Rust fallback for standalone binaries and old wrappers that do not
-            // mark child launches with MATRIX_IPTV_WRAPPER.
-            if std::env::var_os("MATRIX_IPTV_WRAPPER").is_none() {
+            // Protocol-aware npm wrappers can update the child binary after it
+            // exits. Standalone installs and older wrappers fall back to the
+            // Rust-launched updater so old wrapper code does not remain in the
+            // update path forever.
+            let has_protocol_updater = std::env::var("MATRIX_IPTV_UPDATER_PROTOCOL")
+                .ok()
+                .as_deref()
+                == Some("2");
+            if !has_protocol_updater {
                 if let Err(e) = setup::perform_windows_self_update() {
                     eprintln!(
                         "\n[!] Self-update failed: {}. Falling back to CLI updater.",
