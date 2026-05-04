@@ -10,6 +10,7 @@ const axios = require("axios");
 const repo = "officebeats/matrix-iptv";
 const userAgent = "matrix-iptv-updater";
 const updateExitCode = 42;
+const updaterProtocol = "2";
 const minBinarySize = 1024 * 100;
 const binaryName = os.platform() === "win32" ? "matrix-iptv.exe" : "matrix-iptv";
 const binaryPath = path.join(__dirname, binaryName);
@@ -20,6 +21,56 @@ const platformMap = {
   linux: "linux",
   darwin: "macos",
 };
+
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB"];
+  let size = value / 1024;
+  let unit = units[0];
+  for (let i = 1; i < units.length && size >= 1024; i += 1) {
+    size /= 1024;
+    unit = units[i];
+  }
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${unit}`;
+}
+
+function createUpdateStatus(totalSteps = 6) {
+  let step = 0;
+
+  return {
+    step(message) {
+      step += 1;
+      console.log(`[${step}/${totalSteps}] ${message}`);
+    },
+    detail(message) {
+      console.log(`    ${message}`);
+    },
+  };
+}
+
+function createProgressReporter(status, expectedBytes) {
+  let lastPercent = -10;
+  let lastLoggedBytes = 0;
+
+  return (downloadedBytes, totalBytes) => {
+    const total = Number(totalBytes || expectedBytes || 0);
+
+    if (total > 0) {
+      const percent = Math.min(100, Math.floor((downloadedBytes / total) * 100));
+      if (percent !== lastPercent && (percent >= lastPercent + 10 || percent === 100)) {
+        status.detail(`Download ${percent}% (${formatBytes(downloadedBytes)} / ${formatBytes(total)})`);
+        lastPercent = percent;
+      }
+      return;
+    }
+
+    if (downloadedBytes - lastLoggedBytes >= 5 * 1024 * 1024) {
+      status.detail(`Downloaded ${formatBytes(downloadedBytes)}...`);
+      lastLoggedBytes = downloadedBytes;
+    }
+  };
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -57,6 +108,7 @@ function getBinaryVersion(filePath) {
     env: {
       ...process.env,
       MATRIX_IPTV_WRAPPER: "1",
+      MATRIX_IPTV_UPDATER_PROTOCOL: updaterProtocol,
       MATRIX_IPTV_SKIP_UPDATE: "1",
     },
   });
@@ -114,7 +166,7 @@ function selectAsset(release) {
   return asset;
 }
 
-async function downloadAsset(asset, destination) {
+async function downloadAsset(asset, destination, onProgress = null) {
   const response = await axios({
     method: "get",
     url: asset.browser_download_url,
@@ -126,8 +178,17 @@ async function downloadAsset(asset, destination) {
     },
   });
 
+  const totalBytes = Number(response.headers["content-length"] || asset.size || 0);
+  let downloadedBytes = 0;
+
   await new Promise((resolve, reject) => {
     const writer = fs.createWriteStream(destination, { flags: "wx" });
+    response.data.on("data", (chunk) => {
+      downloadedBytes += chunk.length;
+      if (onProgress) {
+        onProgress(downloadedBytes, totalBytes);
+      }
+    });
     response.data.pipe(writer);
     writer.on("finish", () => writer.close(resolve));
     response.data.on("error", (err) => {
@@ -157,7 +218,7 @@ function makeExecutable(filePath) {
   }
 }
 
-function verifyDownloadedBinary(filePath, asset, expectedVersion) {
+function verifyDownloadedBinary(filePath, asset, expectedVersion, status = null) {
   const stat = fs.statSync(filePath);
   if (stat.size < minBinarySize) {
     throw new Error(`Downloaded file is too small (${stat.size} bytes).`);
@@ -166,6 +227,7 @@ function verifyDownloadedBinary(filePath, asset, expectedVersion) {
   if (asset.size && stat.size !== asset.size) {
     throw new Error(`Downloaded file size mismatch: expected ${asset.size}, got ${stat.size}.`);
   }
+  if (status) status.detail(`File size verified (${formatBytes(stat.size)}).`);
 
   if (asset.digest && asset.digest.startsWith("sha256:")) {
     const expectedDigest = asset.digest.slice("sha256:".length).toLowerCase();
@@ -173,6 +235,7 @@ function verifyDownloadedBinary(filePath, asset, expectedVersion) {
     if (actualDigest !== expectedDigest) {
       throw new Error("Downloaded binary checksum did not match the GitHub release asset digest.");
     }
+    if (status) status.detail("Checksum verified.");
   } else {
     console.log("[!] GitHub did not provide a release asset digest; continuing with size and version checks.");
   }
@@ -183,6 +246,7 @@ function verifyDownloadedBinary(filePath, asset, expectedVersion) {
   if (actualVersion !== expectedVersion) {
     throw new Error(`Downloaded binary reports version ${actualVersion || "unknown"}, expected ${expectedVersion}.`);
   }
+  if (status) status.detail(`Downloaded binary reports version ${actualVersion}.`);
 }
 
 async function retry(label, action, attempts = 15) {
@@ -230,7 +294,7 @@ async function withUpdateLock(action) {
   }
 }
 
-async function installBinary(tempPath, expectedVersion) {
+async function installBinary(tempPath, expectedVersion, beforeVerify = () => {}, status = null) {
   const backupPath = `${binaryPath}.old-${Date.now()}${os.platform() === "win32" ? ".exe" : ""}`;
   let backupCreated = false;
 
@@ -251,10 +315,12 @@ async function installBinary(tempPath, expectedVersion) {
 
   try {
     makeExecutable(binaryPath);
+    beforeVerify();
     const installedVersion = getBinaryVersion(binaryPath);
     if (installedVersion !== expectedVersion) {
       throw new Error(`Installed binary reports version ${installedVersion || "unknown"}, expected ${expectedVersion}.`);
     }
+    if (status) status.detail(`Installed binary reports version ${installedVersion}.`);
 
     if (backupCreated) {
       fs.rmSync(backupPath, { force: true });
@@ -275,6 +341,9 @@ async function performUpdate(options = {}) {
   const relaunchArgs = options.relaunchArgs || [];
 
   return withUpdateLock(async () => {
+    const status = createUpdateStatus();
+    console.log("\nMatrix IPTV update");
+    status.step("Resolving latest GitHub release");
     const release = await fetchRelease(targetVersion);
     const releaseVersion = String(release.tag_name || "").replace(/^v/i, "");
     const currentVersion = currentInstalledVersion();
@@ -283,12 +352,15 @@ async function performUpdate(options = {}) {
       throw new Error("GitHub release did not include a tag name.");
     }
 
-    console.log(`\n[*] Matrix IPTV update check`);
-    console.log(`[*] Current: ${currentVersion || "unknown"}`);
-    console.log(`[*] Target : ${releaseVersion}`);
+    status.detail(`Current: ${currentVersion || "unknown"}`);
+    status.detail(`Target : ${releaseVersion}`);
 
     if (currentVersion && compareVersions(currentVersion, releaseVersion) >= 0) {
       console.log("[+] Matrix IPTV is already up to date.");
+      if (relaunch) {
+        status.step("Relaunching Matrix IPTV");
+        launchApp(true, relaunchArgs);
+      }
       return { updated: false, version: currentVersion };
     }
 
@@ -300,14 +372,21 @@ async function performUpdate(options = {}) {
     const tempPath = path.join(path.dirname(binaryPath), tempName);
 
     try {
-      console.log(`[*] Downloading ${asset.name} from ${release.tag_name}...`);
-      await downloadAsset(asset, tempPath);
-      verifyDownloadedBinary(tempPath, asset, releaseVersion);
-      await installBinary(tempPath, releaseVersion);
+      status.step(`Downloading ${asset.name} from ${release.tag_name}`);
+      await downloadAsset(asset, tempPath, createProgressReporter(status, asset.size));
+      status.step("Verifying downloaded binary");
+      verifyDownloadedBinary(tempPath, asset, releaseVersion, status);
+      status.step("Installing update");
+      await installBinary(
+        tempPath,
+        releaseVersion,
+        () => status.step("Verifying installed binary"),
+        status
+      );
       console.log(`[+] Updated Matrix IPTV to ${releaseVersion}.`);
 
       if (relaunch) {
-        console.log("[*] Restarting Matrix IPTV...");
+        status.step("Relaunching Matrix IPTV");
         launchApp(true, relaunchArgs);
       } else {
         console.log("[+] Run 'matrix-iptv' to start the updated app.");
@@ -368,6 +447,7 @@ function launchApp(isUpdateRelaunch = false, args = process.argv.slice(2)) {
       env: {
         ...process.env,
         MATRIX_IPTV_WRAPPER: "1",
+        MATRIX_IPTV_UPDATER_PROTOCOL: updaterProtocol,
       },
     });
   } catch (err) {
