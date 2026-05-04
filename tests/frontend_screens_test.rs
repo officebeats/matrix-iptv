@@ -3,6 +3,7 @@ use matrix_iptv_lib::app::{App, CurrentScreen, Pane};
 use matrix_iptv_lib::flex_id::FlexId;
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
+use ratatui::{layout::Rect, style::Color};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -84,6 +85,31 @@ fn render_frame_text(app: &mut App) -> String {
         text.push('\n');
     }
     text
+}
+
+fn render_streams_pane_text(app: &mut App) -> String {
+    let backend = TestBackend::new(160, 16);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| {
+            matrix_iptv_lib::ui::panes::render_streams_pane(
+                f,
+                app,
+                Rect::new(0, 0, 160, 16),
+                Color::Green,
+            );
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let mut output = String::new();
+    for y in 0..buffer.area.height {
+        for x in 0..buffer.area.width {
+            output.push_str(buffer[(x, y)].symbol());
+        }
+        output.push('\n');
+    }
+    output
 }
 
 /// Generate N streams with unique names for strong8k-scale testing
@@ -584,5 +610,78 @@ fn test_cross_pane_search() {
     assert!(
         !app.streams.is_empty(),
         "Cross-pane search should find ESPN in streams"
+    );
+}
+
+// ─── Test 15: Sports Now Playing Column ───────────────────────────────────────
+
+#[test]
+fn test_sports_now_playing_shows_clock_score_and_removes_health_column() {
+    let mut app = App::new();
+    app.current_screen = CurrentScreen::Streams;
+    app.active_pane = Pane::Streams;
+    app.categories = vec![Arc::new(Category {
+        category_id: "nba".to_string(),
+        category_name: "NBA PACKAGE".to_string(),
+        is_sports: true,
+        ..Default::default()
+    })];
+    app.selected_category_index = 0;
+    app.streams = vec![make_stream(836349, "DETROIT PISTONS")];
+    app.selected_stream_index = 0;
+    app.session.loading_tick = 0;
+    app.live_scores = vec![matrix_iptv_lib::scores::ScoreGame {
+        id: "game-1".to_string(),
+        league: "NBA".to_string(),
+        start_time: "2026-05-03T20:00:00Z".to_string(),
+        status_state: "in".to_string(),
+        status_detail: "3rd".to_string(),
+        home_team: "Detroit Pistons".to_string(),
+        home_score: "64".to_string(),
+        home_abbr: "DET".to_string(),
+        home_color: None,
+        home_record: None,
+        home_logo: None,
+        away_team: "Orlando Magic".to_string(),
+        away_score: "51".to_string(),
+        away_abbr: "ORL".to_string(),
+        away_color: None,
+        away_record: None,
+        away_logo: None,
+        display_clock: "8:34".to_string(),
+        period: 3,
+        venue_name: None,
+        venue_city: None,
+        venue_state: None,
+        broadcasts: Vec::new(),
+        last_play: None,
+        home_win_pct: None,
+        away_win_pct: None,
+        headline: None,
+        series_summary: None,
+        top_scorer: None,
+    }];
+
+    let output = render_streams_pane_text(&mut app);
+
+    assert!(
+        output.contains("LIVE"),
+        "sports now-playing column should show a live marker for active games:\n{}",
+        output
+    );
+    assert!(
+        output.contains("8:34 - 3rd"),
+        "sports now-playing column should show the live game clock and period:\n{}",
+        output
+    );
+    assert!(
+        output.contains("DET 64-51 ORL"),
+        "sports now-playing column should show the compact score:\n{}",
+        output
+    );
+    assert!(
+        !output.contains("HEALTH"),
+        "live streams table should not render the health column:\n{}",
+        output
     );
 }

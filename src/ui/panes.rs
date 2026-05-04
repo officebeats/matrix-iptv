@@ -32,6 +32,125 @@ fn format_relative_time(dt: DateTime<Utc>, user_tz: &Tz) -> String {
     format!("{} {}", day, local.format("%I:%M %p"))
 }
 
+fn is_current_live_category_sports(app: &App) -> bool {
+    matches!(
+        app.current_screen,
+        CurrentScreen::Categories | CurrentScreen::Streams
+    ) && app
+        .categories
+        .get(app.selected_category_index)
+        .map(|category| {
+            category.is_sports || crate::parser::is_sports_content(&category.category_name)
+        })
+        .unwrap_or(false)
+}
+
+fn score_start_time(score: &crate::scores::ScoreGame, user_tz: &Tz) -> Option<String> {
+    chrono::DateTime::parse_from_rfc3339(&score.start_time)
+        .ok()
+        .map(|dt| format_relative_time(dt.with_timezone(&Utc), user_tz))
+}
+
+fn sports_clock_text(score: &crate::scores::ScoreGame, user_tz: &Tz) -> String {
+    let detail = score.status_detail.trim();
+
+    match score.status_state.as_str() {
+        "post" => {
+            if detail.is_empty() {
+                "Final".to_string()
+            } else {
+                detail.to_string()
+            }
+        }
+        "in" => {
+            let clock = score
+                .display_clock
+                .split_whitespace()
+                .next()
+                .unwrap_or(score.display_clock.as_str())
+                .trim();
+
+            if !clock.is_empty() && clock != "00:00" {
+                if detail.is_empty() || detail == clock || detail.contains(clock) {
+                    clock.to_string()
+                } else {
+                    format!("{} - {}", clock, detail)
+                }
+            } else if !detail.is_empty() {
+                detail.to_string()
+            } else {
+                "LIVE".to_string()
+            }
+        }
+        _ => score_start_time(score, user_tz).unwrap_or_else(|| {
+            if detail.is_empty() {
+                "Scheduled".to_string()
+            } else {
+                detail.to_string()
+            }
+        }),
+    }
+}
+
+fn score_team_label(abbr: &str, team_name: &str) -> String {
+    let abbr = abbr.trim();
+    if !abbr.is_empty() {
+        return abbr.to_string();
+    }
+
+    team_name
+        .split_whitespace()
+        .last()
+        .unwrap_or(team_name)
+        .to_string()
+}
+
+fn sports_score_text(score: &crate::scores::ScoreGame) -> String {
+    format!(
+        "{} {}-{} {}",
+        score_team_label(&score.home_abbr, &score.home_team),
+        score.home_score,
+        score.away_score,
+        score_team_label(&score.away_abbr, &score.away_team)
+    )
+}
+
+fn sports_now_playing_cell(
+    score: &crate::scores::ScoreGame,
+    user_tz: &Tz,
+    is_blink_on: bool,
+) -> Cell<'static> {
+    let mut spans = Vec::new();
+
+    if score.status_state == "in" {
+        let live_color = if is_blink_on {
+            Color::Rgb(255, 100, 100)
+        } else {
+            TEXT_DIM
+        };
+        spans.push(Span::styled(
+            "● LIVE ",
+            Style::default().fg(live_color).add_modifier(Modifier::BOLD),
+        ));
+    }
+
+    spans.push(Span::styled(
+        sports_clock_text(score, user_tz),
+        Style::default()
+            .fg(Color::Rgb(255, 200, 80))
+            .add_modifier(Modifier::BOLD),
+    ));
+    spans.push(Span::styled(" | ", Style::default().fg(TEXT_DIM)));
+    spans.push(Span::styled(
+        sports_score_text(score),
+        Style::default()
+            .fg(TEXT_PRIMARY)
+            .add_modifier(Modifier::BOLD),
+    ));
+
+    Cell::from(Line::from(spans))
+}
+
 /// Shared highlight style — subtle left bar + tinted background
 fn list_highlight_style() -> Style {
     Style::default()
@@ -332,7 +451,6 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                         ),
                     ])),
                     Cell::from(""), // NOW PLAYING
-                    Cell::from(""), // HEALTH
                 ]);
             }
 
@@ -617,18 +735,31 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 }
             }
 
-            // 9. Network Health
-            let health = app
-                .sports
-                .stream_health_cache
-                .get(&s_id)
-                .copied()
-                .or(s.latency_ms);
-            let health_span = latency_to_bars(health);
-
-            // 10. EPG "Now Playing" column
+            // 9. EPG / sports "Now Playing" column
             let s_id_str = crate::api::get_id_str(&s.stream_id);
-            let epg_cell = if let Some(epg_title) = app.epg_cache.get(&s_id_str) {
+            let sports_now_playing_context =
+                is_current_live_category_sports(app) || parsed.sports_event.is_some();
+            let epg_cell = if sports_now_playing_context {
+                if let Some(score) = score_data {
+                    sports_now_playing_cell(score, &user_tz, is_blink_on)
+                } else if let Some(st) = parsed.start_time {
+                    Cell::from(Span::styled(
+                        format!("Starts {}", format_relative_time(st, &user_tz)),
+                        Style::default().fg(Color::Rgb(255, 200, 80)),
+                    ))
+                } else if let Some(epg_title) = app.epg_cache.get(&s_id_str) {
+                    if !epg_title.is_empty() {
+                        Cell::from(Span::styled(
+                            epg_title.clone(),
+                            Style::default().fg(Color::Rgb(140, 140, 180)),
+                        ))
+                    } else {
+                        Cell::from("")
+                    }
+                } else {
+                    Cell::from("")
+                }
+            } else if let Some(epg_title) = app.epg_cache.get(&s_id_str) {
                 if !epg_title.is_empty() {
                     Cell::from(Span::styled(
                         epg_title.clone(),
@@ -655,7 +786,6 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                 Cell::from(quality_span),
                 Cell::from(Line::from(spans)),
                 epg_cell,
-                Cell::from(health_span),
             ])
             .style(row_style)
         })
@@ -695,7 +825,6 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         Constraint::Length(7), // Quality [FHD]
         Constraint::Fill(3),   // Name / Info (primary)
         Constraint::Fill(1),   // NOW PLAYING (EPG)
-        Constraint::Length(6), // Health bars
     ];
 
     let header_style = Style::default()
@@ -707,7 +836,6 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         Cell::from(" QUAL").style(header_style),
         Cell::from(" CHANNEL").style(header_style),
         Cell::from(" NOW PLAYING").style(header_style),
-        Cell::from("HEALTH").style(header_style),
     ])
     .height(1)
     .style(Style::default().bg(Color::Rgb(10, 25, 10))); // Subtle dark green header bg
