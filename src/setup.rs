@@ -440,6 +440,27 @@ fn release_has_update_asset(release: &serde_json::Value, asset_name: &str) -> bo
         .unwrap_or(false)
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn is_legacy_scoped_npm_binary_path(path: &Path) -> bool {
+    let parts: Vec<String> = path
+        .components()
+        .filter_map(|component| match component {
+            std::path::Component::Normal(value) => {
+                Some(value.to_string_lossy().to_ascii_lowercase())
+            }
+            _ => None,
+        })
+        .collect();
+
+    parts.ends_with(&[
+        "node_modules".to_string(),
+        "@officebeats".to_string(),
+        "matrix-iptv-cli".to_string(),
+        "bin".to_string(),
+        "matrix-iptv.exe".to_string(),
+    ])
+}
+
 /// Returns the path to the update cooldown file (stored next to config)
 #[cfg(not(target_arch = "wasm32"))]
 fn get_update_cooldown_path() -> Option<std::path::PathBuf> {
@@ -606,6 +627,11 @@ pub async fn check_for_updates(
 pub fn perform_windows_self_update() -> Result<(), anyhow::Error> {
     let current_exe = std::env::current_exe()?;
     let exe_path = current_exe.to_string_lossy().replace('\\', "\\\\");
+    let legacy_scoped_npm_install = if is_legacy_scoped_npm_binary_path(&current_exe) {
+        "$true"
+    } else {
+        "$false"
+    };
     let ps_script_template = r#"
 # Matrix IPTV Self-Update Script
 $ErrorActionPreference = 'Stop'
@@ -616,8 +642,10 @@ $exePath = "__EXE_PATH__"
 $tempPath = "$exePath.update.tmp"
 $backupPath = "$exePath.old.$([DateTimeOffset]::Now.ToUnixTimeMilliseconds())"
 $minBinarySize = 102400
+$legacyScopedNpmInstall = __LEGACY_SCOPED_NPM_INSTALL__
+$legacyScopedNpmRepairSucceeded = $false
 $step = 0
-$totalSteps = 6
+$totalSteps = if ($legacyScopedNpmInstall) { 7 } else { 6 }
 
 function Write-Step($message) {
     $script:step += 1
@@ -672,6 +700,92 @@ function Get-MatrixVersion($path) {
         throw "Could not read Matrix IPTV version from ${path}"
     }
     return $match.Groups[1].Value
+}
+
+function Get-LegacyScopedNpmPrefix($path) {
+    try {
+        $file = [System.IO.FileInfo]::new($path)
+        $bin = $file.Directory
+        if ($null -eq $bin) { return $null }
+
+        $pkg = $bin.Parent
+        $scope = if ($null -ne $pkg) { $pkg.Parent } else { $null }
+        $nodeModules = if ($null -ne $scope) { $scope.Parent } else { $null }
+        $prefix = if ($null -ne $nodeModules) { $nodeModules.Parent } else { $null }
+
+        if (
+            $bin.Name -ieq 'bin' -and
+            $pkg.Name -ieq 'matrix-iptv-cli' -and
+            $scope.Name -ieq '@officebeats' -and
+            $nodeModules.Name -ieq 'node_modules' -and
+            $null -ne $prefix
+        ) {
+            return $prefix.FullName
+        }
+    } catch {
+        return $null
+    }
+
+    return $null
+}
+
+function Repair-LegacyScopedNpmInstall($targetVersion) {
+    if (-not $legacyScopedNpmInstall) {
+        return $false
+    }
+
+    Write-Step "Repairing legacy npm wrapper"
+    $npm = Get-Command npm.cmd -ErrorAction SilentlyContinue
+    if ($null -eq $npm) {
+        $npm = Get-Command npm -ErrorAction SilentlyContinue
+    }
+
+    if ($null -eq $npm) {
+        Write-Detail "npm was not found; binary update succeeded but wrapper repair was skipped."
+        return $false
+    }
+
+    $packageSpec = "@officebeats/matrix-iptv-cli@$targetVersion"
+    Write-Detail "Detected old scoped npm layout. Updating $packageSpec..."
+    $output = & $npm.Source install -g $packageSpec --no-audit --no-fund 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Detail "Wrapper repair skipped because npm exited with code $LASTEXITCODE."
+        $tail = @($output | Select-Object -Last 4) -join " "
+        if ($tail) {
+            Write-Detail $tail
+        }
+        return $false
+    }
+
+    Write-Detail "Legacy npm wrapper repaired."
+    return $true
+}
+
+function Start-MatrixIptv($fallbackPath) {
+    $candidates = @()
+
+    if ($legacyScopedNpmRepairSucceeded) {
+        $command = Get-Command matrix-iptv.cmd -ErrorAction SilentlyContinue
+        if ($null -ne $command) {
+            $candidates += $command.Source
+        }
+
+        $prefix = Get-LegacyScopedNpmPrefix $fallbackPath
+        if ($prefix) {
+            $candidates += (Join-Path $prefix 'matrix-iptv.cmd')
+        }
+    }
+
+    $candidates += $fallbackPath
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if ($candidate -and (Test-Path $candidate)) {
+            Start-Process -FilePath $candidate -WindowStyle Normal
+            return
+        }
+    }
+
+    throw "Unable to relaunch Matrix IPTV after update."
 }
 
 function Download-MatrixAsset($url, $destination, [int64]$expectedBytes) {
@@ -750,8 +864,9 @@ try {
 
     if ($currentVersion -eq $targetVersion) {
         Write-Host "[+] Matrix IPTV is already up to date." -ForegroundColor Green
+        $legacyScopedNpmRepairSucceeded = Repair-LegacyScopedNpmInstall $targetVersion
         Write-Step "Relaunching Matrix IPTV"
-        Start-Process -FilePath $exePath -WindowStyle Normal
+        Start-MatrixIptv $exePath
         Write-Host "[+] Matrix IPTV $targetVersion is ready." -ForegroundColor Green
         Remove-Item -Path $MyInvocation.MyCommand.Source -Force -ErrorAction SilentlyContinue
         exit 0
@@ -819,13 +934,15 @@ try {
     if (Test-Path $backupPath) {
         Remove-Item $backupPath -Force -ErrorAction SilentlyContinue
     }
+
+    $legacyScopedNpmRepairSucceeded = Repair-LegacyScopedNpmInstall $targetVersion
     
     Start-Sleep -Seconds 1
     Write-Step "Relaunching Matrix IPTV"
     $maxSpawn = 5
     for ($j = 0; $j -lt $maxSpawn; $j++) {
         try {
-            Start-Process -FilePath $exePath -WindowStyle Normal
+            Start-MatrixIptv $exePath
             break
         } catch {
             if ($j -eq ($maxSpawn - 1)) { throw }
@@ -849,7 +966,9 @@ try {
 # Clean up this script
 Remove-Item -Path $MyInvocation.MyCommand.Source -Force -ErrorAction SilentlyContinue
 "#;
-    let ps_script = ps_script_template.replace("__EXE_PATH__", &exe_path);
+    let ps_script = ps_script_template
+        .replace("__EXE_PATH__", &exe_path)
+        .replace("__LEGACY_SCOPED_NPM_INSTALL__", legacy_scoped_npm_install);
 
     let temp_dir = std::env::temp_dir();
     let script_path = temp_dir.join(format!("matrix-iptv-update-{}.ps1", std::process::id()));
@@ -907,5 +1026,23 @@ mod tests {
             &release,
             "matrix-iptv-windows.exe"
         ));
+    }
+
+    #[test]
+    fn legacy_scoped_npm_binary_path_matches_old_direct_package_layout() {
+        let path = Path::new(
+            r"C:\Users\beats\AppData\Roaming\npm\node_modules\@officebeats\matrix-iptv-cli\bin\matrix-iptv.exe",
+        );
+
+        assert!(is_legacy_scoped_npm_binary_path(path));
+    }
+
+    #[test]
+    fn legacy_scoped_npm_binary_path_ignores_new_nested_dependency_layout() {
+        let path = Path::new(
+            r"C:\Users\beats\AppData\Roaming\npm\node_modules\@officebeats\matrix-iptv-cli\node_modules\matrix-iptv\bin\matrix-iptv.exe",
+        );
+
+        assert!(!is_legacy_scoped_npm_binary_path(path));
     }
 }

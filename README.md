@@ -81,6 +81,12 @@ The updater downloads the release asset for your platform, verifies size,
 checksum, and `--version`, installs through a temporary file, and restores the
 previous binary if the new one fails verification.
 
+Older scoped npm installs are repaired automatically during a Windows
+self-update. If Matrix IPTV detects the legacy
+`@officebeats/matrix-iptv-cli` package layout, it updates that compatibility
+wrapper after the new binary is installed and relaunches through the repaired
+global `matrix-iptv` command.
+
 ### **Maintainer Release Command**
 
 For repo releases, use the built-in release automation:
