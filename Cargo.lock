@@ -1795,7 +1795,7 @@ dependencies = [
 
 [[package]]
 name = "matrix-iptv"
-version = "4.3.12"
+version = "4.3.13"
 dependencies = [
  "anyhow",
  "arboard",
