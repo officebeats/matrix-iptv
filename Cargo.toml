@@ -1,7 +1,8 @@
 [package]
 name = "matrix-iptv"
-version = "4.0.18"
+version = "4.3.12"
 edition = "2021"
+default-run = "matrix-iptv"
 
 [lib]
 name = "matrix_iptv_lib"
@@ -64,9 +65,7 @@ tokio = { version = "1.42.0", features = ["rt", "macros", "sync", "time"] }
 name = "test_playback"
 path = "src/bin/test_playback.rs"
 
-[[bin]]
-name = "matrix-test"
-path = "src/bin/test_playback.rs"
+
 
 [dev-dependencies]
 tokio = { version = "1.42.0", features = ["full"] }

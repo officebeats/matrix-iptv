@@ -1,8 +1,8 @@
-use std::collections::HashSet;
 use matrix_iptv_lib::api::Stream;
-use matrix_iptv_lib::flex_id::FlexId;
 use matrix_iptv_lib::config::ProcessingMode;
+use matrix_iptv_lib::flex_id::FlexId;
 use matrix_iptv_lib::preprocessing::preprocess_streams;
+use std::collections::HashSet;
 
 #[test]
 fn test_merica_mode_msnbc_verification() {
@@ -37,7 +37,7 @@ fn test_merica_mode_msnbc_verification() {
 
     let favorites = HashSet::new();
     let modes = vec![ProcessingMode::Merica];
-    
+
     // 2. Execution: Run the preprocessing logic
     // Note: The signature is (streams, favorites, modes, is_live, account_name, channel_tx)
     preprocess_streams(&mut streams, &favorites, &modes, true, "TestAccount", None);
@@ -47,26 +47,45 @@ fn test_merica_mode_msnbc_verification() {
     println!("Survived Streams: {:?}", names);
 
     // Assertions
-    assert!(names.iter().any(|n| n.contains("MSNBC")), "MSNBC should survive");
+    assert!(
+        names.iter().any(|n| n.contains("MSNBC")),
+        "MSNBC should survive"
+    );
     // Check clean name (preprocessing removes "US |")
-    assert!(names.iter().any(|n| n == "MSNBC HEVC"), "US | prefix should be cleaned");
-    
-    assert!(!names.iter().any(|n| n.contains("ARABE")), "ARABE-SPORTS should be removed");
-    assert!(!names.iter().any(|n| n.contains("BBC ONE")), "UK Content should be removed");
-    
+    assert!(
+        names.iter().any(|n| n == "MSNBC HEVC"),
+        "US | prefix should be cleaned"
+    );
+
+    assert!(
+        !names.iter().any(|n| n.contains("ARABE")),
+        "ARABE-SPORTS should be removed"
+    );
+    assert!(
+        !names.iter().any(|n| n.contains("BBC ONE")),
+        "UK Content should be removed"
+    );
+
     // 4. Search Verification (Simulating app.rs logic)
     // preprocessing populates search_name!
     let query = "msnbc";
-    let search_results: Vec<&Stream> = streams.iter()
+    let search_results: Vec<&Stream> = streams
+        .iter()
         .filter(|s| s.search_name.contains(query))
         .collect();
-    
-    assert!(!search_results.is_empty(), "Search for 'msnbc' should return results");
+
+    assert!(
+        !search_results.is_empty(),
+        "Search for 'msnbc' should return results"
+    );
     // Should pass finding "MSNBC HEVC" (cleaned) and "MSNBC" (original id 5)
     // Note: clean_american_name replaces name.
     // Stream 1 becomes "MSNBC HEVC". search_name "msnbc hevc".
     // Stream 5 becomes "MSNBC". search_name "msnbc".
-    
-    println!("Search Results: {:?}", search_results.iter().map(|s| &s.name).collect::<Vec<_>>());
+
+    println!(
+        "Search Results: {:?}",
+        search_results.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
     assert_eq!(search_results.len(), 2, "Should find both MSNBC channels");
 }

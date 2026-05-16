@@ -1,5 +1,5 @@
 //! Chromecast casting support for Matrix IPTV
-//! 
+//!
 //! This module provides functionality for discovering and streaming to Chromecast devices.
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -12,11 +12,11 @@ use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use mdns_sd::{ServiceDaemon, ServiceEvent};
 #[cfg(not(target_arch = "wasm32"))]
-use rust_cast::{CastDevice as RustCastDevice, ChannelMessage};
-#[cfg(not(target_arch = "wasm32"))]
 use rust_cast::channels::media::{Media, StreamType};
 #[cfg(not(target_arch = "wasm32"))]
 use rust_cast::channels::receiver::CastDeviceApp;
+#[cfg(not(target_arch = "wasm32"))]
+use rust_cast::{CastDevice as RustCastDevice, ChannelMessage};
 
 /// Represents a discovered Chromecast device
 #[derive(Debug, Clone)]
@@ -85,36 +85,36 @@ impl CastManager {
     }
 
     /// Discover Chromecast devices on the local network
-    /// 
+    ///
     /// Scans for the specified duration and returns all found devices.
     pub async fn discover_devices(timeout_secs: u64) -> Result<Vec<CastDevice>, anyhow::Error> {
         use tokio::time::sleep;
-        
+
         let mdns = ServiceDaemon::new()
             .map_err(|e| anyhow::anyhow!("Failed to create mDNS daemon: {}", e))?;
-        
+
         // Chromecast uses _googlecast._tcp.local.
         let receiver = mdns
             .browse("_googlecast._tcp.local.")
             .map_err(|e| anyhow::anyhow!("Failed to browse for Chromecast devices: {}", e))?;
-        
+
         let mut devices = Vec::new();
         let timeout = Duration::from_secs(timeout_secs);
         let start = std::time::Instant::now();
-        
+
         // Collect devices for the timeout duration
         while start.elapsed() < timeout {
             match receiver.try_recv() {
                 Ok(event) => {
                     if let ServiceEvent::ServiceResolved(info) = event {
                         // Extract device info
-                        let name = info.get_property_val_str("fn")
+                        let name = info
+                            .get_property_val_str("fn")
                             .unwrap_or_else(|| info.get_fullname())
                             .to_string();
-                        
-                        let model = info.get_property_val_str("md")
-                            .map(|s| s.to_string());
-                        
+
+                        let model = info.get_property_val_str("md").map(|s| s.to_string());
+
                         // Get IP addresses
                         for addr in info.get_addresses() {
                             if let IpAddr::V4(ipv4) = addr {
@@ -124,7 +124,7 @@ impl CastManager {
                                     info.get_port(),
                                 );
                                 device.model = model.clone();
-                                
+
                                 // Avoid duplicates
                                 if !devices.iter().any(|d: &CastDevice| d.ip == device.ip) {
                                     devices.push(device);
@@ -139,34 +139,45 @@ impl CastManager {
                 }
             }
         }
-        
+
         // Stop browsing
         let _ = mdns.stop_browse("_googlecast._tcp.local.");
         let _ = mdns.shutdown();
-        
+
         Ok(devices)
     }
 
     /// Cast a media URL to a Chromecast device
-    pub fn cast_to_device(&mut self, device: &CastDevice, url: &str, title: Option<&str>) -> Result<(), anyhow::Error> {
+    pub fn cast_to_device(
+        &mut self,
+        device: &CastDevice,
+        url: &str,
+        title: Option<&str>,
+    ) -> Result<(), anyhow::Error> {
         // Connect to the Chromecast
-        let cast_device = RustCastDevice::connect_without_host_verification(
-            &device.ip, 
-            device.port
-        ).map_err(|e| anyhow::anyhow!("Failed to connect to Chromecast '{}': {}", device.name, e))?;
-        
+        let cast_device =
+            RustCastDevice::connect_without_host_verification(&device.ip, device.port).map_err(
+                |e| anyhow::anyhow!("Failed to connect to Chromecast '{}': {}", device.name, e),
+            )?;
+
         // Connect to receiver
-        cast_device.connection.connect("receiver-0")
+        cast_device
+            .connection
+            .connect("receiver-0")
             .map_err(|e| anyhow::anyhow!("Failed to connect to receiver: {}", e))?;
-        
+
         // Launch the default media receiver app
-        let app = cast_device.receiver.launch_app(&CastDeviceApp::DefaultMediaReceiver)
+        let app = cast_device
+            .receiver
+            .launch_app(&CastDeviceApp::DefaultMediaReceiver)
             .map_err(|e| anyhow::anyhow!("Failed to launch media receiver: {}", e))?;
-        
+
         // Connect to the media receiver
-        cast_device.connection.connect(&app.transport_id)
+        cast_device
+            .connection
+            .connect(&app.transport_id)
             .map_err(|e| anyhow::anyhow!("Failed to connect to media receiver: {}", e))?;
-        
+
         // Create media info
         let media = Media {
             content_id: url.to_string(),
@@ -175,19 +186,18 @@ impl CastManager {
             duration: None,
             metadata: None,
         };
-        
+
         // Load and play the media
-        cast_device.media.load(
-            &app.transport_id,
-            &app.session_id,
-            &media,
-        ).map_err(|e| anyhow::anyhow!("Failed to load media: {}", e))?;
-        
+        cast_device
+            .media
+            .load(&app.transport_id, &app.session_id, &media)
+            .map_err(|e| anyhow::anyhow!("Failed to load media: {}", e))?;
+
         // Store the active connection info
         self.connection = Some(ActiveCast {
             device: device.clone(),
         });
-        
+
         Ok(())
     }
 
@@ -197,7 +207,7 @@ impl CastManager {
             // Reconnect to stop
             if let Ok(cast_device) = RustCastDevice::connect_without_host_verification(
                 &active.device.ip,
-                active.device.port
+                active.device.port,
             ) {
                 let _ = cast_device.connection.connect("receiver-0");
                 let _ = cast_device.receiver.stop_app("receiver-0");
@@ -233,23 +243,28 @@ impl CastManager {
     pub fn new() -> Self {
         Self
     }
-    
+
     pub async fn discover_devices(_timeout_secs: u64) -> Result<Vec<CastDevice>, anyhow::Error> {
         Err(anyhow::anyhow!("Casting not supported in browser"))
     }
-    
-    pub fn cast_to_device(&mut self, _device: &CastDevice, _url: &str, _title: Option<&str>) -> Result<(), anyhow::Error> {
+
+    pub fn cast_to_device(
+        &mut self,
+        _device: &CastDevice,
+        _url: &str,
+        _title: Option<&str>,
+    ) -> Result<(), anyhow::Error> {
         Err(anyhow::anyhow!("Casting not supported in browser"))
     }
-    
+
     pub fn stop_cast(&mut self) -> Result<(), anyhow::Error> {
         Ok(())
     }
-    
+
     pub fn is_casting(&self) -> bool {
         false
     }
-    
+
     pub fn current_device(&self) -> Option<&CastDevice> {
         None
     }
@@ -271,7 +286,7 @@ mod tests {
         let d1 = CastDevice::new("TV 1".into(), "192.168.1.100".into(), 8009);
         let d2 = CastDevice::new("TV 1".into(), "192.168.1.100".into(), 8009);
         let d3 = CastDevice::new("TV 2".into(), "192.168.1.101".into(), 8009);
-        
+
         assert_eq!(d1, d2);
         assert_ne!(d1, d3);
     }

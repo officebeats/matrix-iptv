@@ -1,5 +1,8 @@
 name: "07 - Human Review Checkpoint"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   issues:
     types: [labeled]
@@ -14,7 +17,7 @@ jobs:
 
     steps:
       - name: Notify Human for Plan Review
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

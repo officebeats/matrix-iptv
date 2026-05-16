@@ -65,6 +65,22 @@ Legacy package name still works:
 npm install -g @officebeats/matrix-iptv-cli
 ```
 
+### **Updating**
+
+Matrix IPTV checks for new GitHub releases after startup without blocking the app.
+When an update is available, press `u` in the prompt to install it, `l` to be
+reminded later, or `s` to skip that version.
+
+You can also update directly from the terminal:
+
+```bash
+matrix-iptv update
+```
+
+The updater downloads the release asset for your platform, verifies size,
+checksum, and `--version`, installs through a temporary file, and restores the
+previous binary if the new one fails verification.
+
 ### **Maintainer Release Command**
 
 For repo releases, use the built-in release automation:

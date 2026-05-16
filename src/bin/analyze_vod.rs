@@ -2,21 +2,25 @@ use matrix_iptv_lib::api::XtreamClient;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let accounts = vec![
-        (
-            "Example Provider",
-            "http://example.com",
-            "username",
-            "password",
-        ),
-    ];
+    let accounts = vec![(
+        "Example Provider",
+        "http://example.com",
+        "username",
+        "password",
+    )];
 
     println!("=== VOD Content Analysis ===\n");
 
     for (name, url, user, pass) in accounts {
         println!("Testing: {} ({})", name, url);
 
-        match XtreamClient::new_with_doh(url.to_string(), user.to_string(), pass.to_string(), matrix_iptv_lib::config::DnsProvider::System).await
+        match XtreamClient::new_with_doh(
+            url.to_string(),
+            user.to_string(),
+            pass.to_string(),
+            matrix_iptv_lib::config::DnsProvider::System,
+        )
+        .await
         {
             Ok(client) => {
                 match client.authenticate().await {

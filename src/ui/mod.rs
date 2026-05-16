@@ -1,17 +1,17 @@
 pub mod colors;
-pub mod utils;
 pub mod common;
-pub mod header;
 pub mod footer;
+pub mod form;
+pub mod groups;
+pub mod header;
+pub mod home;
+pub mod loading;
 pub mod panes;
 pub mod popups;
-pub mod loading;
-pub mod form;
-pub mod home;
-pub mod vod;
 pub mod series;
-pub mod groups;
 pub mod sports;
+pub mod utils;
+pub mod vod;
 
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
@@ -32,65 +32,77 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     // Prevent terminal background bleed (gray artifacting)
     f.render_widget(ratatui::widgets::Clear, area);
     f.render_widget(
-        ratatui::widgets::Block::default()
-            .bg(ratatui::style::Color::Rgb(0, 0, 0)),
-        area
+        ratatui::widgets::Block::default().bg(ratatui::style::Color::Rgb(0, 0, 0)),
+        area,
     );
+
+    // Calculate dynamic margins for Variable Typographic ASCII Matrix border
+    let mut margin_v = 1;
+    let mut margin_h = 2; // Double horizontal to roughly match terminal aspect ratio
+
+    // The home screen should use a healthy amount of canvas for the background decoration
+    if app.current_screen == CurrentScreen::Home {
+        margin_v = area.height.saturating_mul(15) / 100;
+        margin_h = area.width.saturating_mul(20) / 100;
+    }
+
+    crate::matrix_rain::render_matrix_edge_border(f, area, margin_v, margin_h);
+
+    let inner_area = ratatui::layout::Rect {
+        x: area.x.saturating_add(margin_h),
+        y: area.y.saturating_add(margin_v),
+        width: area.width.saturating_sub(margin_h * 2),
+        height: area.height.saturating_sub(margin_v * 2),
+    };
 
     // Base Screens
     match app.current_screen {
         CurrentScreen::Home => {
-            home::render_home(f, app, area);
+            home::render_home(f, app, inner_area);
         }
         CurrentScreen::Login => {
-            form::render_login(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::Categories | CurrentScreen::Streams => {
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::VodCategories | CurrentScreen::VodStreams => {
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::SeriesCategories | CurrentScreen::SeriesStreams => {
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::Settings | CurrentScreen::TimezoneSettings => {
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::ContentTypeSelection => {
-            popups::render_content_type_selection(f, app, area);
+            popups::render_content_type_selection(f, app, inner_area);
         }
         CurrentScreen::GroupManagement => {
-            groups::render_group_management(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::GroupPicker => {
             // Render the underlying screen first, then overlay the picker
-            render_main_layout(f, app, area);
-            groups::render_group_picker(f, app, area);
+            render_main_layout(f, app, inner_area);
+            groups::render_group_picker(f, app, inner_area);
         }
         CurrentScreen::Play | CurrentScreen::GlobalSearch => {
             // Placeholder or actual play info screen
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
         CurrentScreen::UpdatePrompt => {
-            popups::render_update_prompt(f, app, area);
+            popups::render_update_prompt(f, app, inner_area);
         }
         CurrentScreen::SportsDashboard => {
-            render_main_layout(f, app, area);
+            render_main_layout(f, app, inner_area);
         }
     }
 
-    // Overlays
-    if app.loading_message.is_some() {
-        loading::render_loading(f, app, area);
-    }
-
-
-    // Matrix Rain Overlay (Draws on top of everything except Help/Guide/Error if they need focus, but effectively screensaver covers all)
+    // Base Screens (Draws on top of everything except Help/Guide/Error if they need focus, but effectively screensaver covers all)
     // Actually screensaver should be on top of everything.
     if app.show_matrix_rain {
-         #[cfg(not(target_arch = "wasm32"))]
-         crate::matrix_rain::render_matrix_rain(f, app, area);
+        #[cfg(not(target_arch = "wasm32"))]
+        crate::matrix_rain::render_matrix_rain(f, app, area);
     }
 
     // --- Screen Transition Effect ---
@@ -98,18 +110,23 @@ pub fn ui(f: &mut Frame, app: &mut App) {
     {
         // Compute per-frame delta time (clamped to 100ms max to avoid huge jumps)
         let now = std::time::Instant::now();
-        let delta = now.duration_since(app.frame_instant).min(std::time::Duration::from_millis(100));
+        let delta = now
+            .duration_since(app.frame_instant)
+            .min(std::time::Duration::from_millis(100));
         app.frame_instant = now;
         let last_tick = FxDuration::from_millis(delta.as_millis() as u32);
 
         // Detect screen change → spawn a new sweep-in effect
-        let screen_changed = app.transition_last_screen.as_ref().map_or(true, |s| *s != app.current_screen);
+        let screen_changed = app
+            .transition_last_screen
+            .as_ref()
+            .is_none_or(|s| *s != app.current_screen);
         if screen_changed && !app.show_matrix_rain {
             app.transition_last_screen = Some(app.current_screen.clone());
             let effect = fx::sweep_in(
                 tachyonfx::Motion::LeftToRight,
-                10,   // sweep width in cells
-                0,    // offset
+                10, // sweep width in cells
+                0,  // offset
                 ratatui::style::Color::Black,
                 tachyonfx::EffectTimer::from((
                     FxDuration::from_millis(350),
@@ -159,8 +176,8 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(header_height), // Header
-            Constraint::Min(0),     // Content
-            Constraint::Length(2), // Footer (bordered bottom bar)
+            Constraint::Min(0),                // Content
+            Constraint::Length(2),             // Footer (bordered bottom bar)
         ])
         .split(area);
 
@@ -177,11 +194,11 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
             } else {
                 // Show detail panel only if terminal is wide enough (>= 80 cols)
                 let show_detail = content_area.width >= 80;
-                
+
                 if show_detail {
-                    let detail_width = 30u16.min(content_area.width / 3); 
+                    let detail_width = 30u16.min(content_area.width / 3);
                     let streams_width = content_area.width.saturating_sub(detail_width);
-                    
+
                     let h_chunks = Layout::default()
                         .direction(Direction::Horizontal)
                         .constraints([
@@ -190,19 +207,18 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                         ])
                         .split(content_area);
 
-                    // Check if current CATEGORY is sports (not per-stream — avoids jarring pop in/out)
-                    let is_sports_category = app.categories.get(app.selected_category_index)
-                        .map(|c| crate::parser::is_sports_content(&c.category_name))
+                    // Check if current CATEGORY is sports (pre-calculated flag)
+                    let is_sports_category = app
+                        .categories
+                        .get(app.selected_category_index)
+                        .map(|c| c.is_sports)
                         .unwrap_or(false);
 
                     if is_sports_category {
                         // Sports category: always show match intelligence at fixed compact height
                         let mid_chunks = Layout::default()
                             .direction(Direction::Vertical)
-                            .constraints([
-                                Constraint::Min(10),
-                                Constraint::Length(7),
-                            ])
+                            .constraints([Constraint::Min(10), Constraint::Length(7)])
                             .split(h_chunks[0]);
                         panes::render_streams_pane(f, app, mid_chunks[0], SOFT_GREEN);
                         panes::render_stream_details_pane(f, app, mid_chunks[1], SOFT_GREEN);
@@ -216,22 +232,19 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                     // Narrow terminal: 1-column layout (streams only)
                     let h_chunks = Layout::default()
                         .direction(Direction::Horizontal)
-                        .constraints([
-                            Constraint::Percentage(100),
-                        ])
+                        .constraints([Constraint::Percentage(100)])
                         .split(content_area);
 
-                    let is_sports_category = app.categories.get(app.selected_category_index)
-                        .map(|c| crate::parser::is_sports_content(&c.category_name))
+                    let is_sports_category = app
+                        .categories
+                        .get(app.selected_category_index)
+                        .map(|c| c.is_sports)
                         .unwrap_or(false);
 
                     if is_sports_category {
                         let right_chunks = Layout::default()
                             .direction(Direction::Vertical)
-                            .constraints([
-                                Constraint::Min(10),
-                                Constraint::Length(7),
-                            ])
+                            .constraints([Constraint::Min(10), Constraint::Length(7)])
                             .split(h_chunks[0]);
                         panes::render_streams_pane(f, app, right_chunks[0], SOFT_GREEN);
                         panes::render_stream_details_pane(f, app, right_chunks[1], SOFT_GREEN);
@@ -253,12 +266,24 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
         CurrentScreen::SportsDashboard => {
             sports::render_sports_view(f, app, content_area);
         }
+        CurrentScreen::Login => {
+            form::render_login(f, app, content_area);
+        }
+        CurrentScreen::GroupManagement => {
+            groups::render_group_management(f, app, content_area);
+        }
         CurrentScreen::GlobalSearch => {
             // Check if focused result is a sports event OR has ESPN score data
-            let is_sports_event = app.global_search_results.get(app.selected_stream_index)
+            let is_sports_event = app
+                .global_search_results
+                .get(app.selected_stream_index)
                 .map(|s| {
-                    let parsed = crate::parser::parse_stream(&s.name, app.provider_timezone.as_deref());
-                    parsed.sports_event.is_some() || app.get_score_for_stream(&parsed.display_name).is_some()
+                    let parsed = crate::parser::parse_stream(
+                        &s.name,
+                        app.session.provider_timezone.as_deref(),
+                    );
+                    parsed.sports_event.is_some()
+                        || app.get_score_for_stream(&parsed.display_name).is_some()
                 })
                 .unwrap_or(false);
 
@@ -266,10 +291,7 @@ fn render_main_layout(f: &mut Frame, app: &mut App, area: Rect) {
                 let intel_height = 10u16;
                 let layout_chunks = Layout::default()
                     .direction(Direction::Vertical)
-                    .constraints([
-                        Constraint::Min(10),
-                        Constraint::Length(intel_height),
-                    ])
+                    .constraints([Constraint::Min(10), Constraint::Length(intel_height)])
                     .split(content_area);
 
                 panes::render_global_search_pane(f, app, layout_chunks[0]);

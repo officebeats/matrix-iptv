@@ -1,13 +1,15 @@
+use ratatui::layout::Rect;
+use ratatui::widgets::ListState;
 use std::collections::HashMap;
 use std::sync::Arc;
-use ratatui::widgets::ListState;
-use ratatui::layout::Rect;
 
-use crate::api::{Category, IptvClient, Stream, UserInfo, ServerInfo, SeriesEpisode, SeriesInfo, VodInfo};
+use crate::api::{
+    Category, IptvClient, SeriesEpisode, SeriesInfo, ServerInfo, Stream, UserInfo, VodInfo,
+};
+use crate::app::{CurrentScreen, MatrixColumn, Pane};
 use crate::errors::LoadingProgress;
-use crate::app::{CurrentScreen, Pane, MatrixColumn};
-use crate::sports::{StreamedMatch, StreamedStream};
 use crate::scores::ScoreGame;
+use crate::sports::{StreamedMatch, StreamedStream};
 
 /// Type of content for filtering and management
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -67,20 +69,24 @@ pub struct SessionState {
     pub loading_progress: Option<LoadingProgress>,
     /// Loading animation tick
     pub loading_tick: u64,
+    /// Flag indicating user cancelled loading
+    pub loading_cancelled: bool,
     /// Selected account index
     pub selected_account_index: usize,
+    /// Max category name length for UI alignment
+    pub max_category_name_len: usize,
 }
 
 impl SessionState {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Check if session is connected
     pub fn is_connected(&self) -> bool {
         self.current_client.is_some()
     }
-    
+
     /// Clear session data (logout)
     pub fn clear(&mut self) {
         self.current_client = None;
@@ -102,6 +108,7 @@ impl SessionState {
 
 /// Content state for categories and streams
 /// Used for Live channels, VOD movies, and Series
+#[derive(Default)]
 pub struct ContentState {
     /// All categories (unfiltered)
     pub all_categories: Vec<Arc<Category>>,
@@ -125,28 +132,11 @@ pub struct ContentState {
     pub epg_cache: HashMap<String, String>,
 }
 
-impl Default for ContentState {
-    fn default() -> Self {
-        Self {
-            all_categories: Vec::new(),
-            categories: Vec::new(),
-            selected_category_index: 0,
-            category_list_state: ListState::default(),
-            all_streams: Vec::new(),
-            streams: Vec::new(),
-            selected_stream_index: 0,
-            stream_list_state: ListState::default(),
-            category_channel_counts: HashMap::new(),
-            epg_cache: HashMap::new(),
-        }
-    }
-}
-
 impl ContentState {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Select a category by index
     pub fn select_category(&mut self, index: usize) {
         self.selected_category_index = index;
@@ -154,7 +144,7 @@ impl ContentState {
             self.category_list_state.select(Some(index));
         }
     }
-    
+
     /// Select a stream by index
     pub fn select_stream(&mut self, index: usize) {
         self.selected_stream_index = index;
@@ -162,17 +152,17 @@ impl ContentState {
             self.stream_list_state.select(Some(index));
         }
     }
-    
+
     /// Get the selected category
     pub fn selected_category(&self) -> Option<&Arc<Category>> {
         self.categories.get(self.selected_category_index)
     }
-    
+
     /// Get the selected stream
     pub fn selected_stream(&self) -> Option<&Arc<Stream>> {
         self.streams.get(self.selected_stream_index)
     }
-    
+
     /// Clear all content
     pub fn clear(&mut self) {
         self.all_categories.clear();
@@ -184,7 +174,7 @@ impl ContentState {
         self.category_channel_counts.clear();
         self.epg_cache.clear();
     }
-    
+
     /// Check if content is loaded
     pub fn has_content(&self) -> bool {
         !self.all_categories.is_empty() || !self.all_streams.is_empty()
@@ -192,6 +182,7 @@ impl ContentState {
 }
 
 /// Series state extending ContentState with episode handling
+#[derive(Default)]
 pub struct SeriesState {
     /// Base content state
     pub content: ContentState,
@@ -205,23 +196,11 @@ pub struct SeriesState {
     pub current_series_info: Option<SeriesInfo>,
 }
 
-impl Default for SeriesState {
-    fn default() -> Self {
-        Self {
-            content: ContentState::default(),
-            series_episodes: Vec::new(),
-            selected_series_episode_index: 0,
-            series_episode_list_state: ListState::default(),
-            current_series_info: None,
-        }
-    }
-}
-
 impl SeriesState {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Select an episode by index
     pub fn select_episode(&mut self, index: usize) {
         self.selected_series_episode_index = index;
@@ -229,12 +208,12 @@ impl SeriesState {
             self.series_episode_list_state.select(Some(index));
         }
     }
-    
+
     /// Get the selected episode
     pub fn selected_episode(&self) -> Option<&SeriesEpisode> {
         self.series_episodes.get(self.selected_series_episode_index)
     }
-    
+
     /// Clear series-specific data
     pub fn clear_series(&mut self) {
         self.series_episodes.clear();
@@ -244,20 +223,12 @@ impl SeriesState {
 }
 
 /// VOD state with movie info
+#[derive(Default)]
 pub struct VodState {
     /// Base content state
     pub content: ContentState,
     /// Selected VOD metadata
     pub current_vod_info: Option<VodInfo>,
-}
-
-impl Default for VodState {
-    fn default() -> Self {
-        Self {
-            content: ContentState::default(),
-            current_vod_info: None,
-        }
-    }
 }
 
 impl VodState {
@@ -307,7 +278,7 @@ impl LoginFormState {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Clear form
     pub fn clear(&mut self) {
         self.input_name.reset();
@@ -381,13 +352,13 @@ impl UiState {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     /// Navigate to a screen, saving history
     pub fn navigate_to(&mut self, screen: CurrentScreen) {
         self.previous_screen = Some(self.current_screen.clone());
         self.current_screen = screen;
     }
-    
+
     /// Go back to previous screen
     pub fn go_back(&mut self) {
         if let Some(prev) = self.previous_screen.take() {
@@ -426,6 +397,7 @@ impl SportsState {
 }
 
 /// Matrix rain animation state
+#[derive(Default)]
 pub struct MatrixRainState {
     /// Animation active
     pub active: bool,
@@ -440,18 +412,6 @@ pub struct MatrixRainState {
     pub columns: Vec<MatrixColumn>,
     /// Logo pixel activation
     pub logo_hits: Vec<bool>,
-}
-
-impl Default for MatrixRainState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            start_time: None,
-            screensaver_mode: false,
-            columns: Vec::new(),
-            logo_hits: Vec::new(),
-        }
-    }
 }
 
 impl MatrixRainState {
@@ -473,13 +433,31 @@ pub struct SearchState {
     pub results: Vec<Arc<Stream>>,
     /// Search results list state
     pub list_state: ListState,
+    /// Progressive narrowing stack for incremental search optimization
+    /// Stores results from previous query lengths to avoid full-list scans
+    pub narrow_stack: Vec<(usize, Vec<Arc<Stream>>)>,
+    /// Search history
+    pub history: std::collections::VecDeque<String>,
+    /// Auto-complete suggestions
+    pub suggestions: Vec<String>,
+    /// Last search timestamp for throttle
+    pub last_search_time: Option<std::time::Instant>,
+    /// Debounce timer for active typing
+    pub debounce_timer: Option<std::time::Instant>,
+    /// Last screen where search was performed
+    pub last_screen: Option<crate::app::CurrentScreen>,
+    /// Last pane where search was performed
+    pub last_pane: Option<crate::app::Pane>,
 }
 
 impl SearchState {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            history: std::collections::VecDeque::with_capacity(20),
+            ..Default::default()
+        }
     }
-    
+
     /// Clear search
     pub fn clear(&mut self) {
         self.query.clear();

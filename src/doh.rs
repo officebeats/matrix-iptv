@@ -1,23 +1,18 @@
-/// DNS-over-HTTPS fallback utility.
-///
-/// Extracts the hostname from a URL, queries multiple DoH providers for an A record,
-/// and attempts to reconnect using the resolved IP. Only works for plain HTTP — HTTPS
-/// will fail due to TLS SNI mismatch so we skip the retry in that case.
+//! DNS-over-HTTPS fallback utility.
+//!
+//! Extracts the hostname from a URL, queries multiple DoH providers for an A record,
+//! and attempts to reconnect using the resolved IP. Only works for plain HTTP — HTTPS
+//! will fail due to TLS SNI mismatch so we skip the retry in that case.
 
 /// Attempt to resolve DNS via DoH and retry the request.
 /// Returns `Some(Response)` if a DoH provider resolves and the retry succeeds.
 /// Returns `None` if DNS resolution fails, URL is HTTPS, or the retry fails.
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn try_doh_fallback(
-    client: &reqwest::Client,
-    url: &str,
-) -> Option<reqwest::Response> {
+pub async fn try_doh_fallback(client: &reqwest::Client, url: &str) -> Option<reqwest::Response> {
     // Only attempt IP substitution for plain HTTP endpoints.
     // HTTPS requires TLS SNI to match the hostname — substituting an IP will
     // cause a certificate mismatch and the handshake will always fail.
     if !url.starts_with("http://") {
-        #[cfg(debug_assertions)]
-        println!("DEBUG: DoH skipped for HTTPS URL (SNI mismatch would occur)");
         return None;
     }
 
@@ -35,8 +30,6 @@ pub async fn try_doh_fallback(
 
     for doh_base in providers {
         let doh_url = format!("{}?name={}", doh_base, hostname);
-        #[cfg(debug_assertions)]
-        println!("DEBUG: Attempting DoH via {}", doh_base);
 
         if let Ok(doh_resp) = client
             .get(&doh_url)
@@ -55,9 +48,6 @@ pub async fn try_doh_fallback(
                     .and_then(|a| a.get("data"))
                     .and_then(|d| d.as_str())
                 {
-                    #[cfg(debug_assertions)]
-                    println!("DEBUG: DoH Resolved {} to {}", hostname, ip);
-
                     let resolved_url = url.replace(hostname, ip);
                     if let Ok(resp) = client
                         .get(&resolved_url)

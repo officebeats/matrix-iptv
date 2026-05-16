@@ -7,6 +7,7 @@ const { spawnSync } = require("child_process");
 const repoRoot = path.resolve(__dirname, "..");
 const rootPackagePath = path.join(repoRoot, "package.json");
 const lockfilePath = path.join(repoRoot, "package-lock.json");
+const cargoTomlPath = path.join(repoRoot, "Cargo.toml");
 const shimPackagePath = path.join(
   repoRoot,
   "packages",
@@ -84,6 +85,27 @@ function ensureVersion(version) {
   }
 }
 
+function readCargoToml() {
+  return fs.readFileSync(cargoTomlPath, "utf8");
+}
+
+function writeCargoToml(content) {
+  fs.writeFileSync(cargoTomlPath, content, "utf8");
+}
+
+function bumpCargoVersion(version) {
+  const content = readCargoToml();
+  // Match the version line under [package] — first occurrence of version = "..."
+  const updated = content.replace(
+    /^(version\s*=\s*")([^"]+)(")/m,
+    `$1${version}$3`
+  );
+  if (updated === content) {
+    fail("Could not find version field in Cargo.toml to update.");
+  }
+  writeCargoToml(updated);
+}
+
 function bumpVersion(version) {
   const rootPackage = loadJson(rootPackagePath);
   const shimPackage = loadJson(shimPackagePath);
@@ -105,6 +127,9 @@ function bumpVersion(version) {
   if (lockfile) {
     saveJson(lockfilePath, lockfile);
   }
+
+  // Bump the Rust binary version so it matches the release tag
+  bumpCargoVersion(version);
 }
 
 function printUsage() {
@@ -131,11 +156,12 @@ const shouldExecute = args.includes("--execute");
 const managedPaths = [
   "package.json",
   "package-lock.json",
+  "Cargo.toml",
   "packages/officebeats-matrix-iptv-cli/package.json",
 ];
 
 ensureVersion(version);
-ensureClean(managedPaths);
+ensureClean(managedPaths.filter((p) => fs.existsSync(path.join(repoRoot, p))));
 
 console.log(`[release] Updating package versions to ${version}`);
 bumpVersion(version);
@@ -168,7 +194,8 @@ if ((remoteTag.stdout || "").trim()) {
   fail(`Tag ${tag} already exists on origin.`);
 }
 
-run("git", ["add", ...managedPaths]);
+const existingPaths = managedPaths.filter((p) => fs.existsSync(path.join(repoRoot, p)));
+run("git", ["add", ...existingPaths]);
 run("git", ["commit", "-m", `chore(release): bump npm packages to ${version}`]);
 run("git", ["push", "origin", "main"]);
 run("git", ["tag", tag]);

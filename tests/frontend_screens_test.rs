@@ -1,8 +1,9 @@
 use matrix_iptv_lib::api::{Category, Stream};
-use matrix_iptv_lib::flex_id::FlexId;
 use matrix_iptv_lib::app::{App, CurrentScreen, Pane};
+use matrix_iptv_lib::flex_id::FlexId;
 use ratatui::backend::TestBackend;
 use ratatui::Terminal;
+use ratatui::{layout::Rect, style::Color};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -51,6 +52,9 @@ fn make_category(id: &str, name: &str) -> Arc<Category> {
 
 /// Render one frame of the UI — panics on crash
 fn render_frame(app: &mut App) {
+    app.show_matrix_rain = false;
+    app.transition_last_screen = Some(app.current_screen.clone());
+    app.transition_effect = None;
     let backend = TestBackend::new(120, 40);
     let mut terminal = Terminal::new(backend).unwrap();
     terminal
@@ -58,6 +62,54 @@ fn render_frame(app: &mut App) {
             matrix_iptv_lib::ui::ui(f, app);
         })
         .unwrap();
+}
+
+fn render_frame_text(app: &mut App) -> String {
+    app.show_matrix_rain = false;
+    app.transition_last_screen = Some(app.current_screen.clone());
+    app.transition_effect = None;
+    let backend = TestBackend::new(140, 40);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| {
+            matrix_iptv_lib::ui::ui(f, app);
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let mut text = String::new();
+    for y in 0..buffer.area.height {
+        for x in 0..buffer.area.width {
+            text.push_str(buffer[(x, y)].symbol());
+        }
+        text.push('\n');
+    }
+    text
+}
+
+fn render_streams_pane_text(app: &mut App) -> String {
+    let backend = TestBackend::new(160, 16);
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal
+        .draw(|f| {
+            matrix_iptv_lib::ui::panes::render_streams_pane(
+                f,
+                app,
+                Rect::new(0, 0, 160, 16),
+                Color::Green,
+            );
+        })
+        .unwrap();
+
+    let buffer = terminal.backend().buffer();
+    let mut output = String::new();
+    for y in 0..buffer.area.height {
+        for x in 0..buffer.area.width {
+            output.push_str(buffer[(x, y)].symbol());
+        }
+        output.push('\n');
+    }
+    output
 }
 
 /// Generate N streams with unique names for strong8k-scale testing
@@ -115,6 +167,43 @@ fn test_all_screens_render_empty_state() {
         render_frame(&mut app);
         // If we get here without panic, the screen rendered OK
     }
+}
+
+#[test]
+fn test_footer_hints_match_vod_and_series_stream_hotkeys() {
+    let mut app = App::new();
+    app.current_screen = CurrentScreen::VodStreams;
+    app.active_pane = Pane::Streams;
+    app.streams = generate_streams(2);
+    let vod_text = render_frame_text(&mut app);
+    assert!(vod_text.contains("g top"));
+    assert!(vod_text.contains("G bottom"));
+    assert!(!vod_text.contains("g add group"));
+    assert!(!vod_text.contains("v fav"));
+    assert!(!vod_text.contains("i info"));
+
+    let mut app = App::new();
+    app.current_screen = CurrentScreen::SeriesStreams;
+    app.active_pane = Pane::Streams;
+    app.series_streams = vec![make_series_stream(1, "US | Example Show")];
+    let series_text = render_frame_text(&mut app);
+    assert!(series_text.contains("enter episodes"));
+    assert!(series_text.contains("Home top"));
+    assert!(series_text.contains("End bottom"));
+    assert!(!series_text.contains("g add group"));
+    assert!(!series_text.contains("v fav"));
+    assert!(!series_text.contains("i info"));
+}
+
+#[test]
+fn test_help_popup_does_not_advertise_stale_hotkeys() {
+    let mut app = App::new();
+    app.show_help = true;
+    let text = render_frame_text(&mut app);
+    assert!(!text.contains("g/G         jump to top / bottom"));
+    assert!(!text.contains("toggle filter active/all"));
+    assert!(text.contains("/ or f"));
+    assert!(text.contains("category grid or live add-to-group"));
 }
 
 // ─── Test 2: Large Stream List (2000 items — strong8k scale) ───────────────────
@@ -182,7 +271,11 @@ fn test_search_filtering_live_tv() {
     // Empty search → all streams
     app.search_state.query.clear();
     app.update_search();
-    assert_eq!(app.streams.len(), 5, "Empty search should return all streams");
+    assert_eq!(
+        app.streams.len(),
+        5,
+        "Empty search should return all streams"
+    );
 
     // Exact substring search
     app.search_state.query = "espn".to_string();
@@ -226,12 +319,23 @@ fn test_search_filtering_vod() {
 
     app.search_state.query = "matrix".to_string();
     app.update_search();
-    assert_eq!(app.vod_streams.len(), 1, "VOD search for 'matrix' should return 1");
-    assert!(app.vod_streams[0].cached_parsed.is_some(), "VOD stream should have cached parse");
+    assert_eq!(
+        app.vod_streams.len(),
+        1,
+        "VOD search for 'matrix' should return 1"
+    );
+    assert!(
+        app.vod_streams[0].cached_parsed.is_some(),
+        "VOD stream should have cached parse"
+    );
 
     app.search_state.query.clear();
     app.update_search();
-    assert_eq!(app.vod_streams.len(), 3, "Clearing search should restore all VOD streams");
+    assert_eq!(
+        app.vod_streams.len(),
+        3,
+        "Clearing search should restore all VOD streams"
+    );
 }
 
 // ─── Test 6: Search Filtering Correctness (Series) ────────────────────────────
@@ -249,11 +353,19 @@ fn test_search_filtering_series() {
 
     app.search_state.query = "wire".to_string();
     app.update_search();
-    assert_eq!(app.series_streams.len(), 1, "Series search for 'wire' should return 1");
+    assert_eq!(
+        app.series_streams.len(),
+        1,
+        "Series search for 'wire' should return 1"
+    );
 
     app.search_state.query.clear();
     app.update_search();
-    assert_eq!(app.series_streams.len(), 3, "Clearing search should restore all series");
+    assert_eq!(
+        app.series_streams.len(),
+        3,
+        "Clearing search should restore all series"
+    );
 }
 
 // ─── Test 7: Navigation Boundary Checks ────────────────────────────────────────
@@ -345,35 +457,35 @@ fn test_global_search_rendering() {
     let mut app = App::new();
 
     // Populate all content types into global pools
-    app.global_all_streams = vec![
-        make_stream(1, "ESPN HD"),
-        make_stream(2, "CNN"),
-    ];
-    app.global_all_vod_streams = vec![
-        make_vod_stream(10, "The Matrix (1999)"),
-    ];
-    app.global_all_series_streams = vec![
-        make_series_stream(20, "Breaking Bad"),
-    ];
+    app.global_all_streams = vec![make_stream(1, "ESPN HD"), make_stream(2, "CNN")];
+    app.global_all_vod_streams = vec![make_vod_stream(10, "The Matrix (1999)")];
+    app.global_all_series_streams = vec![make_series_stream(20, "Breaking Bad")];
 
     app.current_screen = CurrentScreen::GlobalSearch;
 
     // Empty search → no results
     app.search_state.query.clear();
     app.update_search();
-    assert_eq!(app.global_search_results.len(), 0, "Empty global search should show no results");
+    assert_eq!(
+        app.global_search_results.len(),
+        0,
+        "Empty global search should show no results"
+    );
     render_frame(&mut app);
 
     // Search across all types
     app.search_state.query = "the".to_string();
     app.update_search();
     assert!(
-        app.global_search_results.len() >= 1,
+        !app.global_search_results.is_empty(),
         "Global search for 'the' should match at least The Matrix"
     );
     // Verify caching
     for s in &app.global_search_results {
-        assert!(s.cached_parsed.is_some(), "Global search results should have cached_parsed");
+        assert!(
+            s.cached_parsed.is_some(),
+            "Global search results should have cached_parsed"
+        );
     }
     render_frame(&mut app);
 }
@@ -485,10 +597,7 @@ fn test_cross_pane_search() {
         make_category("1", "US Sports"),
         make_category("2", "UK News"),
     ];
-    app.global_all_streams = vec![
-        make_stream(1, "ESPN HD"),
-        make_stream(2, "BBC World"),
-    ];
+    app.global_all_streams = vec![make_stream(1, "ESPN HD"), make_stream(2, "BBC World")];
     app.current_screen = CurrentScreen::Categories;
     app.active_pane = Pane::Categories;
 
@@ -499,7 +608,80 @@ fn test_cross_pane_search() {
     // Categories should be filtered
     // Streams should also be searched cross-pane
     assert!(
-        app.streams.len() >= 1,
+        !app.streams.is_empty(),
         "Cross-pane search should find ESPN in streams"
+    );
+}
+
+// ─── Test 15: Sports Now Playing Column ───────────────────────────────────────
+
+#[test]
+fn test_sports_now_playing_shows_clock_score_and_removes_health_column() {
+    let mut app = App::new();
+    app.current_screen = CurrentScreen::Streams;
+    app.active_pane = Pane::Streams;
+    app.categories = vec![Arc::new(Category {
+        category_id: "nba".to_string(),
+        category_name: "NBA PACKAGE".to_string(),
+        is_sports: true,
+        ..Default::default()
+    })];
+    app.selected_category_index = 0;
+    app.streams = vec![make_stream(836349, "DETROIT PISTONS")];
+    app.selected_stream_index = 0;
+    app.session.loading_tick = 0;
+    app.live_scores = vec![matrix_iptv_lib::scores::ScoreGame {
+        id: "game-1".to_string(),
+        league: "NBA".to_string(),
+        start_time: "2026-05-03T20:00:00Z".to_string(),
+        status_state: "in".to_string(),
+        status_detail: "3rd".to_string(),
+        home_team: "Detroit Pistons".to_string(),
+        home_score: "64".to_string(),
+        home_abbr: "DET".to_string(),
+        home_color: None,
+        home_record: None,
+        home_logo: None,
+        away_team: "Orlando Magic".to_string(),
+        away_score: "51".to_string(),
+        away_abbr: "ORL".to_string(),
+        away_color: None,
+        away_record: None,
+        away_logo: None,
+        display_clock: "8:34".to_string(),
+        period: 3,
+        venue_name: None,
+        venue_city: None,
+        venue_state: None,
+        broadcasts: Vec::new(),
+        last_play: None,
+        home_win_pct: None,
+        away_win_pct: None,
+        headline: None,
+        series_summary: None,
+        top_scorer: None,
+    }];
+
+    let output = render_streams_pane_text(&mut app);
+
+    assert!(
+        output.contains("LIVE"),
+        "sports now-playing column should show a live marker for active games:\n{}",
+        output
+    );
+    assert!(
+        output.contains("8:34 - 3rd"),
+        "sports now-playing column should show the live game clock and period:\n{}",
+        output
+    );
+    assert!(
+        output.contains("DET 64-51 ORL"),
+        "sports now-playing column should show the compact score:\n{}",
+        output
+    );
+    assert!(
+        !output.contains("HEALTH"),
+        "live streams table should not render the health column:\n{}",
+        output
     );
 }

@@ -1,17 +1,15 @@
 #[cfg(not(target_arch = "wasm32"))]
-use std::io::{self, Write};
+use std::path::Path;
 #[cfg(not(target_arch = "wasm32"))]
 use std::process::Command;
-#[cfg(not(target_arch = "wasm32"))]
-use std::path::Path;
 
 /// Common locations where mpv might be installed on macOS/Linux
 #[cfg(not(target_arch = "wasm32"))]
 const MPV_CANDIDATE_PATHS: &[&str] = &[
-    "/opt/homebrew/bin/mpv",    // macOS Apple Silicon Homebrew
-    "/usr/local/bin/mpv",       // macOS Intel Homebrew / some Linux
-    "/usr/bin/mpv",             // Common system path (Linux)
-    "/snap/bin/mpv",            // Snap on Linux
+    "/opt/homebrew/bin/mpv", // macOS Apple Silicon Homebrew
+    "/usr/local/bin/mpv",    // macOS Intel Homebrew / some Linux
+    "/usr/bin/mpv",          // Common system path (Linux)
+    "/snap/bin/mpv",         // Snap on Linux
 ];
 
 /// Common locations where vlc might be installed on macOS/Linux
@@ -30,7 +28,7 @@ fn is_valid_mpv_at_path(path: &str) -> bool {
     if !p.exists() || !p.is_file() {
         return false;
     }
-    
+
     // On Unix, check if it's executable
     #[cfg(unix)]
     {
@@ -42,7 +40,7 @@ fn is_valid_mpv_at_path(path: &str) -> bool {
             }
         }
     }
-    
+
     // Verify it actually runs
     Command::new(path)
         .arg("--version")
@@ -64,14 +62,14 @@ pub fn get_mpv_path() -> Option<String> {
     {
         return Some("mpv".to_string());
     }
-    
+
     // Fallback: search common installation paths (primarily for macOS Homebrew)
     for candidate in MPV_CANDIDATE_PATHS {
         if is_valid_mpv_at_path(candidate) {
             return Some(candidate.to_string());
         }
     }
-    
+
     None
 }
 
@@ -87,7 +85,7 @@ pub fn get_vlc_path() -> Option<String> {
     {
         return Some("vlc".to_string());
     }
-    
+
     // Windows specific common paths
     if cfg!(windows) {
         let win_paths = [
@@ -100,7 +98,7 @@ pub fn get_vlc_path() -> Option<String> {
             }
         }
     }
-    
+
     // Fallback: search common installation paths
     for candidate in VLC_CANDIDATE_PATHS {
         let p = Path::new(candidate);
@@ -108,45 +106,71 @@ pub fn get_vlc_path() -> Option<String> {
             return Some(candidate.to_string());
         }
     }
-    
+
     None
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub fn check_and_install_dependencies() -> Result<(), anyhow::Error> {
-    print!("Checking dependencies... ");
-    io::stdout().flush()?;
+    check_and_install_dependencies_with_output(false)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub fn check_and_install_dependencies_verbose() -> Result<(), anyhow::Error> {
+    check_and_install_dependencies_with_output(true)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn check_and_install_dependencies_with_output(verbose: bool) -> Result<(), anyhow::Error> {
+    let mut announced = false;
+    let mut announce = || -> Result<(), anyhow::Error> {
+        if !announced {
+            println!("Checking dependencies...");
+            announced = true;
+        }
+        Ok(())
+    };
+
+    if verbose {
+        announce()?;
+    }
 
     if let Some(mpv_path) = get_mpv_path() {
-        if mpv_path == "mpv" {
-            print!("✓ mpv found. ");
-        } else {
-            print!("✓ mpv found at: {}. ", mpv_path);
+        if verbose {
+            if mpv_path == "mpv" {
+                println!("  ✓ mpv found.");
+            } else {
+                println!("  ✓ mpv found at: {}", mpv_path);
+            }
         }
     } else {
-        println!("\n✗ mpv NOT found.");
+        announce()?;
+        println!("  ✗ mpv NOT found.");
         if cfg!(target_os = "windows") {
-            println!("Attempting to install mpv using winget...");
+            println!("  Attempting to install mpv using winget...");
             install_mpv_windows()?;
         } else if cfg!(target_os = "macos") {
-            println!("Attempting to install mpv using homebrew...");
+            println!("  Attempting to install mpv using homebrew...");
             install_mpv_macos()?;
         }
     }
 
     if let Some(vlc_path) = get_vlc_path() {
-        if vlc_path == "vlc" {
-            println!("✓ vlc found.");
-        } else {
-            println!("✓ vlc found at: {}", vlc_path);
+        if verbose {
+            if vlc_path == "vlc" {
+                println!("  ✓ vlc found.");
+            } else {
+                println!("  ✓ vlc found at: {}", vlc_path);
+            }
         }
     } else {
-        println!("\n✗ vlc NOT found.");
+        announce()?;
+        println!("  ✗ vlc NOT found.");
         if cfg!(target_os = "windows") {
-            println!("Attempting to install vlc using winget...");
+            println!("  Attempting to install vlc using winget...");
             install_vlc_windows()?;
         } else if cfg!(target_os = "macos") {
-            println!("Attempting to install vlc using homebrew...");
+            println!("  Attempting to install vlc using homebrew...");
             install_vlc_macos()?;
         }
     }
@@ -182,28 +206,28 @@ fn find_brew() -> Option<String> {
     {
         return Some("brew".to_string());
     }
-    
+
     // Check common Homebrew locations
     let candidates = [
-        "/opt/homebrew/bin/brew",    // Apple Silicon
-        "/usr/local/bin/brew",       // Intel Mac
+        "/opt/homebrew/bin/brew",              // Apple Silicon
+        "/usr/local/bin/brew",                 // Intel Mac
         "/home/linuxbrew/.linuxbrew/bin/brew", // Linux Homebrew
     ];
-    
+
     for candidate in candidates {
         let path = Path::new(candidate);
-        if path.exists() && path.is_file() {
-            if Command::new(candidate)
+        if path.exists()
+            && path.is_file()
+            && Command::new(candidate)
                 .arg("--version")
                 .output()
                 .map(|o| o.status.success())
                 .unwrap_or(false)
-            {
-                return Some(candidate.to_string());
-            }
+        {
+            return Some(candidate.to_string());
         }
     }
-    
+
     None
 }
 
@@ -212,21 +236,21 @@ fn find_brew() -> Option<String> {
 fn install_homebrew() -> Result<String, anyhow::Error> {
     println!("Installing Homebrew...");
     println!("This may take a few minutes. Please wait...");
-    
+
     // Run the official Homebrew installer script with NONINTERACTIVE flag
     let status = Command::new("/bin/bash")
-        .args(&[
+        .args([
             "-c",
             "NONINTERACTIVE=1 /bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
         ])
         .status()?;
-    
+
     if !status.success() {
         return Err(anyhow::anyhow!(
             "Failed to install Homebrew. Please install manually from https://brew.sh/"
         ));
     }
-    
+
     // Find brew after installation
     if let Some(brew_path) = find_brew() {
         println!("✓ Homebrew installed successfully.");
@@ -252,25 +276,23 @@ fn install_mpv_macos() -> Result<(), anyhow::Error> {
             install_homebrew()?
         }
     };
-    
+
     println!("Installing mpv via Homebrew...");
     println!("Running: {} install mpv", brew_path);
-    
-    let status = Command::new(&brew_path)
-        .args(&["install", "mpv"])
-        .status()?;
+
+    let status = Command::new(&brew_path).args(["install", "mpv"]).status()?;
 
     if status.success() {
         println!("✓ mpv installed successfully via Homebrew.");
         return Ok(());
     }
-    
+
     // Try cask as fallback
     println!("Formula install failed, trying cask...");
     let status_cask = Command::new(&brew_path)
-        .args(&["install", "--cask", "mpv"])
+        .args(["install", "--cask", "mpv"])
         .status()?;
-    
+
     if status_cask.success() {
         println!("✓ mpv installed successfully via Homebrew Cask.");
         Ok(())
@@ -287,7 +309,7 @@ fn install_mpv_windows() -> Result<(), anyhow::Error> {
     // Try installing specific ID first
     println!("Running: winget install -e --id \"9P3JFR0CLLL6\" --accept-source-agreements --accept-package-agreements");
     let status = Command::new("winget")
-        .args(&[
+        .args([
             "install",
             "-e",
             "--id",
@@ -306,7 +328,7 @@ fn install_mpv_windows() -> Result<(), anyhow::Error> {
 
     println!("Specific ID failed, trying generic 'mpv'...");
     let status_generic = Command::new("winget")
-        .args(&[
+        .args([
             "install",
             "-e",
             "mpv",
@@ -329,10 +351,10 @@ fn install_vlc_macos() -> Result<(), anyhow::Error> {
         Some(path) => path,
         None => install_homebrew()?,
     };
-    
+
     println!("Installing vlc via Homebrew Cask...");
     let status = Command::new(&brew_path)
-        .args(&["install", "--cask", "vlc"])
+        .args(["install", "--cask", "vlc"])
         .status()?;
 
     if status.success() {
@@ -347,7 +369,7 @@ fn install_vlc_macos() -> Result<(), anyhow::Error> {
 fn install_vlc_windows() -> Result<(), anyhow::Error> {
     println!("Running: winget install -e --id VideoLAN.VLC --accept-source-agreements --accept-package-agreements");
     let status = Command::new("winget")
-        .args(&[
+        .args([
             "install",
             "-e",
             "--id",
@@ -367,11 +389,8 @@ fn install_vlc_windows() -> Result<(), anyhow::Error> {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn is_newer_version(current: &str, tag: &str) -> bool {
-    let parse_version = |s: &str| -> Vec<u32> {
-        s.split('.')
-            .filter_map(|p| p.parse::<u32>().ok())
-            .collect()
-    };
+    let parse_version =
+        |s: &str| -> Vec<u32> { s.split('.').filter_map(|p| p.parse::<u32>().ok()).collect() };
 
     let cur_parts = parse_version(current);
     let tag_parts = parse_version(tag);
@@ -379,7 +398,7 @@ fn is_newer_version(current: &str, tag: &str) -> bool {
     for i in 0..std::cmp::max(cur_parts.len(), tag_parts.len()) {
         let cur = cur_parts.get(i).unwrap_or(&0);
         let tgt = tag_parts.get(i).unwrap_or(&0);
-        
+
         if tgt > cur {
             return true;
         } else if tgt < cur {
@@ -389,8 +408,96 @@ fn is_newer_version(current: &str, tag: &str) -> bool {
     false
 }
 
+/// Returns the path to the update cooldown file (stored next to config)
 #[cfg(not(target_arch = "wasm32"))]
-pub async fn check_for_updates(tx: tokio::sync::mpsc::Sender<crate::app::AsyncAction>, manual: bool) {
+fn get_update_cooldown_path() -> Option<std::path::PathBuf> {
+    directories::ProjectDirs::from("", "", "matrix-iptv")
+        .map(|dirs| dirs.config_dir().join(".update_cooldown"))
+}
+
+/// Returns the path to the skipped update file (stored next to config).
+#[cfg(not(target_arch = "wasm32"))]
+fn get_update_skip_path() -> Option<std::path::PathBuf> {
+    directories::ProjectDirs::from("", "", "matrix-iptv")
+        .map(|dirs| dirs.config_dir().join(".update_skip"))
+}
+
+/// Check if an update for the given version was recently dismissed (within cooldown_hours)
+#[cfg(not(target_arch = "wasm32"))]
+fn is_update_dismissed(version: &str, cooldown_hours: u64) -> bool {
+    let path = match get_update_cooldown_path() {
+        Some(p) => p,
+        None => return false,
+    };
+    if let Ok(content) = std::fs::read_to_string(&path) {
+        // Format: "version|unix_timestamp"
+        let parts: Vec<&str> = content.trim().split('|').collect();
+        if parts.len() == 2 {
+            let dismissed_version = parts[0];
+            if let Ok(ts) = parts[1].parse::<u64>() {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                let elapsed_hours = (now.saturating_sub(ts)) / 3600;
+                // If same version was dismissed within cooldown window, skip
+                if dismissed_version == version && elapsed_hours < cooldown_hours {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Check if a specific update version was explicitly skipped.
+#[cfg(not(target_arch = "wasm32"))]
+fn is_update_skipped(version: &str) -> bool {
+    let path = match get_update_skip_path() {
+        Some(p) => p,
+        None => return false,
+    };
+
+    std::fs::read_to_string(&path)
+        .map(|content| content.trim() == version)
+        .unwrap_or(false)
+}
+
+/// Record that the user dismissed an update for a specific version
+#[cfg(not(target_arch = "wasm32"))]
+pub fn dismiss_update(version: &str) {
+    if let Some(path) = get_update_cooldown_path() {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let _ = std::fs::write(&path, format!("{}|{}", version, now));
+    }
+}
+
+/// Record that the user wants to skip a specific update version.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn skip_update(version: &str) {
+    if let Some(path) = get_update_skip_path() {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, version);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn check_for_updates(
+    tx: tokio::sync::mpsc::Sender<crate::app::AsyncAction>,
+    manual: bool,
+) {
+    if std::env::var_os("MATRIX_IPTV_SKIP_UPDATE").is_some() {
+        return;
+    }
+
     let current_version = env!("CARGO_PKG_VERSION");
     let client = reqwest::Client::builder()
         .user_agent("matrix-iptv-cli-updater")
@@ -398,104 +505,315 @@ pub async fn check_for_updates(tx: tokio::sync::mpsc::Sender<crate::app::AsyncAc
         .build()
         .unwrap_or_default();
 
-    // Use a GET request to the latest release to check the tag
-    // GitHub redirects /latest to the specific tag URL
-    if let Ok(resp) = client.get("https://github.com/officebeats/matrix-iptv/releases/latest")
+    if let Ok(resp) = client
+        .get("https://api.github.com/repos/officebeats/matrix-iptv/releases/latest")
         .send()
-        .await 
+        .await
     {
-        let final_url = resp.url().to_string();
-        // URL is likely https://github.com/officebeats/matrix-iptv/releases/tag/v3.0.9
-        if let Some(tag) = final_url.split("/tag/").last() {
-            let tag = tag.trim_start_matches('v');
-            if is_newer_version(current_version, tag) {
-                let _ = tx.send(crate::app::AsyncAction::UpdateAvailable(tag.to_string())).await;
+        let tag = resp
+            .json::<serde_json::Value>()
+            .await
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("tag_name")
+                    .and_then(|tag| tag.as_str())
+                    .map(|tag| tag.trim_start_matches('v').to_string())
+            });
+
+        if let Some(tag) = tag {
+            if is_newer_version(current_version, &tag) {
+                if !manual && (is_update_dismissed(&tag, 24) || is_update_skipped(&tag)) {
+                    return;
+                }
+                let _ = tx.send(crate::app::AsyncAction::UpdateAvailable(tag)).await;
             } else if manual {
                 let _ = tx.send(crate::app::AsyncAction::NoUpdateFound).await;
             }
+        } else if manual {
+            let _ = tx
+                .send(crate::app::AsyncAction::Error(
+                    "Failed to read the latest GitHub release version.".to_string(),
+                ))
+                .await;
         }
     } else if manual {
-        let _ = tx.send(crate::app::AsyncAction::Error("Failed to check for updates. Please check your connection.".to_string())).await;
+        let _ = tx
+            .send(crate::app::AsyncAction::Error(
+                "Failed to check for updates. Please check your connection.".to_string(),
+            ))
+            .await;
     }
 }
 
 /// On Windows, perform the self-update directly from the Rust binary.
-/// This bypasses cli.js entirely (which may be an older version with the EBUSY bug).
-/// Writes a PowerShell script that downloads the new binary, replaces the old one, and relaunches.
+/// This is the fallback for standalone binaries and older wrappers. The npm
+/// wrapper remains the preferred path because it can replace the child binary
+/// after the app exits, but this helper keeps standalone installs reliable too.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn perform_windows_self_update() -> Result<(), anyhow::Error> {
     let current_exe = std::env::current_exe()?;
     let exe_path = current_exe.to_string_lossy().replace('\\', "\\\\");
-    let download_url = "https://github.com/officebeats/matrix-iptv/releases/latest/download/matrix-iptv-windows.exe";
-    
-    let ps_script = format!(r#"
+    let ps_script_template = r#"
 # Matrix IPTV Self-Update Script
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 Start-Sleep -Seconds 2
 
-$exePath = "{exe_path}"
+$exePath = "__EXE_PATH__"
 $tempPath = "$exePath.update.tmp"
 $backupPath = "$exePath.old.$([DateTimeOffset]::Now.ToUnixTimeMilliseconds())"
+$minBinarySize = 102400
+$step = 0
+$totalSteps = 6
 
-try {{
-    # Download new binary
+function Write-Step($message) {
+    $script:step += 1
+    Write-Host "[$script:step/$script:totalSteps] $message" -ForegroundColor Cyan
+}
+
+function Write-Detail($message) {
+    Write-Host "    $message" -ForegroundColor DarkGray
+}
+
+function Format-Bytes([int64]$bytes) {
+    if ($bytes -lt 1024) { return "$bytes B" }
+    $units = @('KB', 'MB', 'GB')
+    $size = [double]$bytes / 1024
+    $unit = $units[0]
+    for ($i = 1; $i -lt $units.Length -and $size -ge 1024; $i++) {
+        $size = $size / 1024
+        $unit = $units[$i]
+    }
+    if ($size -ge 10) {
+        return ("{0:N1} {1}" -f $size, $unit)
+    }
+    return ("{0:N2} {1}" -f $size, $unit)
+}
+
+function Get-MatrixVersion($path) {
+    $oldWrapper = $env:MATRIX_IPTV_WRAPPER
+    $oldSkipUpdate = $env:MATRIX_IPTV_SKIP_UPDATE
+    try {
+        $env:MATRIX_IPTV_WRAPPER = '1'
+        $env:MATRIX_IPTV_SKIP_UPDATE = '1'
+        $output = & $path --version 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "Version check failed for ${path}: $output"
+        }
+    } finally {
+        if ($null -eq $oldWrapper) {
+            Remove-Item Env:\MATRIX_IPTV_WRAPPER -ErrorAction SilentlyContinue
+        } else {
+            $env:MATRIX_IPTV_WRAPPER = $oldWrapper
+        }
+
+        if ($null -eq $oldSkipUpdate) {
+            Remove-Item Env:\MATRIX_IPTV_SKIP_UPDATE -ErrorAction SilentlyContinue
+        } else {
+            $env:MATRIX_IPTV_SKIP_UPDATE = $oldSkipUpdate
+        }
+    }
+
+    $match = [regex]::Match(($output -join "`n"), '(\d+\.\d+\.\d+)')
+    if (-not $match.Success) {
+        throw "Could not read Matrix IPTV version from ${path}"
+    }
+    return $match.Groups[1].Value
+}
+
+function Download-MatrixAsset($url, $destination, [int64]$expectedBytes) {
+    Add-Type -AssemblyName System.Net.Http
+
+    if (Test-Path $destination) {
+        Remove-Item $destination -Force
+    }
+
+    $client = [System.Net.Http.HttpClient]::new()
+    try {
+        $client.Timeout = [TimeSpan]::FromSeconds(120)
+        $client.DefaultRequestHeaders.UserAgent.ParseAdd('matrix-iptv-cli-updater')
+        $client.DefaultRequestHeaders.Add('Cache-Control', 'no-cache')
+
+        $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, $url)
+        $response = $client.SendAsync($request, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        $response.EnsureSuccessStatusCode() | Out-Null
+
+        [int64]$totalBytes = 0
+        if ($response.Content.Headers.ContentLength.HasValue) {
+            $totalBytes = $response.Content.Headers.ContentLength.Value
+        } elseif ($expectedBytes -gt 0) {
+            $totalBytes = $expectedBytes
+        }
+
+        $inputStream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $outputStream = [System.IO.File]::Open($destination, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try {
+            $buffer = New-Object byte[] (1024 * 1024)
+            [int64]$downloadedBytes = 0
+            $lastPercent = -10
+            [int64]$lastLoggedBytes = 0
+
+            while (($read = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                $outputStream.Write($buffer, 0, $read)
+                $downloadedBytes += $read
+
+                if ($totalBytes -gt 0) {
+                    $percent = [Math]::Min(100, [int][Math]::Floor(($downloadedBytes * 100.0) / $totalBytes))
+                    if ($percent -ne $lastPercent -and ($percent -ge ($lastPercent + 10) -or $percent -eq 100)) {
+                        Write-Detail ("Download {0}% ({1} / {2})" -f $percent, (Format-Bytes $downloadedBytes), (Format-Bytes $totalBytes))
+                        $lastPercent = $percent
+                    }
+                } elseif (($downloadedBytes - $lastLoggedBytes) -ge (5 * 1024 * 1024)) {
+                    Write-Detail ("Downloaded {0}..." -f (Format-Bytes $downloadedBytes))
+                    $lastLoggedBytes = $downloadedBytes
+                }
+            }
+        } finally {
+            $outputStream.Dispose()
+            $inputStream.Dispose()
+        }
+    } finally {
+        $client.Dispose()
+    }
+}
+
+try {
+    Write-Host ""
+    Write-Host "Matrix IPTV update" -ForegroundColor Green
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $webClient = New-Object System.Net.WebClient
-    $webClient.Headers.Add('User-Agent', 'matrix-iptv-cli-updater')
-    $webClient.DownloadFile("{download_url}", $tempPath)
+    $headers = @{
+        'Accept' = 'application/vnd.github+json'
+        'Cache-Control' = 'no-cache'
+        'User-Agent' = 'matrix-iptv-cli-updater'
+    }
+
+    Write-Step "Resolving latest GitHub release"
+    $release = Invoke-RestMethod -Uri 'https://api.github.com/repos/officebeats/matrix-iptv/releases/latest' -Headers $headers
+    $targetVersion = [string]$release.tag_name
+    $targetVersion = $targetVersion -replace '^[vV]', ''
+    $currentVersion = Get-MatrixVersion $exePath
+    Write-Detail "Current: $currentVersion"
+    Write-Detail "Target : $targetVersion"
+
+    if ($currentVersion -eq $targetVersion) {
+        Write-Host "[+] Matrix IPTV is already up to date." -ForegroundColor Green
+        Write-Step "Relaunching Matrix IPTV"
+        Start-Process -FilePath $exePath -WindowStyle Normal
+        Write-Host "[+] Matrix IPTV $targetVersion is ready." -ForegroundColor Green
+        Remove-Item -Path $MyInvocation.MyCommand.Source -Force -ErrorAction SilentlyContinue
+        exit 0
+    }
+
+    $asset = $release.assets | Where-Object { $_.name -eq 'matrix-iptv-windows.exe' } | Select-Object -First 1
+    if (-not $asset) {
+        throw "Latest release does not include matrix-iptv-windows.exe"
+    }
+
+    Write-Step "Downloading $($asset.name) from $($release.tag_name)"
+    Download-MatrixAsset $asset.browser_download_url $tempPath $asset.size
+
+    Write-Step "Verifying downloaded binary"
+    $downloaded = Get-Item $tempPath
+    if ($downloaded.Length -lt $minBinarySize) {
+        throw "Downloaded file is too small: $($downloaded.Length) bytes"
+    }
+    if ($asset.size -and $downloaded.Length -ne $asset.size) {
+        throw "Downloaded file size mismatch: expected $($asset.size), got $($downloaded.Length)"
+    }
+    Write-Detail ("File size verified ({0})." -f (Format-Bytes $downloaded.Length))
+
+    if ($asset.digest -and $asset.digest.StartsWith('sha256:')) {
+        $expectedHash = $asset.digest.Substring(7).ToLowerInvariant()
+        $actualHash = (Get-FileHash -Algorithm SHA256 -Path $tempPath).Hash.ToLowerInvariant()
+        if ($actualHash -ne $expectedHash) {
+            throw "Downloaded binary checksum did not match the GitHub release asset digest"
+        }
+        Write-Detail "Checksum verified."
+    } else {
+        Write-Detail "GitHub did not provide a release asset digest; using size and version checks."
+    }
+
+    $downloadedVersion = Get-MatrixVersion $tempPath
+    if ($downloadedVersion -ne $targetVersion) {
+        throw "Downloaded binary reports version $downloadedVersion, expected $targetVersion"
+    }
+    Write-Detail "Downloaded binary reports version $downloadedVersion."
     
-    # Replace binary with retries
+    Write-Step "Installing update"
     $maxAttempts = 15
-    for ($i = 0; $i -lt $maxAttempts; $i++) {{
-        try {{
-            if (Test-Path $exePath) {{
+    for ($i = 0; $i -lt $maxAttempts; $i++) {
+        try {
+            if ((Test-Path $exePath) -and -not (Test-Path $backupPath)) {
                 Move-Item -Path $exePath -Destination $backupPath -Force
-                try {{ Remove-Item $backupPath -Force -ErrorAction SilentlyContinue }} catch {{}}
-            }}
+            }
             Move-Item -Path $tempPath -Destination $exePath -Force
             break
-        }} catch {{
-            if ($i -eq ($maxAttempts - 1)) {{ throw }}
-            Start-Sleep -Seconds (1 + $i * 0.5)
-        }}
-    }}
+        } catch {
+            if ($i -eq ($maxAttempts - 1)) { throw }
+            $delay = 1 + $i * 0.5
+            Write-Detail "Executable is still locked. Retrying in $delay seconds..."
+            Start-Sleep -Seconds $delay
+        }
+    }
+
+    Write-Step "Verifying installed binary"
+    $installedVersion = Get-MatrixVersion $exePath
+    if ($installedVersion -ne $targetVersion) {
+        throw "Installed binary reports version $installedVersion, expected $targetVersion"
+    }
+    Write-Detail "Installed binary reports version $installedVersion."
+
+    if (Test-Path $backupPath) {
+        Remove-Item $backupPath -Force -ErrorAction SilentlyContinue
+    }
     
-    # Relaunch with retries
     Start-Sleep -Seconds 1
+    Write-Step "Relaunching Matrix IPTV"
     $maxSpawn = 5
-    for ($j = 0; $j -lt $maxSpawn; $j++) {{
-        try {{
+    for ($j = 0; $j -lt $maxSpawn; $j++) {
+        try {
             Start-Process -FilePath $exePath -WindowStyle Normal
             break
-        }} catch {{
-            if ($j -eq ($maxSpawn - 1)) {{ throw }}
-            Start-Sleep -Seconds (1 + $j * 0.5)
-        }}
-    }}
-}} catch {{
+        } catch {
+            if ($j -eq ($maxSpawn - 1)) { throw }
+            $delay = 1 + $j * 0.5
+            Write-Detail "Launch was blocked. Retrying in $delay seconds..."
+            Start-Sleep -Seconds $delay
+        }
+    }
+    Write-Host "[+] Matrix IPTV $targetVersion is ready." -ForegroundColor Green
+} catch {
     Write-Host "`n[!] Update failed: $_" -ForegroundColor Red
-    if (Test-Path $tempPath) {{ Remove-Item $tempPath -Force -ErrorAction SilentlyContinue }}
+    if (Test-Path $tempPath) { Remove-Item $tempPath -Force -ErrorAction SilentlyContinue }
+    if (Test-Path $backupPath) {
+        if (Test-Path $exePath) { Remove-Item $exePath -Force -ErrorAction SilentlyContinue }
+        Move-Item -Path $backupPath -Destination $exePath -Force
+    }
     Write-Host "Press any key to exit..."
     $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-}}
+}
 
 # Clean up this script
 Remove-Item -Path $MyInvocation.MyCommand.Source -Force -ErrorAction SilentlyContinue
-"#);
+"#;
+    let ps_script = ps_script_template.replace("__EXE_PATH__", &exe_path);
 
     let temp_dir = std::env::temp_dir();
-    let script_path = temp_dir.join("matrix-iptv-update.ps1");
+    let script_path = temp_dir.join(format!("matrix-iptv-update-{}.ps1", std::process::id()));
     std::fs::write(&script_path, ps_script)?;
 
     Command::new("powershell.exe")
         .args([
-            "-ExecutionPolicy", "Bypass",
-            "-WindowStyle", "Hidden",
-            "-File", &script_path.to_string_lossy(),
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            &script_path.to_string_lossy(),
         ])
         .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
         .spawn()?;
 
     Ok(())

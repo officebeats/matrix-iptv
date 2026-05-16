@@ -1,5 +1,8 @@
 name: "01 - Issue to Plan (Planner)"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   issues:
     types: [labeled]
@@ -16,7 +19,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Planner Analysis
         uses: anthropics/claude-code-action@v1

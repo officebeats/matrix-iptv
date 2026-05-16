@@ -1,140 +1,200 @@
-use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Clear, Paragraph},
-    Frame,
-};
 use crate::app::App;
-use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DIM};
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY};
+use ratatui::{
+    style::{Modifier, Style},
+    text::{Line, Span},
+};
 
-pub fn render_loading(f: &mut Frame, app: &App, area: Rect) {
-    if !app.state_loading {
-        return;
+const BRAILLE_SPINNER: &[char] = &['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
+
+pub fn get_loading_status_line(app: &App) -> Option<Line<'static>> {
+    if !app.session.state_loading || app.session.loading_message.is_none() {
+        return None;
     }
 
-    // Subtle overlay across the background
-    let row = "░".repeat(area.width as usize);
-    let lines = vec![Line::from(row.as_str()); area.height as usize];
-    let dim_paragraph = Paragraph::new(lines)
-        .style(Style::default().fg(Color::DarkGray).bg(Color::Rgb(0, 0, 0)));
-    f.render_widget(dim_paragraph, area);
+    let tick = app.session.loading_tick;
+    let spinner = BRAILLE_SPINNER[(tick as usize) % BRAILLE_SPINNER.len()];
 
-    // Perfectly fitted fixed-height modal popup
-    let popup_area = centered_rect(80, 9, area);
-    f.render_widget(Clear, popup_area);
+    let panel = derive_loading_info(app);
 
-    // Dynamic title: show % when progress is available
-    let title = if let Some(ref progress) = app.loading_progress {
-        let pct = if progress.total > 0 { (progress.current * 100) / progress.total } else { 0 };
-        format!(" loading  {}% ", pct)
-    } else {
-        " loading ".to_string()
-    };
+    let mut spans: Vec<Span> = Vec::new();
 
-    use ratatui::symbols::border;
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_set(border::ROUNDED)
-        .border_style(Style::default().fg(MATRIX_GREEN))
-        .title(Span::styled(title, Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)))
-        .title_alignment(Alignment::Center)
-        .style(Style::default().bg(Color::Rgb(0, 0, 0)));
+    spans.push(Span::styled(
+        format!("{} ", spinner),
+        Style::default()
+            .fg(MATRIX_GREEN)
+            .add_modifier(Modifier::BOLD),
+    ));
 
-    f.render_widget(block, popup_area);
+    spans.push(Span::styled(
+        format!("{} ", panel.verb),
+        Style::default()
+            .fg(TEXT_PRIMARY)
+            .add_modifier(Modifier::BOLD),
+    ));
 
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .margin(1)
-        .constraints([
-            Constraint::Length(1), // Hero: spinner + current message
-            Constraint::Length(1), // Gap
-            Constraint::Length(1), // Progress bar (or empty)
-            Constraint::Min(0),    // Spacer
-            Constraint::Length(1), // Footer
-        ])
-        .split(popup_area);
-
-    let tick = app.loading_tick;
-
-    // Matrix style Katakana spinner and decoding effect
-    let katakana = ['ｦ', 'ｧ', 'ｨ', 'ｩ', 'ｪ', 'ｫ', 'ｬ', 'ｭ', 'ｮ', 'ｯ', 'ｰ', 'ｱ', 'ｲ', 'ｳ', 'ｴ', 'ｵ', 'ｶ', 'ｷ', 'ｸ', 'ｹ', 'ｺ', 'ｻ', 'ｼ', 'ｽ', 'ｾ', 'ｿ', 'ﾀ', 'ﾁ', 'ﾂ', 'ﾃ', 'ﾄ', 'ﾅ', 'ﾆ', 'ﾇ', 'ﾈ', 'ﾉ', 'ﾊ', 'ﾋ', 'ﾌ', 'ﾍ', 'ﾎ', 'ﾏ', 'ﾐ', 'ﾑ', 'ﾒ', 'ﾓ', 'ﾔ', 'ﾕ', 'ﾖ', 'ﾗ', 'ﾘ', 'ﾙ', 'ﾚ', 'ﾛ', 'ﾜ', 'ﾝ'];
-    let spinner = katakana[(tick as usize) % katakana.len()];
-
-    let glitch_len = 8;
-    let mut glitch_str = String::with_capacity(glitch_len);
-    for i in 0..glitch_len {
-        let char_idx = (tick.wrapping_add((i * 13) as u64) as usize) % katakana.len();
-        glitch_str.push(katakana[char_idx]);
-    }
-
-    let current_msg = app.loading_message.as_deref().unwrap_or("Initializing system...");
-
-    // ── Hero line ─────────────────────────────────────────────
-    // Matrix style: Katakana spinner + Message + Glitch decoding tail
-    let hero = Paragraph::new(Line::from(vec![
-        Span::styled(format!("{} ", spinner), Style::default().fg(Color::Rgb(200, 255, 200)).add_modifier(Modifier::BOLD)),
-        Span::styled(current_msg, Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
-        Span::styled(format!(" [{}]", glitch_str), Style::default().fg(MATRIX_GREEN)),
-    ]));
-    f.render_widget(hero, chunks[0]);
-
-    // ── Progress bar ──────────────────────────────────────────
-    if let Some(ref progress) = app.loading_progress {
-        let pct = if progress.total > 0 { (progress.current * 100) / progress.total } else { 0 };
-        // Dynamic bar width: pad to fit inside border margins
-        let bar_width = (popup_area.width as usize).saturating_sub(22).max(10).min(40);
+    if let Some(pct) = panel.percent {
+        let bar_width = 12usize;
         let filled = (pct * bar_width) / 100;
         let empty = bar_width.saturating_sub(filled);
-        let bar = format!("{}{}", "█".repeat(filled), "░".repeat(empty));
-
-        let eta_str = progress.eta.as_ref().map(|d| {
-            let secs = d.as_secs();
-            if secs >= 60 { format!("{}m {}s", secs / 60, secs % 60) } else { format!("{}s", secs) }
-        }).unwrap_or_else(|| "…".to_string());
-
-        let bar_line = Paragraph::new(Line::from(vec![
-            Span::styled(format!("[{}]", bar), Style::default().fg(SOFT_GREEN)),
-            Span::styled(format!("  {:>3}%", pct), Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
-            Span::styled(
-                format!("  {}/{}", progress.current, progress.total),
-                Style::default().fg(TEXT_SECONDARY),
-            ),
-            Span::styled(
-                format!("  eta {}", eta_str),
-                Style::default().fg(SOFT_GREEN),
-            ),
-        ]));
-        f.render_widget(bar_line, chunks[2]);
+        let bar = format!(
+            "[{}{}]",
+            "█".repeat(filled.min(bar_width)),
+            "░".repeat(empty.min(bar_width))
+        );
+        spans.push(Span::styled(
+            format!("{} {:>3}% ", bar, pct),
+            Style::default().fg(SOFT_GREEN),
+        ));
     }
 
-    // ── Footer ────────────────────────────────────────────────
-    let footer = Paragraph::new(Line::from(Span::styled(
-        "esc to cancel",
-        Style::default().fg(TEXT_DIM),
-    )))
-    .alignment(Alignment::Center);
-    f.render_widget(footer, chunks[4]);
+    if let Some((current, total)) = panel.counts {
+        spans.push(Span::styled(
+            format!("{}/{} ", current, total),
+            Style::default().fg(TEXT_SECONDARY),
+        ));
+    }
+
+    if let Some(eta) = &panel.eta {
+        spans.push(Span::styled(
+            format!("ETA {} ", eta),
+            Style::default().fg(SOFT_GREEN),
+        ));
+    }
+
+    spans.push(Span::styled("│  esc cancel", Style::default().fg(TEXT_DIM)));
+
+    Some(Line::from(spans))
 }
 
-fn centered_rect(percent_x: u16, height: u16, r: Rect) -> Rect {
-    let vertical_margin = r.height.saturating_sub(height) / 2;
-    let popup_layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(vertical_margin),
-            Constraint::Length(height),
-            Constraint::Min(0),
-        ])
-        .split(r);
+struct LoadingInfo {
+    verb: String,
+    percent: Option<usize>,
+    counts: Option<(usize, usize)>,
+    eta: Option<String>,
+}
 
-    let horizontal_margin = (100_u16.saturating_sub(percent_x)) / 2;
-    Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Percentage(horizontal_margin),
-            Constraint::Percentage(percent_x),
-            Constraint::Min(0),
-        ])
-        .split(popup_layout[1])[1]
+fn derive_loading_info(app: &App) -> LoadingInfo {
+    let raw_status = app
+        .session
+        .loading_message
+        .clone()
+        .unwrap_or_else(|| "Processing...".to_string());
+
+    let progress_pct = app
+        .session
+        .loading_progress
+        .as_ref()
+        .and_then(|progress| {
+            if progress.total > 0 {
+                Some((progress.current * 100) / progress.total)
+            } else {
+                None
+            }
+        })
+        .or_else(|| extract_percent(&raw_status));
+
+    let counts = app
+        .session
+        .loading_progress
+        .as_ref()
+        .map(|progress| (progress.current, progress.total))
+        .or_else(|| extract_ratio(&raw_status));
+
+    let eta = app
+        .session
+        .loading_progress
+        .as_ref()
+        .and_then(|progress| progress.eta.as_ref().map(|d| format_duration(d.as_secs())))
+        .or_else(|| extract_eta_seconds(&raw_status).map(format_duration));
+
+    let verb = if raw_status.contains("Downloading playlist") {
+        "Downloading playlist".to_string()
+    } else if raw_status.contains("Preparing memory mapping") || raw_status.contains("Received") {
+        "Staging data in memory".to_string()
+    } else if raw_status.contains("Deserializing JSON") {
+        "Decoding provider response".to_string()
+    } else if raw_status.contains("Preprocessing")
+        || raw_status.contains("Optimizing")
+        || raw_status.contains("Refining metadata")
+    {
+        "Cleaning and organizing".to_string()
+    } else if raw_status.contains("Sorting")
+        || raw_status.contains("Linking UI")
+        || raw_status.contains("Finalized")
+    {
+        "Building index".to_string()
+    } else if raw_status.contains("Loading all channels")
+        || raw_status.contains("Fetching all channels")
+    {
+        "Syncing channels".to_string()
+    } else if raw_status.contains("Loading categories") {
+        "Loading categories".to_string()
+    } else if raw_status.contains("Connecting to server")
+        || raw_status.contains("Authenticating")
+        || raw_status.contains("Processing Playlist")
+    {
+        "Connecting to server".to_string()
+    } else {
+        "Processing".to_string()
+    };
+
+    LoadingInfo {
+        verb,
+        percent: progress_pct,
+        counts,
+        eta,
+    }
+}
+
+fn extract_percent(input: &str) -> Option<usize> {
+    let percent_idx = input.find('%')?;
+    let digits_rev: String = input[..percent_idx]
+        .chars()
+        .rev()
+        .skip_while(|c| c.is_whitespace())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    if digits_rev.is_empty() {
+        None
+    } else {
+        digits_rev
+            .chars()
+            .rev()
+            .collect::<String>()
+            .parse::<usize>()
+            .ok()
+    }
+}
+
+fn extract_eta_seconds(input: &str) -> Option<u64> {
+    let lower = input.to_lowercase();
+    let start = lower.find("eta ")? + 4;
+    let digits: String = lower[start..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    if digits.is_empty() {
+        None
+    } else {
+        digits.parse::<u64>().ok()
+    }
+}
+
+fn extract_ratio(input: &str) -> Option<(usize, usize)> {
+    let start = input.find('[')? + 1;
+    let end = input[start..].find(']')? + start;
+    let inside = &input[start..end];
+    let (left, right) = inside.split_once('/')?;
+    let current = left.trim().parse::<usize>().ok()?;
+    let total = right.trim().parse::<usize>().ok()?;
+    Some((current, total))
+}
+
+fn format_duration(secs: u64) -> String {
+    if secs >= 60 {
+        format!("{}m {}s", secs / 60, secs % 60)
+    } else {
+        format!("{}s", secs)
+    }
 }

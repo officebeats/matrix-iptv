@@ -1,14 +1,20 @@
 #!/usr/bin/env node
 
-const { spawn } = require("child_process");
-const path = require("path");
-const os = require("os");
+const { spawn, spawnSync } = require("child_process");
+const crypto = require("crypto");
 const fs = require("fs");
-const https = require("https");
+const os = require("os");
+const path = require("path");
+const axios = require("axios");
 
-const binaryName =
-  os.platform() === "win32" ? "matrix-iptv.exe" : "matrix-iptv";
+const repo = "officebeats/matrix-iptv";
+const userAgent = "matrix-iptv-updater";
+const updateExitCode = 42;
+const updaterProtocol = "2";
+const minBinarySize = 1024 * 100;
+const binaryName = os.platform() === "win32" ? "matrix-iptv.exe" : "matrix-iptv";
 const binaryPath = path.join(__dirname, binaryName);
+const packageVersion = require("../package.json").version;
 
 const platformMap = {
   win32: "windows.exe",
@@ -16,176 +22,447 @@ const platformMap = {
   darwin: "macos",
 };
 
-const axios = require("axios");
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB"];
+  let size = value / 1024;
+  let unit = units[0];
+  for (let i = 1; i < units.length && size >= 1024; i += 1) {
+    size /= 1024;
+    unit = units[i];
+  }
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${unit}`;
+}
 
-async function download(url, dest) {
-  const writer = fs.createWriteStream(dest);
-  
-  try {
-    const response = await axios({
-      method: 'get',
-      url: url,
-      responseType: 'stream',
-      headers: {
-        'Cache-Control': 'no-cache',
-        'User-Agent': 'matrix-iptv-updater'
+function createUpdateStatus(totalSteps = 6) {
+  let step = 0;
+
+  return {
+    step(message) {
+      step += 1;
+      console.log(`[${step}/${totalSteps}] ${message}`);
+    },
+    detail(message) {
+      console.log(`    ${message}`);
+    },
+  };
+}
+
+function createProgressReporter(status, expectedBytes) {
+  let lastPercent = -10;
+  let lastLoggedBytes = 0;
+
+  return (downloadedBytes, totalBytes) => {
+    const total = Number(totalBytes || expectedBytes || 0);
+
+    if (total > 0) {
+      const percent = Math.min(100, Math.floor((downloadedBytes / total) * 100));
+      if (percent !== lastPercent && (percent >= lastPercent + 10 || percent === 100)) {
+        status.detail(`Download ${percent}% (${formatBytes(downloadedBytes)} / ${formatBytes(total)})`);
+        lastPercent = percent;
       }
-    });
-
-    response.data.pipe(writer);
-
-    return new Promise((resolve, reject) => {
-      writer.on('finish', resolve);
-      writer.on('error', (err) => {
-        fs.unlink(dest, () => {});
-        reject(err);
-      });
-    });
-  } catch (err) {
-    fs.unlink(dest, () => {});
-    if (err.response && err.response.status === 404) {
-      throw new Error(`Asset not found (404). This usually means the GitHub release exists but the binary hasn't been uploaded yet.`);
+      return;
     }
-    throw err;
+
+    if (downloadedBytes - lastLoggedBytes >= 5 * 1024 * 1024) {
+      status.detail(`Downloaded ${formatBytes(downloadedBytes)}...`);
+      lastLoggedBytes = downloadedBytes;
+    }
+  };
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function compareVersions(a, b) {
+  const parse = (value) =>
+    String(value || "")
+      .replace(/^v/i, "")
+      .split(".")
+      .map((part) => Number.parseInt(part, 10) || 0);
+  const left = parse(a);
+  const right = parse(b);
+  const length = Math.max(left.length, right.length);
+
+  for (let i = 0; i < length; i += 1) {
+    const diff = (left[i] || 0) - (right[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function parseVersion(output) {
+  const match = String(output || "").match(/(\d+\.\d+\.\d+)/);
+  return match ? match[1] : null;
+}
+
+function getBinaryVersion(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+
+  const result = spawnSync(filePath, ["--version"], {
+    encoding: "utf8",
+    timeout: 10000,
+    windowsHide: true,
+    env: {
+      ...process.env,
+      MATRIX_IPTV_WRAPPER: "1",
+      MATRIX_IPTV_UPDATER_PROTOCOL: updaterProtocol,
+      MATRIX_IPTV_SKIP_UPDATE: "1",
+    },
+  });
+
+  if (result.error) {
+    throw new Error(`Unable to run ${path.basename(filePath)} --version: ${result.error.message}`);
+  }
+
+  if (result.status !== 0) {
+    const message = (result.stderr || result.stdout || "").trim();
+    throw new Error(`Version check failed for ${path.basename(filePath)}${message ? `: ${message}` : ""}`);
+  }
+
+  return parseVersion(`${result.stdout}\n${result.stderr}`);
+}
+
+function currentInstalledVersion() {
+  try {
+    return getBinaryVersion(binaryPath);
+  } catch (err) {
+    console.log(`[!] Existing binary version check failed: ${err.message}`);
+    return null;
   }
 }
 
-async function performUpdate() {
+async function fetchRelease(targetVersion) {
+  const tag = targetVersion ? `v${String(targetVersion).replace(/^v/i, "")}` : null;
+  const url = tag
+    ? `https://api.github.com/repos/${repo}/releases/tags/${tag}`
+    : `https://api.github.com/repos/${repo}/releases/latest`;
+
+  const response = await axios.get(url, {
+    timeout: 15000,
+    headers: {
+      Accept: "application/vnd.github+json",
+      "Cache-Control": "no-cache",
+      "User-Agent": userAgent,
+    },
+  });
+
+  return response.data;
+}
+
+function selectAsset(release) {
   const platform = platformMap[os.platform()];
   if (!platform) {
     throw new Error(`Unsupported platform for auto-update: ${os.platform()}`);
   }
-  const releaseUrl = `https://github.com/officebeats/matrix-iptv/releases/latest/download/matrix-iptv-${platform}`;
 
-  console.log(`\n[*] Initiating Phase 4: System Update...`);
-  console.log(`[*] Downloading: ${releaseUrl}`);
+  const expectedName = `matrix-iptv-${platform}`;
+  const asset = (release.assets || []).find((item) => item.name === expectedName);
+  if (!asset) {
+    throw new Error(`Release ${release.tag_name} does not include ${expectedName}`);
+  }
+  return asset;
+}
 
-  const tempPath = binaryPath + ".tmp";
+async function downloadAsset(asset, destination, onProgress = null) {
+  const response = await axios({
+    method: "get",
+    url: asset.browser_download_url,
+    responseType: "stream",
+    timeout: 60000,
+    headers: {
+      "Cache-Control": "no-cache",
+      "User-Agent": userAgent,
+    },
+  });
+
+  const totalBytes = Number(response.headers["content-length"] || asset.size || 0);
+  let downloadedBytes = 0;
+
+  await new Promise((resolve, reject) => {
+    const writer = fs.createWriteStream(destination, { flags: "wx" });
+    response.data.on("data", (chunk) => {
+      downloadedBytes += chunk.length;
+      if (onProgress) {
+        onProgress(downloadedBytes, totalBytes);
+      }
+    });
+    response.data.pipe(writer);
+    writer.on("finish", () => writer.close(resolve));
+    response.data.on("error", (err) => {
+      writer.destroy(err);
+    });
+    writer.on("error", (err) => {
+      fs.rm(destination, { force: true }, () => {});
+      reject(err);
+    });
+  });
+}
+
+function sha256(filePath) {
+  return crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
+}
+
+function makeExecutable(filePath) {
+  if (os.platform() !== "win32") {
+    fs.chmodSync(filePath, 0o755);
+  }
+
+  if (os.platform() === "darwin") {
+    spawnSync("xattr", ["-d", "com.apple.quarantine", filePath], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+  }
+}
+
+function verifyDownloadedBinary(filePath, asset, expectedVersion, status = null) {
+  const stat = fs.statSync(filePath);
+  if (stat.size < minBinarySize) {
+    throw new Error(`Downloaded file is too small (${stat.size} bytes).`);
+  }
+
+  if (asset.size && stat.size !== asset.size) {
+    throw new Error(`Downloaded file size mismatch: expected ${asset.size}, got ${stat.size}.`);
+  }
+  if (status) status.detail(`File size verified (${formatBytes(stat.size)}).`);
+
+  if (asset.digest && asset.digest.startsWith("sha256:")) {
+    const expectedDigest = asset.digest.slice("sha256:".length).toLowerCase();
+    const actualDigest = sha256(filePath);
+    if (actualDigest !== expectedDigest) {
+      throw new Error("Downloaded binary checksum did not match the GitHub release asset digest.");
+    }
+    if (status) status.detail("Checksum verified.");
+  } else {
+    console.log("[!] GitHub did not provide a release asset digest; continuing with size and version checks.");
+  }
+
+  makeExecutable(filePath);
+
+  const actualVersion = getBinaryVersion(filePath);
+  if (actualVersion !== expectedVersion) {
+    throw new Error(`Downloaded binary reports version ${actualVersion || "unknown"}, expected ${expectedVersion}.`);
+  }
+  if (status) status.detail(`Downloaded binary reports version ${actualVersion}.`);
+}
+
+async function retry(label, action, attempts = 15) {
+  let lastError;
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return action();
+    } catch (err) {
+      lastError = err;
+      if (i === attempts - 1) break;
+      const delay = 750 + i * 350;
+      console.log(`[*] ${label} was blocked (${err.code || err.message}). Retrying in ${delay}ms...`);
+      await sleep(delay);
+    }
+  }
+  throw lastError;
+}
+
+async function withUpdateLock(action) {
+  const lockPath = path.join(os.tmpdir(), "matrix-iptv-update.lock");
+  let fd;
 
   try {
-    await download(releaseUrl, tempPath);
-
-    if (os.platform() !== "win32") {
-      fs.chmodSync(tempPath, "755");
-
-      // On macOS, remove quarantine flag to prevent Gatekeeper blocking
-      if (os.platform() === "darwin") {
-        try {
-          const { execSync } = require("child_process");
-          execSync(
-            `xattr -d com.apple.quarantine "${tempPath}" 2>/dev/null || true`
-          );
-          console.log(`[+] macOS quarantine flag cleared.`);
-        } catch (e) {
-          // xattr might fail silently, that's okay
-        }
+    if (fs.existsSync(lockPath)) {
+      const ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
+      if (ageMs > 30 * 60 * 1000) {
+        fs.rmSync(lockPath, { force: true });
       }
     }
 
-    // Replace old binary
-    let attempts = 0;
-    const maxAttempts = 15;
-    while (attempts < maxAttempts) {
-      try {
-        if (fs.existsSync(binaryPath)) {
-          if (os.platform() === "win32") {
-            const oldPath = binaryPath + ".old." + Date.now();
-            fs.renameSync(binaryPath, oldPath);
-            try {
-              fs.unlinkSync(oldPath);
-            } catch (e) {
-              // Mark for deletion on next reboot or just ignore
-            }
-          } else {
-            fs.unlinkSync(binaryPath);
-          }
-        }
-        fs.renameSync(tempPath, binaryPath);
-        break;
-      } catch (e) {
-        attempts++;
-        if (attempts === maxAttempts) throw e;
-        await new Promise((r) => setTimeout(r, 1000 + attempts * 500));
-      }
+    fd = fs.openSync(lockPath, "wx");
+    fs.writeSync(fd, `${process.pid}\n${new Date().toISOString()}\n`);
+  } catch (err) {
+    if (err.code === "EEXIST") {
+      throw new Error("Another Matrix IPTV update is already running. Try again after it finishes.");
     }
+    throw err;
+  }
 
-    if (os.platform() === "darwin") {
-      try {
-        const { execSync } = require("child_process");
-        execSync(`xattr -d com.apple.quarantine "${binaryPath}" 2>/dev/null || true`);
-      } catch (e) {}
-    }
+  try {
+    return await action();
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+    fs.rmSync(lockPath, { force: true });
+  }
+}
 
-    console.log(`[+] Update complete. Rebooting system...\n`);
+async function installBinary(tempPath, expectedVersion, beforeVerify = () => {}, status = null) {
+  const backupPath = `${binaryPath}.old-${Date.now()}${os.platform() === "win32" ? ".exe" : ""}`;
+  let backupCreated = false;
 
-    if (os.platform() === "win32") {
-      // Give Windows time to release filesystem locks on the new binary
-      await new Promise((r) => setTimeout(r, 1500));
-
-      const batchScript = `
-@echo off
-timeout /t 3 /nobreak > nul
-start "" "${binaryPath}" %*
-del "%~f0"
-`;
-      const batchPath = path.join(os.tmpdir(), "matrix-relaunch.bat");
-      fs.writeFileSync(batchPath, batchScript);
-
-      // Brief delay to let AV scanners release locks on newly written files
-      await new Promise((r) => setTimeout(r, 500));
-
-      let spawnAttempts = 0;
-      const maxSpawnAttempts = 5;
-      while (spawnAttempts < maxSpawnAttempts) {
-        try {
-          spawn("cmd.exe", ["/c", batchPath, ...process.argv.slice(2)], {
-            detached: true,
-            stdio: "ignore",
-            windowsHide: true,
-          }).unref();
-          process.exit(0);
-        } catch (spawnErr) {
-          spawnAttempts++;
-          if (spawnAttempts === maxSpawnAttempts) throw spawnErr;
-          console.log(`[*] Relaunch blocked by OS. Retrying (${spawnAttempts}/${maxSpawnAttempts})...`);
-          await new Promise((r) => setTimeout(r, 1000 + spawnAttempts * 500));
-        }
+  try {
+    await retry("Replacing binary", () => {
+      if (fs.existsSync(binaryPath) && !backupCreated) {
+        fs.renameSync(binaryPath, backupPath);
+        backupCreated = true;
       }
+      fs.renameSync(tempPath, binaryPath);
+    });
+  } catch (err) {
+    if (backupCreated && !fs.existsSync(binaryPath) && fs.existsSync(backupPath)) {
+      fs.renameSync(backupPath, binaryPath);
+    }
+    throw err;
+  }
+
+  try {
+    makeExecutable(binaryPath);
+    beforeVerify();
+    const installedVersion = getBinaryVersion(binaryPath);
+    if (installedVersion !== expectedVersion) {
+      throw new Error(`Installed binary reports version ${installedVersion || "unknown"}, expected ${expectedVersion}.`);
+    }
+    if (status) status.detail(`Installed binary reports version ${installedVersion}.`);
+
+    if (backupCreated) {
+      fs.rmSync(backupPath, { force: true });
     }
   } catch (err) {
-    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    console.log("[!] Installed binary failed verification. Restoring previous binary...");
+    fs.rmSync(binaryPath, { force: true });
+    if (backupCreated && fs.existsSync(backupPath)) {
+      fs.renameSync(backupPath, binaryPath);
+    }
     throw err;
   }
 }
 
-function launchApp(isUpdateRelaunch = false) {
+async function performUpdate(options = {}) {
+  const targetVersion = options.targetVersion || null;
+  const relaunch = Boolean(options.relaunch);
+  const relaunchArgs = options.relaunchArgs || [];
+
+  return withUpdateLock(async () => {
+    const status = createUpdateStatus();
+    console.log("\nMatrix IPTV update");
+    status.step("Resolving latest GitHub release");
+    const release = await fetchRelease(targetVersion);
+    const releaseVersion = String(release.tag_name || "").replace(/^v/i, "");
+    const currentVersion = currentInstalledVersion();
+
+    if (!releaseVersion) {
+      throw new Error("GitHub release did not include a tag name.");
+    }
+
+    status.detail(`Current: ${currentVersion || "unknown"}`);
+    status.detail(`Target : ${releaseVersion}`);
+
+    if (currentVersion && compareVersions(currentVersion, releaseVersion) >= 0) {
+      console.log("[+] Matrix IPTV is already up to date.");
+      if (relaunch) {
+        status.step("Relaunching Matrix IPTV");
+        launchApp(true, relaunchArgs);
+      }
+      return { updated: false, version: currentVersion };
+    }
+
+    const asset = selectAsset(release);
+    const tempName =
+      os.platform() === "win32"
+        ? `matrix-iptv-${process.pid}-${Date.now()}.download.exe`
+        : `matrix-iptv-${process.pid}-${Date.now()}.download`;
+    const tempPath = path.join(path.dirname(binaryPath), tempName);
+
+    try {
+      status.step(`Downloading ${asset.name} from ${release.tag_name}`);
+      await downloadAsset(asset, tempPath, createProgressReporter(status, asset.size));
+      status.step("Verifying downloaded binary");
+      verifyDownloadedBinary(tempPath, asset, releaseVersion, status);
+      status.step("Installing update");
+      await installBinary(
+        tempPath,
+        releaseVersion,
+        () => status.step("Verifying installed binary"),
+        status
+      );
+      console.log(`[+] Updated Matrix IPTV to ${releaseVersion}.`);
+
+      if (relaunch) {
+        status.step("Relaunching Matrix IPTV");
+        launchApp(true, relaunchArgs);
+      } else {
+        console.log("[+] Run 'matrix-iptv' to start the updated app.");
+      }
+
+      return { updated: true, version: releaseVersion };
+    } catch (err) {
+      fs.rmSync(tempPath, { force: true });
+      throw err;
+    }
+  });
+}
+
+function parseUpdateArgs(args) {
+  let targetVersion = null;
+  let relaunch = false;
+
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--launch") {
+      relaunch = true;
+    } else if (arg === "--target" || arg === "--version") {
+      targetVersion = args[i + 1];
+      i += 1;
+    } else if (arg.startsWith("--target=")) {
+      targetVersion = arg.slice("--target=".length);
+    } else if (arg.startsWith("--version=")) {
+      targetVersion = arg.slice("--version=".length);
+    } else if (/^v?\d+\.\d+\.\d+$/.test(arg)) {
+      targetVersion = arg;
+    } else if (arg === "--help" || arg === "-h") {
+      console.log(`Usage:
+  matrix-iptv update
+  matrix-iptv update --target 4.3.2
+  matrix-iptv update --launch
+
+Downloads the GitHub release asset, verifies its size/checksum/version,
+installs it transactionally, and rolls back if verification fails.`);
+      process.exit(0);
+    }
+  }
+
+  return { targetVersion, relaunch };
+}
+
+function launchApp(isUpdateRelaunch = false, args = process.argv.slice(2)) {
   if (!fs.existsSync(binaryPath)) {
-    console.error("\n❌  Matrix IPTV binary not found.");
-    console.log(
-      "Try one of these:\n  npx matrix-iptv\n  npm install -g matrix-iptv\n"
-    );
+    console.error("\nMatrix IPTV binary not found.");
+    console.log("Try one of these:\n  matrix-iptv update\n  npm install -g matrix-iptv\n");
     process.exit(1);
   }
 
   let child;
   try {
-    child = spawn(binaryPath, process.argv.slice(2), {
+    child = spawn(binaryPath, args, {
       stdio: "inherit",
       windowsHide: false,
+      env: {
+        ...process.env,
+        MATRIX_IPTV_WRAPPER: "1",
+        MATRIX_IPTV_UPDATER_PROTOCOL: updaterProtocol,
+      },
     });
   } catch (err) {
-    if (isUpdateRelaunch && (err.code === "EBUSY" || err.code === "EACCES")) {
-      console.log(`[*] Executable locked by OS. Retrying in 2 seconds...`);
-      setTimeout(() => launchApp(true), 2000);
+    if (isUpdateRelaunch && (err.code === "EBUSY" || err.code === "EACCES" || err.code === "EPERM")) {
+      console.log("[*] Executable locked by OS. Retrying in 2 seconds...");
+      setTimeout(() => launchApp(true, args), 2000);
       return;
     }
     throw err;
   }
 
   child.on("error", (err) => {
-    if (isUpdateRelaunch && (err.code === "EBUSY" || err.code === "EACCES")) {
-      console.log(`[*] Executable locked by OS. Retrying in 2 seconds...`);
-      setTimeout(() => launchApp(true), 2000);
+    if (isUpdateRelaunch && (err.code === "EBUSY" || err.code === "EACCES" || err.code === "EPERM")) {
+      console.log("[*] Executable locked by OS. Retrying in 2 seconds...");
+      setTimeout(() => launchApp(true, args), 2000);
       return;
     }
     console.error("Failed to start Matrix IPTV:", err);
@@ -193,15 +470,12 @@ function launchApp(isUpdateRelaunch = false) {
   });
 
   child.on("exit", async (code) => {
-    if (code === 42) {
+    if (code === updateExitCode) {
       try {
-        await performUpdate();
-        // If not win32 (which handles its own relaunch), relaunch here
-        if (os.platform() !== "win32") {
-          launchApp(true);
-        }
+        await performUpdate({ relaunch: true, relaunchArgs: args });
       } catch (err) {
-        console.error(`\n❌ Update failed: ${err.message}`);
+        console.error(`\nUpdate failed: ${err.message}`);
+        console.error("The previous Matrix IPTV binary was left in place or restored.");
         process.exit(1);
       }
     } else {
@@ -210,4 +484,14 @@ function launchApp(isUpdateRelaunch = false) {
   });
 }
 
-launchApp();
+const args = process.argv.slice(2);
+if (args[0] === "update" || args[0] === "self-update" || args[0] === "--update") {
+  const updateArgs = parseUpdateArgs(args.slice(1));
+  performUpdate(updateArgs).catch((err) => {
+    console.error(`\nUpdate failed: ${err.message}`);
+    console.error("The previous Matrix IPTV binary was left in place or restored.");
+    process.exit(1);
+  });
+} else {
+  launchApp(false, args);
+}

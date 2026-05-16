@@ -1,6 +1,6 @@
 use matrix_iptv_lib::parser::parse_stream;
-use matrix_iptv_lib::ui::common::stylize_channel_name;
 use matrix_iptv_lib::ui::colors::MATRIX_GREEN;
+use matrix_iptv_lib::ui::common::stylize_channel_name;
 use ratatui::style::Color;
 
 fn main() {
@@ -27,6 +27,7 @@ fn main() {
             None,
             None,
             ratatui::style::Style::default().fg(MATRIX_GREEN),
+            true,
         );
 
         print!("  Spans: ");
@@ -38,12 +39,21 @@ fn main() {
             print!("[\"{}\" : {}] ", span.content, color);
         }
         println!("\n");
-        
+
         // Assertions for "Before Sunrise (1995)"
         if name.contains("Before Sunrise") {
-            assert!(!parsed.display_name.contains("EN"), "Should strip EN prefix");
-            assert!(parsed.display_name.contains("Before Sunrise"), "Should contain title");
-            assert!(parsed.display_name.contains("(1995)"), "Should preserve year");
+            assert!(
+                !parsed.display_name.contains("EN"),
+                "Should strip EN prefix"
+            );
+            assert!(
+                parsed.display_name.contains("Before Sunrise"),
+                "Should contain title"
+            );
+            assert!(
+                parsed.display_name.contains("(1995)"),
+                "Should preserve year"
+            );
         }
     }
 

@@ -1,5 +1,8 @@
 name: "04 - Fix Bugs (Fullstack Developer)"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   issue_comment:
     types: [created]
@@ -29,7 +32,7 @@ jobs:
           echo "sha=$(echo $PR_DATA | jq -r '.head.sha')" >> $GITHUB_OUTPUT
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.pr.outputs.branch }}
           fetch-depth: 0

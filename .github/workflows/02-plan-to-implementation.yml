@@ -1,5 +1,8 @@
 name: "02 - Plan to Implementation (Fullstack Developer)"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   issue_comment:
     types: [created]
@@ -20,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: develop
 
