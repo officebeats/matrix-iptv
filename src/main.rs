@@ -1,4 +1,4 @@
-use std::{io, time::Duration};
+﻿use std::{io, time::Duration};
 use tokio::time::interval;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -49,6 +49,13 @@ enum Command {
 async fn main() -> Result<(), anyhow::Error> {
     use clap::Parser;
     let args = Args::parse();
+
+    // Check for updates BEFORE TUI
+    if !args.skip_update {
+        if let Err(e) = setup::prompt_for_update_if_available().await {
+            eprintln!("Warning: Update check failed: {}", e);
+        }
+    }
 
     // -- CLI MODE --
     if let Some(Command::Update) = args.command {

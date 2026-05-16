@@ -1,4 +1,4 @@
-#[cfg(not(target_arch = "wasm32"))]
+﻿#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 #[cfg(not(target_arch = "wasm32"))]
 use std::process::Command;
@@ -986,6 +986,80 @@ Remove-Item -Path $MyInvocation.MyCommand.Source -Force -ErrorAction SilentlyCon
         .stdout(std::process::Stdio::inherit())
         .stderr(std::process::Stdio::inherit())
         .spawn()?;
+
+    Ok(())
+}
+
+/// Perform a blocking update check before the TUI starts.
+/// This avoids conflicts with the TUI raw mode and alternate screen.
+#[cfg(not(target_arch = "wasm32"))]
+pub async fn prompt_for_update_if_available() -> Result<(), anyhow::Error> {
+    if std::env::var_os("MATRIX_IPTV_SKIP_UPDATE").is_some() {
+        return Ok(());
+    }
+
+    let current_version = env!("CARGO_PKG_VERSION");
+    let client = reqwest::Client::builder()
+        .user_agent("matrix-iptv-cli-updater")
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap_or_default();
+
+    // Check for update silently
+    let resp = client
+        .get("https://api.github.com/repos/officebeats/matrix-iptv/releases/latest")
+        .send()
+        .await;
+
+    if let Ok(resp) = resp {
+        if let Ok(release) = resp.json::<serde_json::Value>().await {
+            if let Some(tag) = release_tag_name(&release) {
+                if is_newer_version(current_version, &tag) {
+                    // Respect cooldown and skip version
+                    if is_update_dismissed(&tag, 24) || is_update_skipped(&tag) {
+                        return Ok(());
+                    }
+
+                    println!("\n+----------------------------------------------------------+");
+                    println!("| A newer version of Matrix IPTV is available!             |");
+                    println!("|                                                          |");
+                    println!("| current: {:<10}                                      |", current_version);
+                    println!("| new    : {:<10}                                      |", tag);
+                    println!("|                                                          |");
+                    println!("| Would you like to update now? (y/n)                      |");
+                    println!("+----------------------------------------------------------+");
+
+                    use std::io::{self, Write};
+                    print!("> ");
+                    io::stdout().flush()?;
+
+                    let mut input = String::new();
+                    io::stdin().read_line(&mut input)?;
+
+                    if input.trim().to_lowercase() == "y" {
+                        // Dismiss update before starting to avoid loop on restart
+                        dismiss_update(&tag);
+                        
+                        #[cfg(target_os = "windows")]
+                        {
+                            perform_windows_self_update()?;
+                            println!("Update initiated. Closing application...");
+                            std::process::exit(0);
+                        }
+                        #[cfg(not(target_os = "windows"))]
+                        {
+                            println!("Auto-update is currently only supported on Windows.");
+                            println!("Please download the latest release from GitHub.");
+                        }
+                    } else {
+                        // Dismiss for 24h so we don't prompt every start
+                        dismiss_update(&tag);
+                        println!("Continuing with current version...");
+                    }
+                }
+            }
+        }
+    }
 
     Ok(())
 }
