@@ -3454,6 +3454,9 @@ pub async fn handle_key_event(
         CurrentScreen::UpdatePrompt => {
             match key.code {
                 KeyCode::Enter | KeyCode::Char('u') | KeyCode::Char('U') => {
+                    if let Some(ref version) = app.new_version_available {
+                        crate::setup::dismiss_update(version);
+                    }
                     return Ok(InputResult::UpdateRequested);
                 }
                 KeyCode::Esc | KeyCode::Char('l') | KeyCode::Char('L') | KeyCode::Char('q') => {

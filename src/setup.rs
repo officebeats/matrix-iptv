@@ -408,6 +408,38 @@ fn is_newer_version(current: &str, tag: &str) -> bool {
     false
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn platform_update_asset_name() -> Option<&'static str> {
+    match std::env::consts::OS {
+        "windows" => Some("matrix-iptv-windows.exe"),
+        "linux" => Some("matrix-iptv-linux"),
+        "macos" => Some("matrix-iptv-macos"),
+        _ => None,
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn release_tag_name(release: &serde_json::Value) -> Option<String> {
+    release
+        .get("tag_name")
+        .and_then(|tag| tag.as_str())
+        .map(|tag| tag.trim_start_matches(['v', 'V']).to_string())
+        .filter(|tag| !tag.is_empty())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn release_has_update_asset(release: &serde_json::Value, asset_name: &str) -> bool {
+    release
+        .get("assets")
+        .and_then(|assets| assets.as_array())
+        .map(|assets| {
+            assets
+                .iter()
+                .any(|asset| asset.get("name").and_then(|name| name.as_str()) == Some(asset_name))
+        })
+        .unwrap_or(false)
+}
+
 /// Returns the path to the update cooldown file (stored next to config)
 #[cfg(not(target_arch = "wasm32"))]
 fn get_update_cooldown_path() -> Option<std::path::PathBuf> {
@@ -510,22 +542,42 @@ pub async fn check_for_updates(
         .send()
         .await
     {
-        let tag = resp
-            .json::<serde_json::Value>()
-            .await
-            .ok()
-            .and_then(|value| {
-                value
-                    .get("tag_name")
-                    .and_then(|tag| tag.as_str())
-                    .map(|tag| tag.trim_start_matches('v').to_string())
-            });
+        let release = resp.json::<serde_json::Value>().await.ok();
+        let tag = release.as_ref().and_then(release_tag_name);
 
         if let Some(tag) = tag {
             if is_newer_version(current_version, &tag) {
                 if !manual && (is_update_dismissed(&tag, 24) || is_update_skipped(&tag)) {
                     return;
                 }
+
+                let Some(asset_name) = platform_update_asset_name() else {
+                    if manual {
+                        let _ = tx
+                            .send(crate::app::AsyncAction::Error(
+                                "Auto-update is not supported on this platform.".to_string(),
+                            ))
+                            .await;
+                    }
+                    return;
+                };
+
+                if !release
+                    .as_ref()
+                    .map(|release| release_has_update_asset(release, asset_name))
+                    .unwrap_or(false)
+                {
+                    if manual {
+                        let _ = tx
+                            .send(crate::app::AsyncAction::Error(format!(
+                                "Latest release v{} does not include {} yet. Try again later.",
+                                tag, asset_name
+                            )))
+                            .await;
+                    }
+                    return;
+                }
+
                 let _ = tx.send(crate::app::AsyncAction::UpdateAvailable(tag)).await;
             } else if manual {
                 let _ = tx.send(crate::app::AsyncAction::NoUpdateFound).await;
@@ -817,4 +869,43 @@ Remove-Item -Path $MyInvocation.MyCommand.Source -Force -ErrorAction SilentlyCon
         .spawn()?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn release_tag_name_strips_v_prefix() {
+        let release = json!({ "tag_name": "v4.3.12" });
+
+        assert_eq!(release_tag_name(&release).as_deref(), Some("4.3.12"));
+    }
+
+    #[test]
+    fn release_has_update_asset_matches_platform_asset_name() {
+        let release = json!({
+            "assets": [
+                { "name": "matrix-iptv-linux" },
+                { "name": "matrix-iptv-windows.exe" }
+            ]
+        });
+
+        assert!(release_has_update_asset(
+            &release,
+            "matrix-iptv-windows.exe"
+        ));
+        assert!(!release_has_update_asset(&release, "matrix-iptv-macos"));
+    }
+
+    #[test]
+    fn release_has_update_asset_handles_missing_assets() {
+        let release = json!({ "tag_name": "v4.3.12" });
+
+        assert!(!release_has_update_asset(
+            &release,
+            "matrix-iptv-windows.exe"
+        ));
+    }
 }
