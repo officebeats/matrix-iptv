@@ -109,7 +109,6 @@ function getBinaryVersion(filePath) {
       ...process.env,
       MATRIX_IPTV_WRAPPER: "1",
       MATRIX_IPTV_UPDATER_PROTOCOL: updaterProtocol,
-        MATRIX_IPTV_SKIP_UPDATE: isUpdateRelaunch ? "1" : process.env.MATRIX_IPTV_SKIP_UPDATE,
       MATRIX_IPTV_SKIP_UPDATE: "1",
     },
   });
@@ -449,7 +448,7 @@ function launchApp(isUpdateRelaunch = false, args = process.argv.slice(2)) {
         ...process.env,
         MATRIX_IPTV_WRAPPER: "1",
         MATRIX_IPTV_UPDATER_PROTOCOL: updaterProtocol,
-        MATRIX_IPTV_SKIP_UPDATE: isUpdateRelaunch ? "1" : process.env.MATRIX_IPTV_SKIP_UPDATE,
+        MATRIX_IPTV_SKIP_UPDATE: (typeof isUpdateRelaunch !== "undefined" && isUpdateRelaunch) ? "1" : process.env.MATRIX_IPTV_SKIP_UPDATE,
       },
     });
   } catch (err) {
