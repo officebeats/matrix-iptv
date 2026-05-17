@@ -1,4 +1,4 @@
-﻿#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 #[cfg(not(target_arch = "wasm32"))]
 use std::process::Command;
@@ -138,14 +138,14 @@ fn check_and_install_dependencies_with_output(verbose: bool) -> Result<(), anyho
     if let Some(mpv_path) = get_mpv_path() {
         if verbose {
             if mpv_path == "mpv" {
-                println!("  ✓ mpv found.");
+                println!("  ? mpv found.");
             } else {
-                println!("  ✓ mpv found at: {}", mpv_path);
+                println!("  ? mpv found at: {}", mpv_path);
             }
         }
     } else {
         announce()?;
-        println!("  ✗ mpv NOT found.");
+        println!("  ? mpv NOT found.");
         if cfg!(target_os = "windows") {
             println!("  Attempting to install mpv using winget...");
             install_mpv_windows()?;
@@ -158,14 +158,14 @@ fn check_and_install_dependencies_with_output(verbose: bool) -> Result<(), anyho
     if let Some(vlc_path) = get_vlc_path() {
         if verbose {
             if vlc_path == "vlc" {
-                println!("  ✓ vlc found.");
+                println!("  ? vlc found.");
             } else {
-                println!("  ✓ vlc found at: {}", vlc_path);
+                println!("  ? vlc found at: {}", vlc_path);
             }
         }
     } else {
         announce()?;
-        println!("  ✗ vlc NOT found.");
+        println!("  ? vlc NOT found.");
         if cfg!(target_os = "windows") {
             println!("  Attempting to install vlc using winget...");
             install_vlc_windows()?;
@@ -253,7 +253,7 @@ fn install_homebrew() -> Result<String, anyhow::Error> {
 
     // Find brew after installation
     if let Some(brew_path) = find_brew() {
-        println!("✓ Homebrew installed successfully.");
+        println!("? Homebrew installed successfully.");
         Ok(brew_path)
     } else {
         Err(anyhow::anyhow!(
@@ -268,7 +268,7 @@ fn install_mpv_macos() -> Result<(), anyhow::Error> {
     // Find or install Homebrew
     let brew_path = match find_brew() {
         Some(path) => {
-            println!("✓ Found Homebrew at: {}", path);
+            println!("? Found Homebrew at: {}", path);
             path
         }
         None => {
@@ -283,7 +283,7 @@ fn install_mpv_macos() -> Result<(), anyhow::Error> {
     let status = Command::new(&brew_path).args(["install", "mpv"]).status()?;
 
     if status.success() {
-        println!("✓ mpv installed successfully via Homebrew.");
+        println!("? mpv installed successfully via Homebrew.");
         return Ok(());
     }
 
@@ -294,7 +294,7 @@ fn install_mpv_macos() -> Result<(), anyhow::Error> {
         .status()?;
 
     if status_cask.success() {
-        println!("✓ mpv installed successfully via Homebrew Cask.");
+        println!("? mpv installed successfully via Homebrew Cask.");
         Ok(())
     } else {
         Err(anyhow::anyhow!(
@@ -321,7 +321,7 @@ fn install_mpv_windows() -> Result<(), anyhow::Error> {
 
     if let Ok(s) = status {
         if s.success() {
-            println!("✓ mpv installed successfully.");
+            println!("? mpv installed successfully.");
             return Ok(());
         }
     }
@@ -338,7 +338,7 @@ fn install_mpv_windows() -> Result<(), anyhow::Error> {
         .status()?;
 
     if status_generic.success() {
-        println!("✓ mpv installed successfully.");
+        println!("? mpv installed successfully.");
         Ok(())
     } else {
         Err(anyhow::anyhow!("Failed to install mpv via winget."))
@@ -358,7 +358,7 @@ fn install_vlc_macos() -> Result<(), anyhow::Error> {
         .status()?;
 
     if status.success() {
-        println!("✓ vlc installed successfully.");
+        println!("? vlc installed successfully.");
         Ok(())
     } else {
         Err(anyhow::anyhow!("Failed to install vlc via Homebrew."))
@@ -380,7 +380,7 @@ fn install_vlc_windows() -> Result<(), anyhow::Error> {
         .status()?;
 
     if status.success() {
-        println!("✓ vlc installed successfully.");
+        println!("? vlc installed successfully.");
         Ok(())
     } else {
         Err(anyhow::anyhow!("Failed to install vlc via winget."))
@@ -776,7 +776,7 @@ function Start-MatrixIptv($fallbackPath) {
         }
     }
 
-    $candidates += $fallbackPath
+    $candidates = @($fallbackPath) + $candidates
 
     foreach ($candidate in ($candidates | Select-Object -Unique)) {
         if ($candidate -and (Test-Path $candidate)) {
@@ -866,7 +866,7 @@ try {
         Write-Host "[+] Matrix IPTV is already up to date." -ForegroundColor Green
         $legacyScopedNpmRepairSucceeded = Repair-LegacyScopedNpmInstall $targetVersion
         Write-Step "Relaunching Matrix IPTV"
-        Start-MatrixIptv $exePath
+        Start-Process -FilePath $exePath -WindowStyle Normal
         Write-Host "[+] Matrix IPTV $targetVersion is ready." -ForegroundColor Green
         Remove-Item -Path $MyInvocation.MyCommand.Source -Force -ErrorAction SilentlyContinue
         exit 0
@@ -942,7 +942,7 @@ try {
     $maxSpawn = 5
     for ($j = 0; $j -lt $maxSpawn; $j++) {
         try {
-            Start-MatrixIptv $exePath
+            Start-Process -FilePath $exePath -WindowStyle Normal
             break
         } catch {
             if ($j -eq ($maxSpawn - 1)) { throw }
