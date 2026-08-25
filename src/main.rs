@@ -623,56 +623,35 @@ async fn run_app<B: ratatui::backend::Backend>(
             }
         }
 
-        // 2. Poll inputs
-        let mut timeout_ms = 33;
-        if app.session.state_loading || app.show_matrix_rain {
-            timeout_ms = 16;
-        }
-
-        // Yield executor and wait asynchronously to avoid `crossterm::event::poll` hanging indefinitely on Windows
-        tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
-
-        // Non-blocking poll
+        // 2. Non-blocking input polling & event queue draining
+        // Drains all pending key repeats before rendering, eliminating scroll lag and overshoot
         if event::poll(Duration::from_millis(0))? {
-            match event::read()? {
-                Event::Key(key) => {
-                    match handlers::input::handle_key_event(app, key, &tx, player).await? {
-                        handlers::input::InputResult::Quit => return Ok(None),
-                        handlers::input::InputResult::UpdateRequested => return Ok(Some(42)),
-                        handlers::input::InputResult::Continue => {
-                            continue;
-                        }
-                        handlers::input::InputResult::Ok => {}
-                    }
-                    // ── Input Coalescing: drain queued keys without redrawing ──
-                    // When scrolling fast, multiple key events queue up. Process them
-                    // all in one batch to avoid 33ms render + debounce between each.
-                    while event::poll(Duration::from_millis(0))? {
-                        if let Event::Key(next_key) = event::read()? {
-                            match handlers::input::handle_key_event(app, next_key, &tx, player)
-                                .await?
-                            {
-                                handlers::input::InputResult::Quit => return Ok(None),
-                                handlers::input::InputResult::UpdateRequested => {
-                                    return Ok(Some(42))
-                                }
-                                handlers::input::InputResult::Continue => {
-                                    continue;
-                                }
-                                handlers::input::InputResult::Ok => {}
-                            }
+            let mut drained_events = 0;
+            while event::poll(Duration::from_millis(0))? && drained_events < 64 {
+                drained_events += 1;
+                match event::read()? {
+                    Event::Key(key) => {
+                        match handlers::input::handle_key_event(app, key, &tx, player).await? {
+                            handlers::input::InputResult::Quit => return Ok(None),
+                            handlers::input::InputResult::UpdateRequested => return Ok(Some(42)),
+                            handlers::input::InputResult::Continue | handlers::input::InputResult::Ok => {}
                         }
                     }
-                } // End Event::Key block
-
-                Event::Mouse(mouse) => {
-                    handlers::mouse::handle_mouse_event(app, mouse, &tx);
+                    Event::Mouse(mouse) => {
+                        handlers::mouse::handle_mouse_event(app, mouse, &tx);
+                    }
+                    Event::Resize(_, _) => {}
+                    _ => {}
                 }
-
-                Event::Resize(_, _) => {}
-
-                _ => {} // Other events
             }
+        } else {
+            // Only sleep when idle (no pending user inputs in buffer)
+            let timeout_ms = if app.session.state_loading || app.show_matrix_rain {
+                16
+            } else {
+                33
+            };
+            tokio::time::sleep(Duration::from_millis(timeout_ms)).await;
         }
     }
 }

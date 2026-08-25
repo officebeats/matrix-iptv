@@ -3,7 +3,7 @@ use crate::ui::colors::{MATRIX_GREEN, MODERN_BG, SOFT_GREEN, TEXT_DIM, TEXT_SECO
 use crate::ui::loading::get_loading_status_line;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Style, Stylize},
+    style::{Style, Stylize},
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
@@ -247,9 +247,9 @@ fn render_normal_footer(f: &mut Frame, app: &App, area: Rect) {
 
     // Add connection status indicator
     let status_indicator = if app.session.is_connected() {
-        Span::styled(" ● ", Style::default().fg(Color::Rgb(0, 255, 65)))
+        Span::styled(" ● ", Style::default().fg(crate::ui::colors::SUCCESS))
     } else if app.session.state_loading {
-        Span::styled(" ◐ ", Style::default().fg(Color::Rgb(255, 200, 80)))
+        Span::styled(" ◐ ", Style::default().fg(crate::ui::colors::WARNING))
     } else {
         Span::styled(" ○ ", Style::default().fg(TEXT_DIM))
     };

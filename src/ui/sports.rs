@@ -1,7 +1,7 @@
 use crate::app::{App, Pane};
 use crate::sports::get_team_color;
 use crate::ui::colors::{
-    DARK_GREEN, HIGHLIGHT_BG, MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
+    DARK_GREEN, MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
 };
 use crate::ui::common::render_matrix_box;
 use crate::ui::utils::visible_window;
@@ -59,13 +59,8 @@ fn render_sports_categories_pane(f: &mut Frame, app: &mut App, area: Rect) {
         crate::ui::common::render_matrix_box_active(f, area, " sports ", border_color, is_active);
 
     let list = List::new(items)
-        .highlight_style(
-            Style::default()
-                .bg(HIGHLIGHT_BG)
-                .fg(MATRIX_GREEN)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(" ▎");
+        .highlight_style(crate::ui::common::select_list_theme().0)
+        .highlight_symbol(crate::ui::common::select_list_theme().1);
 
     let mut state = app.sports_category_list_state;
     state.select(Some(selected - start));
@@ -148,13 +143,8 @@ fn render_sports_matches_pane(f: &mut Frame, app: &mut App, area: Rect) {
     );
 
     let list = List::new(items)
-        .highlight_style(
-            Style::default()
-                .bg(HIGHLIGHT_BG)
-                .fg(MATRIX_GREEN)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(" ▎");
+        .highlight_style(crate::ui::common::select_list_theme().0)
+        .highlight_symbol(crate::ui::common::select_list_theme().1);
 
     let mut state = app.sports_list_state;
     state.select(Some(selected - start));

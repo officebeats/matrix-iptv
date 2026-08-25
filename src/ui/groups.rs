@@ -1,7 +1,5 @@
 use crate::app::App;
-use crate::ui::colors::{
-    HIGHLIGHT_BG, MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
-};
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -62,14 +60,10 @@ pub fn render_group_management(f: &mut Frame, app: &mut App, area: Rect) {
         SOFT_GREEN,
     );
 
+    let (hl_style, hl_symbol) = crate::ui::common::select_list_theme();
     let list = List::new(items)
-        .highlight_style(
-            Style::default()
-                .bg(HIGHLIGHT_BG)
-                .fg(MATRIX_GREEN)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(" ▎");
+        .highlight_style(hl_style)
+        .highlight_symbol(hl_symbol);
 
     f.render_stateful_widget(list, inner_area, &mut app.group_list_state);
 }
@@ -132,15 +126,10 @@ pub fn render_group_picker(f: &mut Frame, app: &mut App, area: Rect) {
         ),
         Span::styled("Create New Group...", Style::default().fg(TEXT_PRIMARY)),
     ])));
-
+    let (hl_style, hl_symbol) = crate::ui::common::select_list_theme();
     let list = List::new(items)
-        .highlight_style(
-            Style::default()
-                .bg(HIGHLIGHT_BG)
-                .fg(MATRIX_GREEN)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(" ▎");
+        .highlight_style(hl_style)
+        .highlight_symbol(hl_symbol);
 
     f.render_stateful_widget(list, chunks[1], &mut app.group_list_state);
 

@@ -1,14 +1,12 @@
 use crate::app::{App, Pane};
-use crate::ui::colors::{
-    DARK_GREEN, HIGHLIGHT_BG, MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
-};
+use crate::ui::colors::{DARK_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY};
 use crate::ui::common::stylize_channel_name;
 use crate::ui::utils::visible_window;
 use ratatui::{
-    layout::{Alignment, Rect},
-    style::{Modifier, Style},
-    text::Line,
-    widgets::{List, ListItem, Paragraph, Wrap},
+    layout::{Alignment, Constraint, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Cell, Paragraph, Row, Table, TableState, Wrap},
     Frame,
 };
 
@@ -68,7 +66,7 @@ pub fn render_vod_view(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
-    let visible_height = area.height.saturating_sub(2) as usize;
+    let visible_height = area.height.saturating_sub(3) as usize;
     let (start, end) = visible_window(
         app.selected_vod_stream_index,
         app.vod_streams.len(),
@@ -76,127 +74,106 @@ pub fn render_vod_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
     );
     let selected = app.selected_vod_stream_index;
 
-    // Usable inner width = column width - 2 borders - 2 highlight symbol - 1 padding
-    let inner_w = area.width.saturating_sub(5) as usize;
-
-    let items: Vec<ListItem> = app
+    let items: Vec<Row> = app
         .vod_streams
         .iter()
         .enumerate()
         .skip(start)
         .take(end - start)
-        .map(|(_, s)| {
+        .map(|(idx, s)| {
             let parsed = if let Some(ref cached) = s.cached_parsed {
                 cached.as_ref().clone()
             } else {
                 crate::parser::parse_stream(&s.name, app.session.provider_timezone.as_deref())
             };
-            let mut spans = vec![];
 
-            // Metadata parsing (cached)
-            let name = parsed.display_name.clone();
+            // 0. Index Number
+            let num_cell = Cell::from(format!("{:>3}", idx + 1)).style(Style::default().fg(TEXT_DIM));
 
-            // Check if recently watched (progress indicator)
+            // 1. Quality Badge
+            let (quality_text, quality_color) = match parsed.quality {
+                Some(crate::parser::Quality::UHD4K) => ("[4K] ", Color::Rgb(255, 0, 255)),
+                Some(crate::parser::Quality::FHD) => ("[FHD]", Color::Rgb(255, 215, 0)),
+                Some(crate::parser::Quality::HD) => ("[HD] ", Color::Rgb(0, 255, 255)),
+                Some(crate::parser::Quality::SD) => ("[SD] ", Color::White),
+                None => ("     ", Color::White),
+            };
+            let quality_cell = Cell::from(quality_text).style(Style::default().fg(quality_color).add_modifier(Modifier::BOLD));
+
+            // 2. Movie Title
             let is_watched = app
                 .config
                 .recently_watched
                 .iter()
                 .any(|(id, _)| id == &s.stream_id.to_string());
-            let prefix = if is_watched { "✓ " } else { "" };
-            let prefixed_name = format!("{}{}", prefix, name);
-
-            // Reserve space for year and rating: " (2024)" [7] + " [8.5]" [6] = 13 chars
-            let has_year = parsed.year.is_some();
-            let has_rating = s.rating.map(|r| r > 0.0).unwrap_or(false);
-            let mut metadata_reserve = 0;
-            if has_year {
-                metadata_reserve += 7;
-            }
-            if has_rating {
-                metadata_reserve += 6;
-            }
-
-            let max_name_len = inner_w.saturating_sub(metadata_reserve);
-
-            // Hard-truncate title so it never overflows the column
-            let display_name = truncate_to(&prefixed_name, max_name_len);
-
-            let (mut styled_name, _) = stylize_channel_name(
-                &display_name,
-                false,
-                false,
-                parsed.quality,
-                None,
-                None,
-                Style::default().fg(TEXT_PRIMARY),
-                true, // show_quality: true because VOD doesn't have a QUAL column
-            );
-
-            // Colorize the checkmark if it's there
+            let mut title_spans = Vec::new();
             if is_watched {
-                if let Some(first_span) = styled_name.first_mut() {
-                    if first_span.content.starts_with("✓") {
-                        let check_span = ratatui::text::Span::styled(
-                            "✓ ",
-                            Style::default().fg(crate::ui::colors::SOFT_GREEN),
-                        );
-                        first_span.content =
-                            std::borrow::Cow::Owned(first_span.content[2..].to_string());
-
-                        let mut new_spans = vec![check_span];
-                        new_spans.extend(styled_name);
-                        styled_name = new_spans;
-                    }
-                }
+                title_spans.push(Span::styled("✓ ", Style::default().fg(crate::ui::colors::SOFT_GREEN)));
             }
+            title_spans.push(Span::styled(parsed.display_name.clone(), Style::default().fg(TEXT_PRIMARY)));
+            let title_cell = Cell::from(Line::from(title_spans));
 
-            spans.extend(styled_name);
+            // 3. Year
+            let year_str = parsed.year.map(|y| format!("({})", y)).unwrap_or_default();
+            let year_cell = Cell::from(year_str).style(Style::default().fg(Color::LightBlue));
 
-            // Year: in light blue parentheses
-            if let Some(y) = &parsed.year {
-                spans.push(ratatui::text::Span::styled(
-                    format!(" ({})", y),
-                    Style::default().fg(ratatui::style::Color::LightBlue),
-                ));
-            }
-
-            // Rating: in brackets, with color coding
-            if let Some(rating_f) = s.rating {
+            // 4. Rating
+            let rating_str = if let Some(rating_f) = s.rating {
                 if rating_f > 0.0 {
-                    let rating_str = format!("{:.1}", rating_f);
-                    let rating_color = crate::ui::utils::get_rating_color(&rating_str);
-                    spans.push(ratatui::text::Span::styled(
-                        format!(" [{}]", rating_str),
-                        Style::default().fg(rating_color),
-                    ));
+                    format!("★ {:.1}", rating_f)
+                } else {
+                    String::new()
                 }
-            }
+            } else {
+                String::new()
+            };
+            let rating_cell = Cell::from(rating_str).style(Style::default().fg(Color::Rgb(255, 200, 80)));
 
-            ListItem::new(Line::from(spans))
+            Row::new(vec![num_cell, quality_cell, title_cell, year_cell, rating_cell])
         })
         .collect();
 
-    // Show total count in title — position indicator is less useful than total here
     let title = "movies";
     let is_active = app.active_pane == Pane::Streams;
     let border_color = if is_active { SOFT_GREEN } else { DARK_GREEN };
     let inner_area =
         crate::ui::common::render_matrix_box_active(f, area, title, border_color, is_active);
 
-    let list = List::new(items)
-        .highlight_style(
-            Style::default()
-                .bg(HIGHLIGHT_BG)
-                .fg(MATRIX_GREEN)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(" ▎");
+    if app.vod_streams.is_empty() {
+        let empty_msg = Paragraph::new("No movies found")
+            .style(Style::default().fg(TEXT_DIM))
+            .alignment(Alignment::Center);
+        f.render_widget(empty_msg, inner_area);
+        return;
+    }
 
-    // Convert TableState selection to a temporary ListState for List widget rendering
-    let sel = Some(selected - start);
-    let mut adjusted_state = ratatui::widgets::ListState::default();
-    adjusted_state.select(sel);
-    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
+    let constraints = [
+        Constraint::Length(4), // #
+        Constraint::Length(6), // QUAL
+        Constraint::Fill(3),   // MOVIE TITLE
+        Constraint::Length(8), // YEAR
+        Constraint::Length(8), // RATING
+    ];
+    let header_style = Style::default().fg(TEXT_SECONDARY).add_modifier(Modifier::BOLD);
+    let header = Row::new(vec![
+        Cell::from("  #").style(header_style),
+        Cell::from("QUAL").style(header_style),
+        Cell::from("MOVIE TITLE").style(header_style),
+        Cell::from("YEAR").style(header_style),
+        Cell::from("RATING").style(header_style),
+    ])
+    .height(1)
+    .style(Style::default().fg(TEXT_DIM));
+
+    let table = Table::new(items, constraints)
+        .header(header)
+        .column_spacing(1)
+        .row_highlight_style(crate::ui::panes::list_highlight_style())
+        .highlight_symbol("❯ ");
+
+    let mut table_state = TableState::default();
+    table_state.select(Some(selected - start));
+    f.render_stateful_widget(table, inner_area, &mut table_state);
 }
 
 pub fn render_vod_details_pane(f: &mut Frame, app: &mut App, area: Rect) {

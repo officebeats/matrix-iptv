@@ -309,3 +309,15 @@ pub fn render_composite_block(f: &mut Frame, area: Rect, title: Option<&str>) ->
     let t = title.unwrap_or("");
     render_matrix_box(f, area, t, SOFT_GREEN)
 }
+
+/// OMP-style selection treatment for lists/tables.
+/// Keyboard selection = accent cursor glyph + accent text, NO background fill.
+/// Returns (highlight_style, highlight_symbol) for List/Table widgets.
+pub fn select_list_theme() -> (Style, &'static str) {
+    (
+        Style::default()
+            .fg(crate::ui::colors::ACCENT)
+            .add_modifier(Modifier::BOLD),
+        "❯ ",
+    )
+}

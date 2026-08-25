@@ -1,5 +1,5 @@
 use crate::app::App;
-use crate::ui::colors::{HIGHLIGHT_BG, MATRIX_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY};
+use crate::ui::colors::{MATRIX_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
@@ -145,13 +145,8 @@ pub fn render_home(f: &mut Frame, app: &mut App, area: Rect) {
     f.render_stateful_widget(
         List::new(accounts)
             .bg(crate::ui::colors::MODERN_BG)
-            .highlight_style(
-                Style::default()
-                    .bg(HIGHLIGHT_BG)
-                    .fg(MATRIX_GREEN)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol(" ▎"),
+            .highlight_style(crate::ui::common::select_list_theme().0)
+            .highlight_symbol(crate::ui::common::select_list_theme().1),
         playlist_chunks[1],
         &mut app.account_list_state,
     );

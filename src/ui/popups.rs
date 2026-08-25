@@ -1,7 +1,5 @@
 use crate::app::{App, CurrentScreen, Guide, Pane};
-use crate::ui::colors::{
-    HIGHLIGHT_BG, MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
-};
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY};
 use crate::ui::utils::centered_rect;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -355,12 +353,7 @@ pub fn render_content_type_selection(f: &mut Frame, app: &mut App, area: Rect) {
     list_state.select(Some(selected));
     f.render_stateful_widget(
         List::new(items)
-            .highlight_style(
-                Style::default()
-                    .bg(HIGHLIGHT_BG)
-                    .fg(MATRIX_GREEN)
-                    .add_modifier(Modifier::BOLD),
-            )
+            .highlight_style(crate::ui::common::select_list_theme().0)
             .highlight_symbol(""),
         layout[0],
         &mut list_state,
@@ -778,13 +771,8 @@ pub fn render_cast_picker_popup(f: &mut Frame, app: &App, area: Rect) {
 
         let mut list_state = app.cast_device_list_state;
         let list = List::new(items)
-            .highlight_style(
-                Style::default()
-                    .bg(HIGHLIGHT_BG)
-                    .fg(MATRIX_GREEN)
-                    .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol(" ▎");
+            .highlight_style(crate::ui::common::select_list_theme().0)
+            .highlight_symbol(crate::ui::common::select_list_theme().1);
         f.render_stateful_widget(list, chunks[1], &mut list_state);
     }
 

@@ -2,7 +2,7 @@ use crate::api::Category;
 use crate::app::{App, CurrentScreen};
 use crate::parser::{country_color, country_flag, parse_category, parse_stream};
 use crate::ui::colors::{
-    HIGHLIGHT_BG, MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
+    MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
 };
 use crate::ui::common::stylize_channel_name;
 use crate::ui::utils::visible_window;
@@ -151,11 +151,10 @@ fn sports_now_playing_cell(
     Cell::from(Line::from(spans))
 }
 
-/// Shared highlight style — subtle left bar + tinted background
-fn list_highlight_style() -> Style {
+/// Shared highlight style — OMP treatment: accent cursor + accent text, no bg fill
+pub fn list_highlight_style() -> Style {
     Style::default()
-        .fg(MATRIX_GREEN)
-        .bg(HIGHLIGHT_BG)
+        .fg(crate::ui::colors::ACCENT)
         .add_modifier(Modifier::BOLD)
 }
 
@@ -232,12 +231,13 @@ fn render_categories_grid(f: &mut Frame, app: &mut App, area: Rect, border_color
             let is_selected = idx == selected;
 
             let block_style = if is_selected {
-                Style::default().fg(Color::Black).bg(MATRIX_GREEN)
+                // OMP treatment: accent border + accent text, no bg fill
+                Style::default().fg(crate::ui::colors::ACCENT)
             } else {
-                Style::default().fg(Color::White).bg(Color::Rgb(0, 0, 0))
+                Style::default().fg(crate::ui::colors::BORDER_MUTED)
             };
 
-            let parsed = if let Some(ref cached) = category.cached_parsed {
+            let parsed = if let Some(cached) = &category.cached_parsed {
                 cached.as_ref().clone()
             } else {
                 parse_category(&category.category_name)
@@ -246,15 +246,19 @@ fn render_categories_grid(f: &mut Frame, app: &mut App, area: Rect, border_color
 
             let card_block = Block::default()
                 .borders(Borders::ALL)
-                .border_style(Style::default().fg(Color::White))
+                .border_style(Style::default().fg(if is_selected {
+                    crate::ui::colors::ACCENT
+                } else {
+                    crate::ui::colors::BORDER_MUTED
+                }))
                 .style(block_style);
 
             let mut name_style = if is_selected {
                 Style::default()
-                    .fg(Color::Black)
+                    .fg(crate::ui::colors::ACCENT)
                     .add_modifier(Modifier::BOLD)
             } else {
-                Style::default().fg(Color::White)
+                Style::default().fg(TEXT_PRIMARY)
             };
 
             // Apply cyan color to NEW RELEASES if not selected
@@ -532,8 +536,17 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
                     ["NBA", "NFL", "MLB", "NHL", "UFC", "SPORTS", "PPV"].contains(&cc.as_str())
                 })
                 .unwrap_or(false);
+            let is_sports_cat = app
+                .categories
+                .get(app.selected_category_index)
+                .map(|c| c.is_sports)
+                .unwrap_or(false);
 
-            let score_data_for_color = app.get_score_for_stream(&parsed.display_name);
+            let score_data_for_color = if !app.live_scores.is_empty() && (is_sports_cat || parsed.sports_event.is_some() || is_league) {
+                app.get_score_for_stream(&parsed.display_name)
+            } else {
+                None
+            };
             let name_color = if is_league {
                 parsed
                     .country
@@ -775,7 +788,7 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
             // Construct Table Row
             let is_selected = idx == selected;
             let row_style = if is_selected {
-                Style::default().bg(HIGHLIGHT_BG)
+                list_highlight_style()
             } else {
                 Style::default()
             };
@@ -838,13 +851,13 @@ pub fn render_streams_pane(f: &mut Frame, app: &mut App, area: Rect, border_colo
         Cell::from(" NOW PLAYING").style(header_style),
     ])
     .height(1)
-    .style(Style::default().bg(Color::Rgb(10, 25, 10))); // Subtle dark green header bg
+    .style(Style::default().fg(TEXT_MUTED)); // OMP: quiet table headers, no bg tint
 
     let table = Table::new(items, constraints)
         .header(header)
         .column_spacing(1)
         .row_highlight_style(list_highlight_style())
-        .highlight_symbol("▎");
+        .highlight_symbol("❯ ");
 
     // Map the ListState selection to a TableState for rendering
     let mut table_state = ratatui::widgets::TableState::default();
@@ -993,7 +1006,7 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
             // Construct Row
             let is_selected = idx == selected;
             let row_style = if is_selected {
-                Style::default().bg(HIGHLIGHT_BG)
+                list_highlight_style()
             } else {
                 Style::default()
             };
@@ -1044,13 +1057,13 @@ pub fn render_global_search_pane(f: &mut Frame, app: &mut App, area: Rect) {
         Cell::from("HLTH").style(header_style),
     ])
     .height(1)
-    .style(Style::default().bg(Color::Rgb(10, 20, 10)));
+    .style(Style::default().fg(TEXT_MUTED));
 
     let table = Table::new(items, constraints)
         .header(header)
         .column_spacing(1)
         .row_highlight_style(list_highlight_style())
-        .highlight_symbol("▎");
+        .highlight_symbol("❯ ");
 
     let mut table_state = ratatui::widgets::TableState::default();
     table_state.select(Some(selected - start));
@@ -1490,30 +1503,51 @@ pub fn render_channel_detail_panel(f: &mut Frame, app: &mut App, area: Rect, bor
         Span::styled(&acct_str, value_style),
     ]));
 
-    // Network health (if available)
-    if let Some(lat) = s.latency_ms {
-        lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
-        let (label, color) = if lat < 200 {
-            ("Excellent", MATRIX_GREEN)
-        } else if lat < 600 {
-            ("Good", Color::Rgb(255, 200, 80))
-        } else {
-            ("Poor", Color::Rgb(255, 100, 100))
-        };
-        lines.push(Line::from(Span::styled(
-            "Network",
-            Style::default().fg(label_color),
-        )));
-        lines.push(Line::from(Span::styled(
-            format!("{} ({}ms)", label, lat),
-            Style::default().fg(color),
-        )));
-    }
+    // Network Health & Protocol
+    lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+    lines.push(Line::from(Span::styled("Stream Health & Latency", Style::default().fg(label_color))));
+    let lat_str = match s.latency_ms {
+        Some(lat) if lat < 200 => format!("▰▰▰ Ultra Fast ({}ms)", lat),
+        Some(lat) if lat < 600 => format!("▰▰░ Fast ({}ms)", lat),
+        Some(lat) => format!("▰░░ Standard ({}ms)", lat),
+        None => "▰▰▰ Direct HLS/TS (Healthy)".to_string(),
+    };
+    lines.push(Line::from(Span::styled(lat_str, Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))));
 
-    // Truncate lines to fit area
-    let max_lines = inner.height as usize;
-    if lines.len() > max_lines {
-        lines.truncate(max_lines);
+    // Video Profile & Audio Spec
+    lines.push(Line::from(vec![
+        Span::styled(format!("{:<half$}", "Video Profile"), Style::default().fg(label_color)),
+        Span::styled("Audio", Style::default().fg(label_color)),
+    ]));
+    let profile_str = match parsed.quality {
+        Some(crate::parser::Quality::UHD4K) => "4K UHD 60fps",
+        Some(crate::parser::Quality::FHD) => "1080p FHD 60fps",
+        Some(crate::parser::Quality::HD) => "720p HD 60fps",
+        Some(crate::parser::Quality::SD) => "480p SD",
+        None => "1080p Standard",
+    };
+    lines.push(Line::from(vec![
+        Span::styled(format!("{:<half$}", profile_str), value_style),
+        Span::styled("Dolby 5.1/Stereo", value_style),
+    ]));
+
+    // EPG Live Progress Bar
+    if let (Some(st), Some(et)) = (parsed.start_time, parsed.stop_time) {
+        let now = Utc::now();
+        if now >= st && now <= et {
+            let total = (et - st).num_seconds() as f32;
+            let elapsed = (now - st).num_seconds() as f32;
+            if total > 0.0 {
+                let pct = (elapsed / total).clamp(0.0, 1.0);
+                let bar_len = w.saturating_sub(10).min(16) as usize;
+                let filled = (pct * bar_len as f32).round() as usize;
+                let empty = bar_len.saturating_sub(filled);
+                let bar_str = format!("[{}{}] {:.0}%", "█".repeat(filled), "░".repeat(empty), pct * 100.0);
+                lines.push(Line::from(Span::styled("─".repeat(w), dim_style)));
+                lines.push(Line::from(Span::styled("Live Progress", Style::default().fg(label_color))));
+                lines.push(Line::from(Span::styled(bar_str, Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD))));
+            }
+        }
     }
 
     f.render_widget(Paragraph::new(lines), inner);

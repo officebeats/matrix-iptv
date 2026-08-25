@@ -162,7 +162,7 @@ pub fn render_header(f: &mut Frame, app: &App, area: Rect) {
     if app.session.background_refresh_active {
         left_spans.push(Span::styled(
             "  ⟳ syncing...",
-            Style::default().fg(Color::Rgb(80, 160, 80)),
+            Style::default().fg(crate::ui::colors::TEXT_MUTED),
         ));
     }
 

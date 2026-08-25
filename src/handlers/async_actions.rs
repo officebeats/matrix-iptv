@@ -90,6 +90,9 @@ pub async fn handle_async_action(
                 // Restore category counts
                 app.category_channel_counts = cache.category_counts.into_iter().collect();
 
+                // Re-enforce active processing modes (e.g. 'merica) on cached categories
+                app.apply_category_filters();
+
                 // Navigate to content selection immediately
                 app.current_screen = CurrentScreen::ContentTypeSelection;
                 app.session.state_loading = false;

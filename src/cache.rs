@@ -10,8 +10,7 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Cache version — increment when CachedCatalog struct changes to auto-invalidate old caches
-const CACHE_VERSION: u32 = 1;
-
+const CACHE_VERSION: u32 = 2;
 /// On-disk catalog cache for a single account
 #[derive(Serialize, Deserialize)]
 pub struct CachedCatalog {

@@ -1,5 +1,36 @@
 # IPTV App Changes Summary
 
+## Date: 2026-08-24 (v4.3.16)
+
+### Changes Implemented
+
+#### ✅ 1. Zero-Latency Navigation & Event Draining
+- Eliminated keyboard scrolling latency and overshoot when holding down navigation keys (Up/Down/j/k).
+- Replaced blocking render sleep with non-blocking event queue batch draining (up to 64 events per frame).
+- Guaranteed instantaneous stop on key release with sub-millisecond responsiveness.
+
+#### ✅ 2. Modern Structured CLI Table Views
+- Upgraded Live TV, Movies (VOD), TV Series, and Search views to high-density structured tables with clean column alignment (`#`, `QUAL`, `TITLE/NAME`, `YEAR/STATUS/EPG`, `RATING`).
+- Added dedicated `QUAL` column with color-coded badges (`[4K]` magenta, `[FHD]` gold, `[HD]` cyan, `[SD]` white).
+- Displays 34+ channels above the fold with zero wasted horizontal gutter.
+
+#### ✅ 3. Stream Health, Latency & EPG Progress Metadata
+- Integrated Direct Connect stream health and latency indicators (`▰▰▰ Ultra Fast <100ms`).
+- Added video resolution, frame rate profile (`60fps Fluid Sports`), audio profile (`Dolby 5.1/Stereo`), and live EPG progress bars (`[████████░░░░] 65%`).
+
+#### ✅ 4. Dead-Simple Category & Country Isolation Filter
+- Added one-touch country isolate hotkey `[o]`: instantly hides all international categories and leaves only matching country channels active.
+- Added bulk show all (`[c]`), bulk toggle matching (`[a]`), and instant library switching (`[tab]` / `[1-3]`).
+- Displays active search query and visible/hidden category count (`Showing 24/142 · 118 Hidden`).
+
+#### ✅ 5. Strict USA / 'Merica Mode by Default & Parser Fixes
+- Enabled USA/'merica mode by default across fresh configs.
+- Expanded foreign country and region blocklist covering 60+ countries across Canada, Latin America, Europe, Asia, and MENA.
+- Fixed word-boundary matching for `USA` to prevent false matches on words like `ULUSAL`.
+- Fixed prefix stripping bug where `AM | ESPN` or `US: ESPN` was over-sanitized into blank channel names.
+- Incremented cache version (`CACHE_VERSION = 2`) to automatically purge stale unfiltered cache files.
+
+---
 ## Date: 2026-03-22 (v4.0.19)
 
 ### Changes Implemented

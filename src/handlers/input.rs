@@ -3270,6 +3270,37 @@ pub async fn handle_key_event(
                     KeyCode::Char('s') if !app.category_mgmt.search_mode => {
                         app.cycle_category_sort_order();
                     }
+                    KeyCode::Tab if !app.category_mgmt.search_mode => {
+                        app.category_mgmt.content_type = match app.category_mgmt.content_type {
+                            ContentType::Live => ContentType::Vod,
+                            ContentType::Vod => ContentType::Series,
+                            ContentType::Series => ContentType::Live,
+                        };
+                        app.category_mgmt.list_state.select(Some(0));
+                    }
+                    KeyCode::Char('1') if !app.category_mgmt.search_mode => {
+                        app.category_mgmt.content_type = ContentType::Live;
+                        app.category_mgmt.list_state.select(Some(0));
+                    }
+                    KeyCode::Char('2') if !app.category_mgmt.search_mode => {
+                        app.category_mgmt.content_type = ContentType::Vod;
+                        app.category_mgmt.list_state.select(Some(0));
+                    }
+                    KeyCode::Char('3') if !app.category_mgmt.search_mode => {
+                        app.category_mgmt.content_type = ContentType::Series;
+                        app.category_mgmt.list_state.select(Some(0));
+                    }
+                    KeyCode::Char('o') | KeyCode::Char('O') if !app.category_mgmt.search_mode => {
+                        let q = app.category_mgmt.search_query.clone();
+                        app.isolate_categories(&q);
+                    }
+                    KeyCode::Char('a') | KeyCode::Char('A') if !app.category_mgmt.search_mode => {
+                        let q = app.category_mgmt.search_query.clone();
+                        app.toggle_all_matching_categories(&q);
+                    }
+                    KeyCode::Char('c') | KeyCode::Char('C') if !app.category_mgmt.search_mode => {
+                        app.unhide_all_categories();
+                    }
                     KeyCode::Backspace => {
                         app.category_mgmt.search_query.pop();
                         app.category_mgmt.list_state.select(Some(0));

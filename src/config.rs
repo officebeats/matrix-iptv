@@ -61,8 +61,8 @@ impl DnsProvider {
 /// Playlist processing mode options (Legacy - specific combinations)
 #[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Default)]
 pub enum PlaylistMode {
-    #[default]
     Default,
+    #[default]
     Merica,
     Sports,
     AllEnglish,
@@ -242,8 +242,8 @@ impl Default for AppConfig {
             last_used_account_index: None,
             favorites: Favorites::default(),
             timezone: None,
-            playlist_mode: PlaylistMode::default(),
-            processing_modes: Vec::new(),
+            playlist_mode: PlaylistMode::Merica,
+            processing_modes: vec![ProcessingMode::Merica],
             dns_provider: DnsProvider::default(),
             use_default_mpv: false, // Must be false to use our critical IPTV network optimizations
             preferred_player: PlayerEngine::Mpv,

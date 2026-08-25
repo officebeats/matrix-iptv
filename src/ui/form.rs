@@ -1,8 +1,6 @@
 use crate::app::{App, InputMode, LoginField, SettingsState};
 use crate::state::ContentType;
-use crate::ui::colors::{
-    HIGHLIGHT_BG, MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY,
-};
+use crate::ui::colors::{MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -256,14 +254,10 @@ fn render_settings_subscreen(
 
     let inner_list_area = crate::ui::common::render_composite_block(f, chunks[0], Some(title));
 
+    let (hl_style, hl_symbol) = crate::ui::common::select_list_theme();
     let list = List::new(items)
-        .highlight_style(
-            Style::default()
-                .bg(HIGHLIGHT_BG)
-                .fg(MATRIX_GREEN)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(" ▎");
+        .highlight_style(hl_style)
+        .highlight_symbol(hl_symbol);
     f.render_stateful_widget(list, inner_list_area, list_state);
 
     if !description.is_empty() {
@@ -293,6 +287,7 @@ fn nav_hints() -> Line<'static> {
 }
 
 pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
+    let (hl_style, hl_symbol) = crate::ui::common::select_list_theme();
     if app.current_screen == crate::app::CurrentScreen::TimezoneSettings {
         let items: Vec<ListItem> = app
             .timezone_list
@@ -343,21 +338,32 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 .constraints([Constraint::Min(10), Constraint::Length(4)])
                 .split(area);
 
+            // OMP SettingsList treatment: selected row = accent;
+            // unselected value = muted; label = text.
             let items: Vec<ListItem> = app
                 .settings_options
                 .iter()
-                .map(|s| {
+                .enumerate()
+                .map(|(idx, s)| {
+                    let selected = idx == app.selected_settings_index;
+                    let changed = app.settings_changed.get(idx).copied().unwrap_or(false);
                     if let Some(colon_pos) = s.find(':') {
                         let label = &s[..colon_pos + 1];
                         let value = &s[colon_pos + 1..];
+                        // OMP: changed values render in warning amber
+                        let value_color = if changed {
+                            crate::ui::colors::WARNING
+                        } else if selected {
+                            MATRIX_GREEN
+                        } else {
+                            crate::ui::colors::TEXT_MUTED
+                        };
                         ListItem::new(Line::from(vec![
-                            Span::styled(format!("  {}", label), Style::default().fg(TEXT_PRIMARY)),
                             Span::styled(
-                                value.to_string(),
-                                Style::default()
-                                    .fg(MATRIX_GREEN)
-                                    .add_modifier(Modifier::BOLD),
+                                format!("  {}", label),
+                                Style::default().fg(if selected { MATRIX_GREEN } else { TEXT_PRIMARY }),
                             ),
+                            Span::styled(value.to_string(), Style::default().fg(value_color)),
                         ]))
                     } else if s.contains(" (") && s.ends_with(")") {
                         if let Some(paren_pos) = s.find(" (") {
@@ -366,9 +372,16 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                             ListItem::new(Line::from(vec![
                                 Span::styled(
                                     format!("  {}", label),
-                                    Style::default().fg(TEXT_PRIMARY),
+                                    Style::default().fg(if selected { MATRIX_GREEN } else { TEXT_PRIMARY }),
                                 ),
-                                Span::styled(value.to_string(), Style::default().fg(MATRIX_GREEN)),
+                                Span::styled(
+                                    value.to_string(),
+                                    Style::default().fg(if selected {
+                                        MATRIX_GREEN
+                                    } else {
+                                        crate::ui::colors::TEXT_MUTED
+                                    }),
+                                ),
                             ]))
                         } else {
                             ListItem::new(Line::from(Span::styled(
@@ -379,7 +392,7 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                     } else {
                         ListItem::new(Line::from(Span::styled(
                             format!("  {}", s),
-                            Style::default().fg(TEXT_PRIMARY),
+                            Style::default().fg(if selected { MATRIX_GREEN } else { TEXT_PRIMARY }),
                         )))
                     }
                 })
@@ -388,13 +401,8 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 crate::ui::common::render_composite_block(f, chunks[0], Some("settings"));
 
             let list = List::new(items)
-                .highlight_style(
-                    Style::default()
-                        .bg(HIGHLIGHT_BG)
-                        .fg(MATRIX_GREEN)
-                        .add_modifier(Modifier::BOLD),
-                )
-                .highlight_symbol(" ▎");
+                .highlight_style(hl_style)
+                .highlight_symbol(hl_symbol);
             f.render_stateful_widget(list, inner_list_area, &mut app.settings_list_state);
 
             let desc = app
@@ -438,13 +446,8 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
                 SOFT_GREEN,
             );
             let list = List::new(accounts)
-                .highlight_style(
-                    Style::default()
-                        .bg(HIGHLIGHT_BG)
-                        .fg(MATRIX_GREEN)
-                        .add_modifier(Modifier::BOLD),
-                )
-                .highlight_symbol(" ▎");
+                .highlight_style(hl_style)
+                .highlight_symbol(hl_symbol);
             f.render_stateful_widget(list, inner_area, &mut app.account_list_state);
 
             let key_style = Style::default().fg(MATRIX_GREEN);
@@ -779,6 +782,7 @@ pub fn render_settings(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 pub fn render_category_management(f: &mut Frame, app: &mut App, area: Rect) {
+    let (hl_style, hl_symbol) = crate::ui::common::select_list_theme();
     let content_type = app.category_mgmt.content_type;
     let acc = match app.config.accounts.get(app.session.selected_account_index) {
         Some(a) => a,
@@ -786,12 +790,12 @@ pub fn render_category_management(f: &mut Frame, app: &mut App, area: Rect) {
     };
 
     // Tabs for Content Type
-    let tabs = ["Live TV", "Movies", "Series"];
+    let tabs = ["1: Live TV", "2: Movies", "3: Series"];
     let tab_chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3), // Tabs
-            Constraint::Length(1), // Spacer/Search
+            Constraint::Length(2), // Search / Country Filter Bar
             Constraint::Min(5),    // List
             Constraint::Length(3), // Info/Sort
             Constraint::Length(2), // Hints
@@ -818,7 +822,7 @@ pub fn render_category_management(f: &mut Frame, app: &mut App, area: Rect) {
 
     let tab_para = Paragraph::new(Line::from(tab_spans)).alignment(Alignment::Center);
     let inner_tabs =
-        crate::ui::common::render_matrix_box(f, tab_chunks[0], "manage categories", SOFT_GREEN);
+        crate::ui::common::render_matrix_box(f, tab_chunks[0], "manage categories & country filter", SOFT_GREEN);
     f.render_widget(tab_para, inner_tabs);
 
     // Categories List based on content type
@@ -827,6 +831,34 @@ pub fn render_category_management(f: &mut Frame, app: &mut App, area: Rect) {
         ContentType::Vod => &app.all_vod_categories,
         ContentType::Series => &app.all_series_categories,
     };
+
+    let total_count = all_cats.len();
+    let hidden_count = all_cats.iter().filter(|c| acc.hidden_categories.contains(&c.category_id)).count();
+    let visible_count = total_count.saturating_sub(hidden_count);
+
+    // Render Search / Filter Bar
+    let search_q = &app.category_mgmt.search_query;
+    let is_search = app.category_mgmt.search_mode;
+    let search_line = if is_search {
+        Line::from(vec![
+            Span::styled("  Filter Country/Name: ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled(format!("\"{}\"█", search_q), Style::default().fg(TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
+            Span::styled("  · [o] isolate country  [a] toggle all  [c] show all  [esc] clear", Style::default().fg(TEXT_DIM)),
+        ])
+    } else if !search_q.is_empty() {
+        Line::from(vec![
+            Span::styled("  Filter Active: ", Style::default().fg(MATRIX_GREEN)),
+            Span::styled(format!("\"{}\"", search_q), Style::default().fg(TEXT_PRIMARY)),
+            Span::styled("  · [/] edit  [o] isolate country  [a] toggle all  [c] show all  [esc] clear", Style::default().fg(TEXT_SECONDARY)),
+        ])
+    } else {
+        Line::from(vec![
+            Span::styled("  [/] ", Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD)),
+            Span::styled("Type country code/name to filter (e.g. US, UK, CA, Sports)  ", Style::default().fg(TEXT_SECONDARY)),
+            Span::styled("· [o] isolate  [a] toggle all  [c] show all", Style::default().fg(TEXT_DIM)),
+        ])
+    };
+    f.render_widget(Paragraph::new(search_line), tab_chunks[1]);
 
     // Filter by search query
     let filtered_cats: Vec<_> = all_cats
@@ -872,42 +904,46 @@ pub fn render_category_management(f: &mut Frame, app: &mut App, area: Rect) {
         .collect();
 
     let list_title = format!(
-        "{} categories ({})",
+        "{} categories (Showing {}/{} · {} Hidden)",
         content_type.display_name(),
-        sorted_cats.len()
+        visible_count,
+        total_count,
+        hidden_count
     );
     let inner_list = crate::ui::common::render_composite_block(f, tab_chunks[2], Some(&list_title));
 
     let list = List::new(items)
-        .highlight_style(
-            Style::default()
-                .bg(HIGHLIGHT_BG)
-                .fg(MATRIX_GREEN)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(" ▎");
+        .highlight_style(hl_style)
+        .highlight_symbol(hl_symbol);
 
     f.render_stateful_widget(list, inner_list, &mut app.category_mgmt.list_state);
 
-    // Sort Info
-    let sort_info = Paragraph::new(format!(
-        "  Sort: {}",
-        acc.category_sort_order.display_name()
-    ))
-    .style(Style::default().fg(TEXT_SECONDARY));
-    let inner_sort = crate::ui::common::render_matrix_box(f, tab_chunks[3], "options", TEXT_DIM);
-    f.render_widget(sort_info, inner_sort);
+    // Sort Info & Active Country Filter Info
+    let sort_info = Line::from(vec![
+        Span::styled(format!("  Sort: {}", acc.category_sort_order.display_name()), Style::default().fg(TEXT_SECONDARY)),
+        Span::styled(format!("  │  Visible: {}/{}", visible_count, total_count), Style::default().fg(if hidden_count > 0 { MATRIX_GREEN } else { TEXT_SECONDARY })),
+    ]);
+    let inner_sort = crate::ui::common::render_matrix_box(f, tab_chunks[3], "category status", TEXT_DIM);
+    f.render_widget(Paragraph::new(sort_info), inner_sort);
 
     // Navigation Hints
-    let key_style = Style::default().fg(MATRIX_GREEN);
+    let key_style = Style::default().fg(MATRIX_GREEN).add_modifier(Modifier::BOLD);
     let label_style = Style::default().fg(TEXT_SECONDARY);
     let hints = Line::from(vec![
+        Span::styled("/", key_style),
+        Span::styled(" filter  ", label_style),
+        Span::styled("o", key_style),
+        Span::styled(" isolate (hide others)  ", label_style),
         Span::styled("space", key_style),
-        Span::styled(" toggle visibility  ", label_style),
+        Span::styled(" toggle  ", label_style),
+        Span::styled("a", key_style),
+        Span::styled(" toggle all  ", label_style),
+        Span::styled("c", key_style),
+        Span::styled(" show all  ", label_style),
         Span::styled("tab", key_style),
-        Span::styled(" cycle type  ", label_style),
+        Span::styled(" type  ", label_style),
         Span::styled("s", key_style),
-        Span::styled(" cycle sort  ", label_style),
+        Span::styled(" sort  ", label_style),
         Span::styled("esc", key_style),
         Span::styled(" back", label_style),
     ]);

@@ -1,15 +1,13 @@
 use crate::app::{App, Pane};
 use crate::parser::parse_stream;
-use crate::ui::colors::{
-    DARK_GREEN, HIGHLIGHT_BG, MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY,
-};
+use crate::ui::colors::{DARK_GREEN, MATRIX_GREEN, SOFT_GREEN, TEXT_DIM, TEXT_PRIMARY, TEXT_SECONDARY};
 use crate::ui::common::stylize_channel_name;
 use crate::ui::utils::visible_window;
 use ratatui::{
-    layout::Rect,
-    style::{Modifier, Style},
-    text::Line,
-    widgets::{List, ListItem},
+    layout::{Constraint, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::{Cell, List, ListItem, Paragraph, Row, Table, TableState},
     Frame,
 };
 
@@ -40,7 +38,7 @@ pub fn render_series_view(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
-    let visible_height = area.height.saturating_sub(2) as usize;
+    let visible_height = area.height.saturating_sub(3) as usize;
     let (start, end) = visible_window(
         app.selected_series_stream_index,
         app.series_streams.len(),
@@ -48,16 +46,13 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
     );
     let selected = app.selected_series_stream_index;
 
-    let items: Vec<ListItem> = app
+    let items: Vec<Row> = app
         .series_streams
         .iter()
         .enumerate()
         .skip(start)
         .take(end - start)
-        .map(|(_, s)| {
-            let mut spans = vec![];
-
-            // O(1) metadata retrieval from pre-computed cache
+        .map(|(idx, s)| {
             let (display_name, quality) = if let Some(ref parsed) = s.cached_parsed {
                 (parsed.display_name.clone(), parsed.quality)
             } else {
@@ -65,68 +60,45 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
                 (p.display_name, p.quality)
             };
 
-            let mut name = display_name;
-            let re_year = regex::Regex::new(r"[\(\[](19|20)\d{2}[\)\]]").unwrap();
-            if let Some(mat) = re_year.find(&s.name) {
-                let year_clean = mat.as_str().replace('[', "(").replace(']', ")");
-                if !name.contains(&year_clean) {
-                    name.push(' ');
-                    name.push_str(&year_clean);
-                }
-            }
+            // 0. Index Number
+            let num_cell = Cell::from(format!("{:>3}", idx + 1)).style(Style::default().fg(TEXT_DIM));
 
-            // Check if recently watched (progress indicator)
+            // 1. Quality Badge
+            let (quality_text, quality_color) = match quality {
+                Some(crate::parser::Quality::UHD4K) => ("[4K] ", Color::Rgb(255, 0, 255)),
+                Some(crate::parser::Quality::FHD) => ("[FHD]", Color::Rgb(255, 215, 0)),
+                Some(crate::parser::Quality::HD) => ("[HD] ", Color::Rgb(0, 255, 255)),
+                Some(crate::parser::Quality::SD) => ("[SD] ", Color::White),
+                None => ("     ", Color::White),
+            };
+            let quality_cell = Cell::from(quality_text).style(Style::default().fg(quality_color).add_modifier(Modifier::BOLD));
+
+            // 2. Title
             let is_watched = app
                 .config
                 .recently_watched
                 .iter()
                 .any(|(id, _)| id == &s.stream_id.to_string());
-            let prefix = if is_watched { "✓ " } else { "" };
-            let prefixed_name = format!("{}{}", prefix, name);
-
-            let (mut styled_name, _) = stylize_channel_name(
-                &prefixed_name,
-                false,
-                false,
-                quality,
-                None,
-                None,
-                Style::default().fg(TEXT_PRIMARY),
-                true, // show_quality: true because Series doesn't have a QUAL column
-            );
-
-            // Colorize the checkmark if it's there
+            let mut title_spans = Vec::new();
             if is_watched {
-                if let Some(first_span) = styled_name.first_mut() {
-                    if first_span.content.starts_with("✓") {
-                        let check_span = ratatui::text::Span::styled(
-                            "✓ ",
-                            Style::default().fg(crate::ui::colors::SOFT_GREEN),
-                        );
-                        first_span.content =
-                            std::borrow::Cow::Owned(first_span.content[2..].to_string());
-
-                        let mut new_spans = vec![check_span];
-                        new_spans.extend(styled_name);
-                        styled_name = new_spans;
-                    }
-                }
+                title_spans.push(Span::styled("✓ ", Style::default().fg(crate::ui::colors::SOFT_GREEN)));
             }
+            title_spans.push(Span::styled(display_name, Style::default().fg(TEXT_PRIMARY)));
+            let title_cell = Cell::from(Line::from(title_spans));
 
-            spans.extend(styled_name);
-
-            if let Some(rating_f) = s.rating {
+            // 3. Status / Rating
+            let rating_str = if let Some(rating_f) = s.rating {
                 if rating_f > 0.0 {
-                    let rating_str = format!("{:.1}", rating_f);
-                    let rating_color = crate::ui::utils::get_rating_color(&rating_str);
-                    spans.push(ratatui::text::Span::styled(
-                        format!(" {}", rating_str),
-                        Style::default().fg(rating_color),
-                    ));
+                    format!("★ {:.1}", rating_f)
+                } else {
+                    "Episodic".to_string()
                 }
-            }
+            } else {
+                "Episodic".to_string()
+            };
+            let status_cell = Cell::from(rating_str).style(Style::default().fg(Color::Rgb(255, 200, 80)));
 
-            ListItem::new(Line::from(spans))
+            Row::new(vec![num_cell, quality_cell, title_cell, status_cell])
         })
         .collect();
 
@@ -136,20 +108,39 @@ fn render_series_streams_pane(f: &mut Frame, app: &mut App, area: Rect) {
     let inner_area =
         crate::ui::common::render_matrix_box_active(f, area, title, border_color, is_active);
 
-    let list = List::new(items)
-        .highlight_style(
-            Style::default()
-                .bg(HIGHLIGHT_BG)
-                .fg(MATRIX_GREEN)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(" ▎");
+    if app.series_streams.is_empty() {
+        let empty_msg = Paragraph::new("No series found")
+            .style(Style::default().fg(TEXT_DIM))
+            .alignment(ratatui::layout::Alignment::Center);
+        f.render_widget(empty_msg, inner_area);
+        return;
+    }
 
-    // Convert TableState selection to a temporary ListState for List widget rendering
-    let sel = Some(selected - start);
-    let mut adjusted_state = ratatui::widgets::ListState::default();
-    adjusted_state.select(sel);
-    f.render_stateful_widget(list, inner_area, &mut adjusted_state);
+    let constraints = [
+        Constraint::Length(4),  // #
+        Constraint::Length(6),  // QUAL
+        Constraint::Fill(3),    // SERIES TITLE
+        Constraint::Length(12), // STATUS / RATING
+    ];
+    let header_style = Style::default().fg(TEXT_SECONDARY).add_modifier(Modifier::BOLD);
+    let header = Row::new(vec![
+        Cell::from("  #").style(header_style),
+        Cell::from("QUAL").style(header_style),
+        Cell::from("SERIES TITLE").style(header_style),
+        Cell::from("STATUS").style(header_style),
+    ])
+    .height(1)
+    .style(Style::default().fg(TEXT_DIM));
+
+    let table = Table::new(items, constraints)
+        .header(header)
+        .column_spacing(1)
+        .row_highlight_style(crate::ui::panes::list_highlight_style())
+        .highlight_symbol("❯ ");
+
+    let mut table_state = TableState::default();
+    table_state.select(Some(selected - start));
+    f.render_stateful_widget(table, inner_area, &mut table_state);
 }
 
 fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
@@ -190,13 +181,8 @@ fn render_series_episodes_pane(f: &mut Frame, app: &mut App, area: Rect) {
         crate::ui::common::render_matrix_box_active(f, area, title, border_color, is_active);
 
     let list = List::new(items)
-        .highlight_style(
-            Style::default()
-                .bg(HIGHLIGHT_BG)
-                .fg(MATRIX_GREEN)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(" ▎");
+        .highlight_style(crate::ui::common::select_list_theme().0)
+        .highlight_symbol(crate::ui::common::select_list_theme().1);
 
     let mut adjusted_state = app.series_episode_list_state;
     adjusted_state.select(Some(selected - start));

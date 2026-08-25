@@ -172,6 +172,7 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
                                     cell.set_style(
                                         Style::default()
                                             .fg(crate::ui::colors::MATRIX_GREEN)
+                                            .bg(Color::Rgb(0, 0, 0))
                                             .add_modifier(Modifier::BOLD),
                                     );
                                 }
@@ -187,7 +188,7 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
     for (ly, line) in LOGO_LINES.iter().enumerate() {
         let gy = logo_y + ly as u16;
         if gy >= area.top() && gy < area.bottom() {
-            let trace_style = Style::default().fg(Color::Rgb(0, 40, 0));
+            let trace_style = Style::default().fg(Color::Rgb(0, 40, 0)).bg(Color::Rgb(0, 0, 0));
             for (lx, c) in line.chars().enumerate() {
                 let gx = logo_x + lx as u16;
                 if gx >= area.left() && gx < area.right() && c != ' ' {
@@ -244,7 +245,7 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
                     } else {
                         crate::ui::colors::MATRIX_GREEN
                     };
-                    (lc, Style::default().fg(color).add_modifier(Modifier::BOLD))
+                    (lc, Style::default().fg(color).bg(Color::Rgb(0, 0, 0)).add_modifier(Modifier::BOLD))
                 } else {
                     let color = if i == 0 || is_glitch {
                         Color::White
@@ -253,7 +254,7 @@ pub fn render_matrix_rain(f: &mut Frame, app: &App, area: Rect) {
                     } else {
                         crate::ui::colors::MATRIX_GREEN
                     };
-                    (ch, Style::default().fg(color).add_modifier(Modifier::BOLD))
+                    (ch, Style::default().fg(color).bg(Color::Rgb(0, 0, 0)).add_modifier(Modifier::BOLD))
                 };
 
                 if let Some(cell) = buf.cell_mut((gx, gy)) {
@@ -332,26 +333,29 @@ pub fn render_matrix_edge_border(f: &mut Frame, area: Rect, margin_v: u16, margi
                     let idx = (brightness * (char_set.len() - 1) as f32).round() as usize;
                     let ch = char_set[idx];
 
-                    if ch != ' ' {
-                        // Color styling based on brightness density gradient
-                        let color = if brightness > 0.85 {
-                            Color::White
-                        } else if brightness > 0.65 {
-                            Color::Rgb(150, 255, 150)
-                        } else if brightness > 0.4 {
-                            crate::ui::colors::MATRIX_GREEN
-                        } else if brightness > 0.2 {
-                            Color::Rgb(0, 100, 0)
-                        } else {
-                            Color::Rgb(0, 40, 0)
-                        };
-
-                        cell.set_char(ch);
-                        cell.set_style(Style::default().fg(color).add_modifier(Modifier::BOLD));
+                    // Color styling based on brightness density gradient
+                    let color = if brightness > 0.85 {
+                        Color::White
+                    } else if brightness > 0.65 {
+                        Color::Rgb(150, 255, 150)
+                    } else if brightness > 0.4 {
+                        crate::ui::colors::MATRIX_GREEN
+                    } else if brightness > 0.2 {
+                        Color::Rgb(0, 100, 0)
                     } else {
-                        cell.set_char(' ');
-                        cell.set_style(Style::default().bg(Color::Rgb(0, 0, 0)));
-                    }
+                        Color::Rgb(0, 40, 0)
+                    };
+
+                    let style = if ch != ' ' {
+                        Style::default()
+                            .fg(color)
+                            .bg(Color::Rgb(0, 0, 0))
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default().bg(Color::Rgb(0, 0, 0))
+                    };
+                    cell.set_char(ch);
+                    cell.set_style(style);
                 }
             }
         }
@@ -459,6 +463,7 @@ pub fn render_welcome_popup(f: &mut Frame, app: &App, area: Rect) {
 
     let paragraph = Paragraph::new(text)
         .alignment(Alignment::Center)
+        .style(Style::default().bg(Color::Rgb(0, 0, 0)))
         .wrap(Wrap { trim: true });
 
     f.render_widget(paragraph, inner);

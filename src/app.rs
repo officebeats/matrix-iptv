@@ -206,6 +206,8 @@ pub struct App {
     // Settings
     pub playlist_mode_list_state: ListState,
     pub settings_options: Vec<String>,
+    /// True per option when its value differs from the default (OMP "changed" treatment)
+    pub settings_changed: Vec<bool>,
     pub settings_descriptions: Vec<String>,
     pub selected_settings_index: usize,
     pub settings_list_state: ListState,
@@ -491,6 +493,7 @@ impl App {
             global_search_list_state: ListState::default(),
 
             settings_options: vec![],
+            settings_changed: vec![],
             settings_descriptions: vec![],
             selected_settings_index: 0,
             settings_list_state: ListState::default(),
@@ -637,6 +640,76 @@ impl App {
                 acc.hidden_categories.remove(&category_id);
             } else {
                 acc.hidden_categories.insert(category_id);
+            }
+            let _ = self.config.save();
+        }
+        self.apply_category_filters();
+    }
+    pub fn isolate_categories(&mut self, query: &str) {
+        let content_type = self.category_mgmt.content_type;
+        let q = query.trim().to_lowercase();
+        if let Some(acc) = self
+            .config
+            .accounts
+            .get_mut(self.session.selected_account_index)
+        {
+            let all_cats: Vec<(String, String)> = match content_type {
+                crate::state::ContentType::Live => self.all_categories.iter().map(|c| (c.category_id.clone(), c.category_name.clone())).collect(),
+                crate::state::ContentType::Vod => self.all_vod_categories.iter().map(|c| (c.category_id.clone(), c.category_name.clone())).collect(),
+                crate::state::ContentType::Series => self.all_series_categories.iter().map(|c| (c.category_id.clone(), c.category_name.clone())).collect(),
+            };
+            for (id, name) in all_cats {
+                if q.is_empty() || name.to_lowercase().contains(&q) {
+                    acc.hidden_categories.remove(&id);
+                } else {
+                    acc.hidden_categories.insert(id);
+                }
+            }
+            let _ = self.config.save();
+        }
+        self.apply_category_filters();
+    }
+
+    pub fn unhide_all_categories(&mut self) {
+        let content_type = self.category_mgmt.content_type;
+        if let Some(acc) = self
+            .config
+            .accounts
+            .get_mut(self.session.selected_account_index)
+        {
+            let cats: Vec<String> = match content_type {
+                crate::state::ContentType::Live => self.all_categories.iter().map(|c| c.category_id.clone()).collect(),
+                crate::state::ContentType::Vod => self.all_vod_categories.iter().map(|c| c.category_id.clone()).collect(),
+                crate::state::ContentType::Series => self.all_series_categories.iter().map(|c| c.category_id.clone()).collect(),
+            };
+            for id in cats {
+                acc.hidden_categories.remove(&id);
+            }
+            let _ = self.config.save();
+        }
+        self.apply_category_filters();
+    }
+
+    pub fn toggle_all_matching_categories(&mut self, query: &str) {
+        let content_type = self.category_mgmt.content_type;
+        let q = query.trim().to_lowercase();
+        if let Some(acc) = self
+            .config
+            .accounts
+            .get_mut(self.session.selected_account_index)
+        {
+            let matching_cats: Vec<String> = match content_type {
+                crate::state::ContentType::Live => self.all_categories.iter().filter(|c| q.is_empty() || c.category_name.to_lowercase().contains(&q)).map(|c| c.category_id.clone()).collect(),
+                crate::state::ContentType::Vod => self.all_vod_categories.iter().filter(|c| q.is_empty() || c.category_name.to_lowercase().contains(&q)).map(|c| c.category_id.clone()).collect(),
+                crate::state::ContentType::Series => self.all_series_categories.iter().filter(|c| q.is_empty() || c.category_name.to_lowercase().contains(&q)).map(|c| c.category_id.clone()).collect(),
+            };
+            let all_hidden = matching_cats.iter().all(|id| acc.hidden_categories.contains(id));
+            for id in matching_cats {
+                if all_hidden {
+                    acc.hidden_categories.remove(&id);
+                } else {
+                    acc.hidden_categories.insert(id);
+                }
             }
             let _ = self.config.save();
         }
@@ -927,6 +1000,21 @@ impl App {
             "Check if a newer version of Matrix IPTV is available for download.".to_string(),
             "Hide or show specific playlist categories for a cleaner experience.".to_string(),
             "View application info, version, and credits.".to_string(),
+        ];
+        // OMP "changed" treatment: mark settings whose value differs from default
+        self.settings_changed = vec![
+            false, // Manage Playlists (action)
+            false, // Set Timezone (action)
+            false, // Playlist Filters
+            false, // DNS Provider
+            !self.config.use_default_mpv, // Video Mode (Enhanced is non-default)
+            false, // Player Engine
+            self.config.smooth_motion,    // Smooth Motion (default OFF)
+            false, // Auto-Refresh
+            false, // Matrix Rain (action)
+            false, // Check Updates (action)
+            false, // Manage Category Visibility (action)
+            false, // About (action)
         ];
 
         if self.settings_list_state.selected().is_none() {

@@ -174,33 +174,87 @@ static FOREIGN_KEYWORDS: Lazy<HashSet<&'static str>> = Lazy::new(|| {
         "IRELAND",
         "IRISH",
         "SCOTLAND",
-        // Latin America
+        "SCOTTISH",
+        "WALES",
+        "WELSH",
+        "AUSTRALIA",
+        "AUSTRALIAN",
+        "NEW ZEALAND",
+        // Americas (Non-USA)
+        "CANADA",
+        "CANADIAN",
+        "CARIBBEAN",
+        "CHILE",
+        "CHILEAN",
+        "COLOMBIA",
+        "COLOMBIAN",
+        "COSTA RICA",
+        "COSTA RICAN",
+        "DOMINICAN",
+        "DOMINICAN REP",
+        "DOMINICAN REPUBLIC",
+        "ECUADOR",
+        "ECUADORIAN",
+        "EL SALVADOR",
+        "SALVADORAN",
+        "GUATEMALA",
+        "HAITI",
+        "HAITIAN",
+        "HONDURAS",
+        "HONDURAN",
+        "JAMAICA",
         "LATAM",
         "LATIN",
         "LATINO",
-        "HISPANIC",
-        "ARGENTINA",
-        "COLOMBIA",
-        "CHILE",
-        "PERU",
-        "VENEZUELA",
-        "BOLIVIA",
-        "ECUADOR",
-        "URUGUAY",
-        "PARAGUAY",
-        "CARIBBEAN",
-        "BRAZIL",
+        "LATINA",
+        "CENTROAMERICA",
+        "SUDAMERICA",
         "MEXICO",
         "MEXICAN",
+        "NICARAGUA",
+        "PANAMA",
+        "PANAMANIAN",
+        "PARAGUAY",
+        "PARAGUAYAN",
+        "PERU",
+        "PERUVIAN",
+        "SURINAME",
+        "URUGUAY",
+        "URUGUAYAN",
+        "VENEZUELA",
+        "VENEZUELAN",
+        "ARGENTINA",
+        "ARGENTINIAN",
+        "BOLIVIA",
+        "BRAZIL",
+        "BRAZILIAN",
+        "BRASIL",
         "CUBA",
         "CUBAN",
         "PUERTO RICO",
-        "DOMINICAN",
-        "SUDAMERICA",
-        "CENTROAMERICA",
         // French-Canadian
         "QUEBEC",
         "QUEBECOISE",
+        "FRENCH CANADIAN",
+        // Middle East & North Africa (MENA) additions
+        "RAMADAN",
+        "SHAHID",
+        "ROTANA",
+        "OSN",
+        "BEIN AR",
+        // Turkey & Caucasus additions
+        "ULUSAL",
+        "TURK ULUSAL",
+        "TURKCE",
+        // Europe & Africa additions
+        "EUROPE",
+        "EUROP",
+        "EAST EUROP",
+        "WEST EUROP",
+        "WAFCON",
+        "AFCON",
+        "CAF",
+        "BALKAN",
         // Multi-Language / Regional / Special
         "EXYU",
         "EX-YU",
@@ -371,7 +425,7 @@ static CLEAN_EVENT_DAY_PREFIX: Lazy<Regex> =
 static CLEAN_LEAGUE_PREFIX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[:|-]\s*|\s+\d)").unwrap());
 static CLEAN_GENERIC_PREFIX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"(?i)^([A-Z0-9/]{1,7})(?:\s*[|:-]\s*|\s+)").unwrap());
+    Lazy::new(|| Regex::new(r"(?i)^([A-Z0-9/]{1,7})\s*[-|:/]\s*").unwrap());
 static CLEAN_LEAGUE_SEPARATOR_PREFIX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)^(NBA|NFL|NHL|MLB|UFC|MLS)(?:\s*[|:-]\s*|\s+\d)").unwrap());
 
@@ -516,18 +570,49 @@ static LIVE_PREFIX_REGEX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"(?i)^([A-Z]{1,3})(\s*[|:]\s*|\s+)").unwrap());
 
 fn has_strong_us_marker(name_upper: &str) -> bool {
-    name_upper.contains("USA")
-        || name_upper.contains("US LOCALS")
-        || name_upper.contains("AMERICA")
-        || name_upper.contains("UNITED STATES")
-        || name_upper.starts_with("US ")
-        || name_upper.starts_with("US|")
-        || name_upper.starts_with("US:")
-        || name_upper.starts_with("US-")
-        || name_upper.starts_with("AM ")
-        || name_upper.starts_with("AM|")
-        || name_upper.starts_with("AM:")
-        || name_upper.starts_with("AM-")
+    let n = name_upper;
+    n.starts_with("USA ")
+        || n.starts_with("USA:")
+        || n.starts_with("USA|")
+        || n.starts_with("USA-")
+        || n.starts_with("USA/")
+        || n.ends_with(" USA")
+        || n.contains(" USA ")
+        || n.contains("|USA|")
+        || n.contains("[USA]")
+        || n.contains("(USA)")
+        || n == "USA"
+        || n.contains("US LOCALS")
+        || n.contains("UNITED STATES")
+        || n.starts_with("AMERICA ")
+        || n.starts_with("AMERICA|")
+        || n.starts_with("AMERICA:")
+        || n.starts_with("AMERICA-")
+        || n == "AMERICA"
+        || n.starts_with("US ")
+        || n.starts_with("US|")
+        || n.starts_with("US:")
+        || n.starts_with("US-")
+        || n.starts_with("US/")
+        || n.contains(" US ")
+        || n.contains("[US]")
+        || n.contains("(US)")
+        || n.contains("|US|")
+        || n.starts_with("AM ")
+        || n.starts_with("AM|")
+        || n.starts_with("AM:")
+        || n.starts_with("AM-")
+        || n.starts_with("AM/")
+        || n.starts_with("VIP ")
+        || n.starts_with("VIP|")
+        || n.starts_with("VIP:")
+        || n.starts_with("VIP-")
+        || n.starts_with("VIP/")
+        || n.starts_with("4K ")
+        || n.starts_with("4K|")
+        || n.starts_with("4K:")
+        || n.starts_with("4K-")
+        || n.starts_with("4K/")
 }
 
 fn has_american_live_category_marker(name_upper: &str) -> bool {
@@ -538,21 +623,44 @@ fn has_american_live_category_marker(name_upper: &str) -> bool {
         "NHL",
         "NCAA",
         "MLS",
+        "WNBA",
         "ESPN",
         "BALLY",
         "YES NETWORK",
+        "NESN",
+        "MARQUEE",
+        "ROOT SPORTS",
         "MSG",
+        "ALTITUDE",
+        "SPECTRUM",
+        "BIG TEN",
+        "SEC NETWORK",
+        "ACC NETWORK",
         "ABC",
         "NBC",
         "CBS",
         "FOX",
         "PPV",
         "UFC",
+        "WWE",
+        "AEW",
         "24/7",
         "24-7",
         "24 7",
         "24HR",
         "24 HOUR",
+        "PARAMOUNT",
+        "PEACOCK",
+        "DIRTVISION",
+        "FANDUEL",
+        "TRILLER",
+        "UNIVISION",
+        "TELEMUNDO",
+        "VICTORY+",
+        "VIX",
+        "OHL",
+        "QMJHL",
+        "WHL",
     ]
     .iter()
     .any(|&k| name_upper.contains(k))
@@ -562,20 +670,35 @@ fn has_american_live_category_marker(name_upper: &str) -> bool {
 pub fn is_american_live(name: &str) -> bool {
     // Normalize special separators first
     let n = name.to_uppercase().replace("▎", "|").replace("︳", "|");
-    let has_us_marker = has_strong_us_marker(&n);
+    let trimmed = n.trim();
 
-    // 0. Strict Blocker for known international junk that slips through (e.g. "AR|")
-    // This handles cases where a prefix like Arabic (AR) is used without a space.
-    if (n.starts_with("AR |")
-        || n.starts_with("AR|")
-        || n.starts_with("AR :")
-        || n.starts_with("AR:"))
-        && !has_us_marker
-    {
+    // Check if explicitly prefixed with US/USA (e.g. "USA TELEMUNDO", "US | LATINO")
+    let has_us_prefix = trimmed.starts_with("US ")
+        || trimmed.starts_with("US:")
+        || trimmed.starts_with("US|")
+        || trimmed.starts_with("US-")
+        || trimmed.starts_with("US/")
+        || trimmed.starts_with("USA ")
+        || trimmed.starts_with("USA:")
+        || trimmed.starts_with("USA|")
+        || trimmed.starts_with("USA-")
+        || trimmed.starts_with("USA/")
+        || trimmed.starts_with("AM ")
+        || trimmed.starts_with("AM:")
+        || trimmed.starts_with("AM|")
+        || trimmed.starts_with("AM-")
+        || trimmed.starts_with("AMERICA ")
+        || trimmed.starts_with("AMERICA:")
+        || trimmed.starts_with("AMERICA|")
+        || trimmed.starts_with("AMERICA-")
+        || trimmed.starts_with("UNITED STATES");
+    // 1. Strict Blocker: If foreign keyword/country is present and NO explicit US/USA prefix -> BLOCK!
+    if !has_us_prefix && matches_foreign(trimmed) {
         return false;
     }
 
-    if let Some(caps) = LIVE_PREFIX_REGEX.captures(&n) {
+    // 2. Prefix Blocker (First line of defense)
+    if let Some(caps) = LIVE_PREFIX_REGEX.captures(trimmed) {
         if let Some(prefix) = caps.get(1) {
             let p = prefix.as_str();
             let separator = caps.get(2).map(|m| m.as_str()).unwrap_or_default();
@@ -583,7 +706,7 @@ pub fn is_american_live(name: &str) -> bool {
             let foreign_live_prefix =
                 FOREIGN_COUNTRY_CODES.contains(p) || matches!(p, "CA" | "GB" | "UK");
             if foreign_live_prefix
-                && !has_us_marker
+                && !has_us_prefix
                 && (separator.contains('|') || separator.contains(':') || !ambiguous_word_prefix)
             {
                 return false;
@@ -591,70 +714,47 @@ pub fn is_american_live(name: &str) -> bool {
         }
     }
 
-    if !has_us_marker
-        && (n.contains("CANADA")
-            || n.contains("CANADIAN")
-            || n.contains("UNITED KINGDOM")
-            || n.contains("BRITISH"))
-    {
-        return false;
-    }
-
-    // 1. Prefix Blocker (First line of defense)
-    // If it starts with "XX |" or "XXX |", we verify if XX is explicitly a US or Sports marker.
-    // If not, we block it unless the name contains a strong US keyword (like "USA").
-    if let Some(caps) = GENERIC_COUNTRY_PREFIX.captures(&n) {
+    if let Some(caps) = GENERIC_COUNTRY_PREFIX.captures(trimmed) {
         if let Some(match_str) = caps.get(1) {
             let p = match_str.as_str();
-            // Whitelist strict US/Sports/Quality prefixes
             let allowed_prefixes = [
-                "US", "USA", "VIP", "4K", "3D", "XXX", "PPV", "NBA", "NFL", "UFC", "MLB", "NHL",
+                "US", "USA", "AM", "VIP", "4K", "3D", "XXX", "PPV", "NBA", "NFL", "UFC", "MLB", "NHL",
                 "MLS", "F1", "UHD", "FHD", "RAW",
             ];
-
-            if !allowed_prefixes.contains(&p) {
-                // It has a prefix like "UK", "CA", "FR".
-                // We block it UNLESS it explicitly mentions USA inside the name.
-                if !has_us_marker {
-                    return false;
-                }
+            if !allowed_prefixes.contains(&p) && !has_us_prefix {
+                return false;
             }
         }
     }
 
-    // 2. Explicit Positive check
-    // If it passed the prefix check (or has no prefix), we check if it's definitively American.
-    let strong_positive_keywords = [
-        "USA",
-        "U.S.A",
-        " US ",
-        "[US]",
-        "(US)",
-        "|US|",
-        "AMERICA",
-        "UNITED STATES",
-        "LOCAL",
-        "LOCALS",
-        "4K",
-        "UHD",
-        "FHD",
-        "VIP",
+    // 3. Positive US check
+    if has_strong_us_marker(trimmed) {
+        return true;
+    }
+
+    // 4. American major network / league check
+    if has_american_live_category_marker(trimmed) {
+        return true;
+    }
+
+    // 5. Approved generic sporting / seasonal events
+    let generic_approved = [
+        "F1 AND MOTOGP",
+        "FORMULA 1",
+        "MOTOGP",
+        "OLYMPICS",
+        "CHRISTMAS",
+        "PPV-SPORT EVENTS",
+        "PPV SPORT EVENTS",
+        "PPV EVENTS",
+        "FIFA PLUS",
     ];
-    if strong_positive_keywords.iter().any(|&k| n.contains(k)) || has_us_marker {
+    if generic_approved.iter().any(|&g| trimmed.contains(g)) {
         return true;
     }
 
-    // Use O(1) HashSet lookup instead of mega-regex
-    if matches_foreign(&n) {
-        return false;
-    }
-
-    if has_american_live_category_marker(&n) {
-        return true;
-    }
-
-    // Default: Allow everything else (Exclusion-based filtering)
-    true
+    // Default: If it has no US marker and no recognized US network/league, block it in 'Merica mode!
+    false
 }
 
 /// Clean up names in American Mode by removing redundant labels
@@ -1159,35 +1259,26 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
 
     display_name = display_name.trim().to_string();
 
-    // Detect and strip country/region prefix patterns (Aggressive Generic)
-    // BUT: Preserve league names like "NBA TV" - only strip if followed by separator or number
+    // Detect and strip country/region prefix patterns (Explicit Delimiter Matching)
+    // E.g. "US | ESPN HD" -> "ESPN HD", "AM: NBC" -> "NBC"
     let mut clean_loop = true;
     while clean_loop {
         clean_loop = false;
         if let Some(caps) = CLEAN_GENERIC_PREFIX.captures(&display_name) {
             let code = caps.get(1).unwrap().as_str().to_uppercase();
-            // Country codes that should always be stripped
             let country_codes = [
-                "S", "US", "USA", "AM", "UK", "GB", "CA", "EN", "EN/CAM", "EU", "FR", "DE", "ES",
+                "US", "USA", "AM", "UK", "GB", "CA", "EN", "EN/CAM", "EU", "FR", "DE", "ES",
                 "IT", "VIP", "PPV",
             ];
             let league_codes = ["NBA", "NFL", "MLB", "NHL", "UFC", "MLS"];
 
-            // Normalize special characters like dashes into standard ones before prefix check
-            let check_name = display_name
-                .replace(" - ", " ")
-                .replace("-", " ")
-                .to_uppercase();
-
-            if country_codes.iter().any(|&c| check_name.starts_with(c)) {
+            if country_codes.contains(&code.as_str()) {
                 display_name = CLEAN_GENERIC_PREFIX.replace(&display_name, "").to_string();
-                // Extra trim to remove following dashes if any
                 display_name = display_name
                     .trim_start_matches(['-', '|', ':', ' '])
                     .to_string();
                 clean_loop = true;
             } else if league_codes.contains(&code.as_str()) {
-                // For leagues, only strip if followed by separator (: | -) or number, NOT regular words
                 if CLEAN_LEAGUE_SEPARATOR_PREFIX.is_match(&display_name) {
                     if country.is_none() {
                         country = Some(code);
@@ -1201,6 +1292,9 @@ pub fn parse_stream(name: &str, provider_tz: Option<&str>) -> ParsedStream {
         }
     }
 
+    if display_name.trim().is_empty() {
+        display_name = original.clone();
+    }
     // Detect quality
     let upper = name.to_uppercase();
     if upper.contains("4K") || upper.contains("ᵁᴴᴰ") || upper.contains("UHD") {
